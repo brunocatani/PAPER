@@ -1,0 +1,9 @@
+.vscode/
+.vs/
+build*/
+CMakeUserPresets*.json
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+TestResult.xml

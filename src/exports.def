@@ -1,0 +1,5 @@
+LIBRARY "ROCK_Reanimate"
+EXPORTS
+    F4SEPlugin_Query
+    F4SEPlugin_Load
+    ROCKREANIMATEAPI_GetProviderApi

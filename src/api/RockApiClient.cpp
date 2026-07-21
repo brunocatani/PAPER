@@ -1,0 +1,217 @@
+#include "api/RockApiClient.h"
+
+#include "ReanimateLog.h"
+
+#include <cstring>
+
+namespace rock_reanimate
+{
+    namespace
+    {
+        constexpr std::uint32_t kRequiredCapabilities =
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::NativeAnimationAuthority) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::AnimationPhases) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::EquippedWeaponGripState) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::HandVisualAuthority) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider);
+    }
+
+    RockApiClient& rockApiClient()
+    {
+        static RockApiClient client;
+        return client;
+    }
+
+    bool RockApiClient::initialize()
+    {
+        if (_api && _ownerToken != 0) {
+            return true;
+        }
+        const int initializeResult =
+            rock::provider::RockProviderApi::initialize(
+                rock::provider::ROCK_PROVIDER_API_VERSION,
+                rock::provider::ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_PROVIDER_TABLE_BYTES);
+        if (initializeResult != 0) {
+            REANIMATE_LOG_ERROR(
+                Api,
+                "ROCK V1 provider initialization failed with result {}",
+                initializeResult);
+            return false;
+        }
+        _api = rock::provider::RockProviderApi::inst;
+        if (!_api) {
+            return false;
+        }
+
+        rock::provider::RockProviderLimitsV1 limits{};
+        if (!_api->getProviderLimitsV1(&limits) ||
+            !rock::provider::supportsAnimationPhasesV1(limits) ||
+            !rock::provider::supportsEquippedWeaponGripStateV1(limits) ||
+            !rock::provider::supportsHandVisualAuthorityV1(limits) ||
+            !rock::provider::supportsNativeAnimationRuntimeProviderV1(limits) ||
+            !rock::provider::supportsNativeAnimationAuthorityV1(limits)) {
+            REANIMATE_LOG_ERROR(
+                Api,
+                "Loaded ROCK provider does not expose the complete Reanimate V1 support surface");
+            _api = nullptr;
+            return false;
+        }
+
+        rock::provider::RockProviderConsumerRegistrationV1 registration{};
+        std::memcpy(
+            registration.modName,
+            "ROCK_Reanimate",
+            sizeof("ROCK_Reanimate"));
+        registration.requestedCapabilities = kRequiredCapabilities;
+        rock::provider::RockProviderConsumerHandleV1 handle{};
+        const auto result = _api->registerConsumerV1(&registration, &handle);
+        if (result != rock::provider::RockProviderResultV1::Ok ||
+            handle.ownerToken == 0 ||
+            (handle.grantedCapabilities & kRequiredCapabilities) !=
+                kRequiredCapabilities) {
+            REANIMATE_LOG_ERROR(
+                Api,
+                "ROCK consumer registration failed result={} granted=0x{:08X}",
+                static_cast<std::uint32_t>(result),
+                handle.grantedCapabilities);
+            _api = nullptr;
+            return false;
+        }
+
+        _ownerToken = handle.ownerToken;
+        REANIMATE_LOG_INFO(
+            Api,
+            "Registered with ROCK V1 owner={:016X} capabilities=0x{:08X}",
+            _ownerToken,
+            handle.grantedCapabilities);
+        return true;
+    }
+
+    void RockApiClient::shutdown()
+    {
+        if (!_api || _ownerToken == 0) {
+            return;
+        }
+        clearNativeAnimationAuthority();
+        clearHandVisualAuthority(rock::provider::RockProviderHand::None);
+        if (_phaseCallbackToken != 0) {
+            (void)_api->unregisterAnimationPhaseCallbackV1(
+                _ownerToken,
+                _phaseCallbackToken);
+            _phaseCallbackToken = 0;
+        }
+        (void)_api->unregisterConsumerV1(_ownerToken);
+        _ownerToken = 0;
+        _api = nullptr;
+    }
+
+    bool RockApiClient::ready() const
+    {
+        return _api && _ownerToken != 0;
+    }
+
+    std::uint64_t RockApiClient::ownerToken() const
+    {
+        return _ownerToken;
+    }
+
+    const rock::provider::RockProviderApi* RockApiClient::api() const
+    {
+        return _api;
+    }
+
+    bool RockApiClient::registerAnimationPhaseCallback(
+        rock::provider::RockProviderAnimationPhaseCallbackV1 callback,
+        void* userData)
+    {
+        if (!ready() || !callback) {
+            return false;
+        }
+        if (_phaseCallbackToken != 0) {
+            return true;
+        }
+        return _api->registerAnimationPhaseCallbackV1(
+                   _ownerToken,
+                   callback,
+                   userData,
+                   &_phaseCallbackToken) ==
+               rock::provider::RockProviderResultV1::Ok;
+    }
+
+    bool RockApiClient::setNativeAnimationAuthority(const std::uint32_t flags)
+    {
+        if (!ready()) {
+            return false;
+        }
+        if (flags == _publishedAuthorityFlags) {
+            return true;
+        }
+        if (flags == 0) {
+            clearNativeAnimationAuthority();
+            return true;
+        }
+        rock::provider::RockProviderNativeAnimationAuthorityRequestV1 request{};
+        request.flags = flags;
+        request.leaseFrames = 0;
+        const auto result = _api->setNativeAnimationAuthorityV1(
+            _ownerToken,
+            &request);
+        if (result != rock::provider::RockProviderResultV1::Ok) {
+            return false;
+        }
+        _publishedAuthorityFlags = flags;
+        return true;
+    }
+
+    void RockApiClient::clearNativeAnimationAuthority()
+    {
+        if (ready() && _publishedAuthorityFlags != 0) {
+            (void)_api->clearNativeAnimationAuthorityV1(_ownerToken);
+        }
+        _publishedAuthorityFlags = 0;
+    }
+
+    bool RockApiClient::queryNativeAnimationAuthorityState(
+        rock::provider::RockProviderNativeAnimationAuthorityStateV1& outState) const
+    {
+        outState = {};
+        return ready() && _api->getNativeAnimationAuthorityStateV1(&outState);
+    }
+
+    bool RockApiClient::queryEquippedWeaponGripState(
+        rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const
+    {
+        outState = {};
+        return ready() &&
+               _api->getEquippedWeaponGripStateV1(_ownerToken, &outState);
+    }
+
+    bool RockApiClient::setHandVisualAuthority(
+        const rock::provider::RockProviderHandVisualAuthorityRequestV1& request) const
+    {
+        return ready() &&
+               _api->setHandVisualAuthorityV1(_ownerToken, &request) ==
+                   rock::provider::RockProviderResultV1::Ok;
+    }
+
+    void RockApiClient::clearHandVisualAuthority(
+        const rock::provider::RockProviderHand hand) const
+    {
+        if (ready()) {
+            (void)_api->clearHandVisualAuthorityV1(_ownerToken, hand);
+        }
+    }
+
+    bool RockApiClient::publishNativeAnimationRuntime(
+        const rock::provider::RockProviderNativeAnimationRuntimePublicationV1& publication) const
+    {
+        return ready() &&
+               _api->publishNativeAnimationRuntimeV1(_ownerToken, &publication) ==
+                   rock::provider::RockProviderResultV1::Ok;
+    }
+}
