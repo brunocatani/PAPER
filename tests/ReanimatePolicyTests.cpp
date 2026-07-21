@@ -56,6 +56,17 @@ int main()
                       WeaponFixedHandRole::Support) ==
                   WeaponFixedHandTargetMode::NativeWeaponRelative);
 
+    static_assert(!isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{}));
+    static_assert(isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{
+            .boltAction = true,
+        }));
+    static_assert(isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{
+            .revolverAnimation = true,
+        }));
+
     constexpr ManualCycleTwoHandEligibility eligible{
         .twoHandGripActive = true,
         .firingHandIsLeft = false,

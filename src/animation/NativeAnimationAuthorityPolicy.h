@@ -58,7 +58,7 @@ namespace rock_reanimate::native_animation_authority_policy
      * Partial reload authority excludes Weapon regardless of support-grip
      * topology. The post-ROCK publication path restores the visible Weapon to
      * its controller-owned world after moving either hand, so pistols and
-     * one-hand reloads do not need the bolt-only two-hand solver gate.
+     * one-hand reloads do not need the manual-cycle two-hand solver gate.
      */
     [[nodiscard]] inline constexpr std::uint32_t resolveLocalReloadAuthorityFlags(
         const LocalReloadAuthoritySelection& selection)
@@ -85,11 +85,11 @@ namespace rock_reanimate::native_animation_authority_policy
     };
 
     /*
-     * Bolt/lever motion remains rebased onto each exact live ROCK grip. During
-     * a partial reload, however, the native support hand must target its
-     * authored Weapon-relative pose directly. Rebasing that hand onto an
-     * arbitrary dynamic support grab carries the grab offset all the way to
-     * the magazine and bolt nodes.
+     * Bolt/lever/revolver hammer motion remains rebased onto each exact live
+     * ROCK grip. During a partial reload, however, the native support hand
+     * must target its authored Weapon-relative pose directly. Rebasing that
+     * hand onto an arbitrary dynamic support grab carries the grab offset all
+     * the way to the magazine and bolt nodes.
      */
     [[nodiscard]] inline constexpr WeaponFixedHandTargetMode
         resolveWeaponFixedHandTargetMode(
@@ -135,6 +135,18 @@ namespace rock_reanimate::native_animation_authority_policy
                    state.watchdogSecondsRemaining > 0.0f;
         }
     };
+
+    struct ManualCycleWeaponEligibility
+    {
+        bool boltAction{ false };
+        bool revolverAnimation{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool isManualCycleFireAnimationAllowed(
+        const ManualCycleWeaponEligibility& eligibility)
+    {
+        return eligibility.boltAction || eligibility.revolverAnimation;
+    }
 
     struct ManualCycleTwoHandEligibility
     {
@@ -191,7 +203,8 @@ namespace rock_reanimate::native_animation_authority_policy
 
     /*
      * Bethesda's manual-cycle action is bracketed by two ReloadEnd graph
-     * events: one at the start of the bolt/lever clip and one at its end. A
+     * events: one at the start of the bolt/lever or revolver hammer clip and
+     * one at its end. A
      * player WeaponFire event arms this state with the event sequence sampled
      * at that exact boundary. A real reload start wins immediately, while the
      * duration derived from the equipped weapon's live animation data remains

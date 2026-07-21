@@ -44,6 +44,8 @@ namespace rock_reanimate::native_animation_authority
         constexpr int kManualCycleVisualAuthorityPriority = 110;
         constexpr const char* kManualCycleVisualAuthorityTag =
             "ROCK_Reanimate_NativeManualCycle";
+        constexpr std::string_view kFortyFourAnimationKeyword = "Anims44";
+        constexpr std::string_view kRevolverAnimationKeywordToken = "Revolver";
         constexpr std::uint32_t kImplementedFlags = native_animation_authority_policy::kReloadPose;
         constexpr std::array<std::string_view, 15> kManualCyclePrimaryFingerBoneNames{
             "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
@@ -812,6 +814,23 @@ namespace rock_reanimate::native_animation_authority
             return watchdogSeconds;
         }
 
+        [[nodiscard]] bool hasRevolverAnimationKeyword(
+            const RE::BGSKeywordForm* keywords)
+        {
+            return keywords &&
+                   (keywords->HasKeywordString(kFortyFourAnimationKeyword) ||
+                       keywords->ContainsKeywordString(
+                           kRevolverAnimationKeywordToken));
+        }
+
+        [[nodiscard]] bool usesRevolverFireAnimation(
+            const RE::TESObjectWEAP& weapon,
+            const RE::TESObjectWEAP::InstanceData& weaponData)
+        {
+            return hasRevolverAnimationKeyword(&weapon) ||
+                   hasRevolverAnimationKeyword(weaponData.keywords);
+        }
+
         void cancelLocalManualCycleTestLease()
         {
             s_localManualCycleRequestedWatchdogMilliseconds.store(0, std::memory_order_release);
@@ -877,7 +896,14 @@ namespace rock_reanimate::native_animation_authority
             RE::TESObjectWEAP* weapon = nullptr;
             const auto* weaponData = currentPlayerWeaponInstanceData(weapon);
             if (!weapon || !weaponData ||
-                !weaponData->flags.any(RE::WEAPON_FLAGS::kBoltAction)) {
+                !native_animation_authority_policy::isManualCycleFireAnimationAllowed(
+                    native_animation_authority_policy::ManualCycleWeaponEligibility{
+                        .boltAction = weaponData->flags.any(
+                            RE::WEAPON_FLAGS::kBoltAction),
+                        .revolverAnimation = usesRevolverFireAnimation(
+                            *weapon,
+                            *weaponData),
+                    })) {
                 return handled;
             }
 
@@ -1257,7 +1283,7 @@ namespace rock_reanimate::native_animation_authority
             RE::NiTransform targetHandInWeapon = handInWeapon;
             if (targetMode == native_animation_authority_policy::
                                   WeaponFixedHandTargetMode::LiveGripDelta) {
-                // Bolt/lever hands and the partial-reload primary keep their
+                // Manual-cycle hands and the partial-reload primary keep their
                 // exact live grip as the neutral frame. Only Bethesda's delta
                 // from the first native sample is applied to that grip.
                 const RE::NiTransform handInWeaponCorrection =
@@ -1781,7 +1807,7 @@ namespace rock_reanimate::native_animation_authority
             using Reason = native_animation_authority_policy::LocalManualCycleLeaseEndReason;
             switch (reason) {
             case Reason::CycleBracketEnded:
-                return "native bolt/lever clip end observed";
+                return "native manual-cycle clip end observed";
             case Reason::ReloadStarted:
                 return "native reload-start event preempted cycle";
             case Reason::WatchdogExpired:
@@ -1834,7 +1860,7 @@ namespace rock_reanimate::native_animation_authority
             if (!step.active()) {
                 s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
                 REANIMATE_LOG_DEBUG(Animation,
-                    "Native bolt/lever hand-only authority released: {}",
+                    "Native manual-cycle hand-only authority released: {}",
                     localManualCycleLeaseEndReasonName(step.endReason));
             }
             return requestChanged;
@@ -1952,7 +1978,7 @@ namespace rock_reanimate::native_animation_authority
                 !s_weaponFireHookInstallFailed.load(std::memory_order_acquire)) {
                 if (!installWeaponFireHook()) {
                     REANIMATE_LOG_WARN(Init,
-                        "Native reload authority remains available, but bolt/lever hand-only animation is disabled because WeaponFireHandler was not installed");
+                        "Native reload authority remains available, but manual-cycle hand-only animation is disabled because WeaponFireHandler was not installed");
                 }
             }
             return true;
@@ -1967,7 +1993,7 @@ namespace rock_reanimate::native_animation_authority
         s_hookInstalled.store(true, std::memory_order_release);
         if (!installWeaponFireHook()) {
             REANIMATE_LOG_WARN(Init,
-                "Native reload authority remains available, but bolt/lever hand-only animation is disabled because WeaponFireHandler was not installed");
+                "Native reload authority remains available, but manual-cycle hand-only animation is disabled because WeaponFireHandler was not installed");
         }
         REANIMATE_LOG_INFO(Init,
             "Native animation lifecycle hooks ready; graph capture=ROCK V1 NativeGraphOutput scope=arms,hands,Weapon/WeaponLeft lifecycle=WeaponFireHandler+ReloadStateChangeHandler");
@@ -2056,7 +2082,7 @@ namespace rock_reanimate::native_animation_authority
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
             cancelLocalManualCycleTestLease();
             REANIMATE_LOG_DEBUG(Animation,
-                "Native bolt/lever hand-only authority released: full two-hand weapon authority lost");
+                "Native manual-cycle hand-only authority released: full two-hand weapon authority lost");
         }
     }
 
