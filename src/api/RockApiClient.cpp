@@ -21,6 +21,7 @@ namespace rock_reanimate
                 rock::provider::RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
             static_cast<std::uint32_t>(
                 rock::provider::RockProviderConsumerCapabilityV1::DebugOverlayPublication);
+        constexpr std::uint32_t kRollingLeaseFrames = 3;
     }
 
     RockApiClient& rockApiClient()
@@ -37,7 +38,7 @@ namespace rock_reanimate
         const int initializeResult =
             rock::provider::RockProviderApi::initialize(
                 rock::provider::ROCK_PROVIDER_API_VERSION,
-                rock::provider::ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES);
+                rock::provider::ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES);
         if (initializeResult != 0) {
             REANIMATE_LOG_ERROR(
                 Api,
@@ -83,6 +84,9 @@ namespace rock_reanimate
                 "ROCK consumer registration failed result={} granted=0x{:08X}",
                 static_cast<std::uint32_t>(result),
                 handle.grantedCapabilities);
+            if (handle.ownerToken != 0 && _api->unregisterConsumerV1) {
+                (void)_api->unregisterConsumerV1(handle.ownerToken);
+            }
             _api = nullptr;
             return false;
         }
@@ -103,6 +107,7 @@ namespace rock_reanimate
         }
         clearNativeAnimationAuthority();
         clearHandVisualAuthority(rock::provider::RockProviderHand::None);
+        clearNativeAnimationRuntime();
         clearDebugOverlay();
         if (_phaseCallbackToken != 0) {
             (void)_api->unregisterAnimationPhaseCallbackV1(
@@ -153,16 +158,13 @@ namespace rock_reanimate
         if (!ready()) {
             return false;
         }
-        if (flags == _publishedAuthorityFlags) {
-            return true;
-        }
         if (flags == 0) {
             clearNativeAnimationAuthority();
             return true;
         }
         rock::provider::RockProviderNativeAnimationAuthorityRequestV1 request{};
         request.flags = flags;
-        request.leaseFrames = 0;
+        request.leaseFrames = kRollingLeaseFrames;
         const auto result = _api->setNativeAnimationAuthorityV1(
             _ownerToken,
             &request);
@@ -199,8 +201,10 @@ namespace rock_reanimate
     bool RockApiClient::setHandVisualAuthority(
         const rock::provider::RockProviderHandVisualAuthorityRequestV1& request) const
     {
+        auto leasedRequest = request;
+        leasedRequest.leaseFrames = kRollingLeaseFrames;
         return ready() &&
-               _api->setHandVisualAuthorityV1(_ownerToken, &request) ==
+               _api->setHandVisualAuthorityV1(_ownerToken, &leasedRequest) ==
                    rock::provider::RockProviderResultV1::Ok;
     }
 
@@ -215,16 +219,29 @@ namespace rock_reanimate
     bool RockApiClient::publishNativeAnimationRuntime(
         const rock::provider::RockProviderNativeAnimationRuntimePublicationV1& publication) const
     {
+        auto leasedPublication = publication;
+        leasedPublication.leaseFrames = kRollingLeaseFrames;
         return ready() &&
-               _api->publishNativeAnimationRuntimeV1(_ownerToken, &publication) ==
+               _api->publishNativeAnimationRuntimeV1(
+                   _ownerToken,
+                   &leasedPublication) ==
                    rock::provider::RockProviderResultV1::Ok;
+    }
+
+    void RockApiClient::clearNativeAnimationRuntime() const
+    {
+        if (ready()) {
+            (void)_api->clearNativeAnimationRuntimeV1(_ownerToken);
+        }
     }
 
     bool RockApiClient::publishDebugOverlay(
         const rock::provider::RockProviderDebugOverlayPublicationV1& publication) const
     {
+        auto leasedPublication = publication;
+        leasedPublication.leaseFrames = kRollingLeaseFrames;
         return ready() &&
-               _api->publishDebugOverlayV1(_ownerToken, &publication) ==
+               _api->publishDebugOverlayV1(_ownerToken, &leasedPublication) ==
                    rock::provider::RockProviderResultV1::Ok;
     }
 

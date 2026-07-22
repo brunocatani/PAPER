@@ -149,6 +149,9 @@ namespace
         rockState.statusFlags = native.statusFlags;
         rockState.capturedTransformCount = native.capturedTransformCount;
         rockState.captureSequence = native.captureSequence;
+        rockState.worldGeneration = context.worldGeneration;
+        rockState.skeletonGeneration = context.skeletonGeneration;
+        rockState.providerGeneration = context.providerGeneration;
         if (rockConnected) {
             (void)rockApiClient().publishNativeAnimationRuntime(rockState);
         }

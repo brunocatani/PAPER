@@ -30,6 +30,7 @@ namespace rock_reanimate
         void clearHandVisualAuthority(rock::provider::RockProviderHand hand) const;
         [[nodiscard]] bool publishNativeAnimationRuntime(
             const rock::provider::RockProviderNativeAnimationRuntimePublicationV1& publication) const;
+        void clearNativeAnimationRuntime() const;
         [[nodiscard]] bool publishDebugOverlay(
             const rock::provider::RockProviderDebugOverlayPublicationV1& publication) const;
         void clearDebugOverlay() const;
