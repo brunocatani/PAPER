@@ -18,7 +18,9 @@ namespace rock_reanimate
             static_cast<std::uint32_t>(
                 rock::provider::RockProviderConsumerCapabilityV1::HandVisualAuthority) |
             static_cast<std::uint32_t>(
-                rock::provider::RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider);
+                rock::provider::RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::DebugOverlayPublication);
     }
 
     RockApiClient& rockApiClient()
@@ -35,7 +37,7 @@ namespace rock_reanimate
         const int initializeResult =
             rock::provider::RockProviderApi::initialize(
                 rock::provider::ROCK_PROVIDER_API_VERSION,
-                rock::provider::ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_PROVIDER_TABLE_BYTES);
+                rock::provider::ROCK_PROVIDER_API_V1_PRESENTED_HAND_FRAMES_TABLE_BYTES);
         if (initializeResult != 0) {
             REANIMATE_LOG_ERROR(
                 Api,
@@ -54,6 +56,8 @@ namespace rock_reanimate
             !rock::provider::supportsEquippedWeaponGripStateV1(limits) ||
             !rock::provider::supportsHandVisualAuthorityV1(limits) ||
             !rock::provider::supportsNativeAnimationRuntimeProviderV1(limits) ||
+            !rock::provider::supportsDebugOverlayPublicationV1(limits) ||
+            !rock::provider::supportsPresentedHandFramesV1(limits) ||
             !rock::provider::supportsNativeAnimationAuthorityV1(limits)) {
             REANIMATE_LOG_ERROR(
                 Api,
@@ -99,6 +103,7 @@ namespace rock_reanimate
         }
         clearNativeAnimationAuthority();
         clearHandVisualAuthority(rock::provider::RockProviderHand::None);
+        clearDebugOverlay();
         if (_phaseCallbackToken != 0) {
             (void)_api->unregisterAnimationPhaseCallbackV1(
                 _ownerToken,
@@ -213,5 +218,20 @@ namespace rock_reanimate
         return ready() &&
                _api->publishNativeAnimationRuntimeV1(_ownerToken, &publication) ==
                    rock::provider::RockProviderResultV1::Ok;
+    }
+
+    bool RockApiClient::publishDebugOverlay(
+        const rock::provider::RockProviderDebugOverlayPublicationV1& publication) const
+    {
+        return ready() &&
+               _api->publishDebugOverlayV1(_ownerToken, &publication) ==
+                   rock::provider::RockProviderResultV1::Ok;
+    }
+
+    void RockApiClient::clearDebugOverlay() const
+    {
+        if (ready()) {
+            (void)_api->clearDebugOverlayV1(_ownerToken);
+        }
     }
 }

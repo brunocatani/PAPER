@@ -6,6 +6,7 @@
 #include "api/ROCKReanimateProvider.h"
 #include "api/RockApiClient.h"
 #include "api/RockVisualAuthorityBridge.h"
+#include "debug/NativeAnimationDebugVisualization.h"
 #include "ReanimateConfig.h"
 #include "ReanimateLog.h"
 
@@ -283,6 +284,7 @@ namespace
             refreshGripState();
             (void)native_animation_authority::applyCapturedPose(
                 native_animation_authority::ApplyPhase::AfterRock);
+            debug_visualization::publish(*context, s_gripState);
             break;
         case rock::provider::RockProviderAnimationPhaseV1::Complete:
             native_animation_authority::completeRockFrame();
@@ -319,6 +321,7 @@ namespace
 
     void resetSession()
     {
+        debug_visualization::clear();
         rockApiClient().clearNativeAnimationAuthority();
         native_animation_authority::resetTransientState();
         frik_visual_authority::setSkeletonReadyHint(false);

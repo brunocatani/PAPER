@@ -6,6 +6,8 @@
 #include <ShlObj.h>
 #include <SimpleIni.h>
 
+#include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 namespace rock_reanimate
@@ -56,14 +58,48 @@ namespace rock_reanimate
             "NativeAnimation",
             "bNativeReloadAnimationPartialAuthorityTestEnabled",
             nativeReloadAnimationPartialAuthorityTestEnabled);
+        debugDrawNativeAnimation = ini.GetBoolValue(
+            "Debug",
+            "bDebugDrawNativeAnimation",
+            debugDrawNativeAnimation);
+        debugDrawNativeAnimationText = ini.GetBoolValue(
+            "Debug",
+            "bDebugDrawNativeAnimationText",
+            debugDrawNativeAnimationText);
+        debugNativeAnimationAxisLength = static_cast<float>(ini.GetDoubleValue(
+            "Debug",
+            "fDebugNativeAnimationAxisLength",
+            debugNativeAnimationAxisLength));
+        debugNativeAnimationMarkerSize = static_cast<float>(ini.GetDoubleValue(
+            "Debug",
+            "fDebugNativeAnimationMarkerSize",
+            debugNativeAnimationMarkerSize));
+        if (!std::isfinite(debugNativeAnimationAxisLength)) {
+            debugNativeAnimationAxisLength = 5.0f;
+        }
+        if (!std::isfinite(debugNativeAnimationMarkerSize)) {
+            debugNativeAnimationMarkerSize = 1.5f;
+        }
+        debugNativeAnimationAxisLength = std::clamp(
+            debugNativeAnimationAxisLength,
+            1.0f,
+            20.0f);
+        debugNativeAnimationMarkerSize = std::clamp(
+            debugNativeAnimationMarkerSize,
+            0.25f,
+            5.0f);
         logger::setLevel(logLevel);
         REANIMATE_LOG_INFO(
             Config,
-            "Loaded '{}' enabled={} nativeReload={} partialAuthority={}",
+            "Loaded '{}' enabled={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f}",
             activePath,
             enabled,
             nativeReloadAnimationAuthorityTestEnabled,
-            nativeReloadAnimationPartialAuthorityTestEnabled);
+            nativeReloadAnimationPartialAuthorityTestEnabled,
+            debugDrawNativeAnimation,
+            debugDrawNativeAnimationText,
+            debugNativeAnimationAxisLength,
+            debugNativeAnimationMarkerSize);
         return true;
     }
 }

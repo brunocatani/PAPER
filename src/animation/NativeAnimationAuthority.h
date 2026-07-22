@@ -67,6 +67,38 @@ namespace rock_reanimate::native_animation_authority
         bool valid{ false };
     };
 
+    struct DebugHandSnapshot
+    {
+        RE::NiTransform nativeHandInWeapon{};
+        RE::NiTransform liveBaselineHandInWeapon{};
+        RE::NiTransform resolvedHandWorld{};
+        float motionTranslationGameUnits{ 0.0f };
+        float motionRotationDegrees{ 0.0f };
+        bool nativeHandValid{ false };
+        bool liveBaselineValid{ false };
+        bool resolvedHandWorldValid{ false };
+        bool motionQualified{ false };
+        bool visualAuthorityPublished{ false };
+    };
+
+    struct DebugAuthoritySnapshot
+    {
+        RuntimeStatus runtime{};
+        RE::NiTransform controllerWeaponWorld{};
+        RE::NiTransform nativeBaselineWeaponWorld{};
+        RE::NiTransform desiredWeaponWorld{};
+        DebugHandSnapshot rightHand{};
+        DebugHandSnapshot leftHand{};
+        std::uint64_t frameCaptureSequence{ 0 };
+        bool controllerWeaponValid{ false };
+        bool nativeBaselineWeaponValid{ false };
+        bool desiredWeaponValid{ false };
+        bool frameCaptureReady{ false };
+        bool weaponFixedHandsExpected{ false };
+        bool partialReloadExpected{ false };
+        bool weaponFixedHandsApplied{ false };
+    };
+
     // Install the verified reload lifecycle and WeaponFire hooks only after
     // ROCK reports skeleton-ready. ROCK owns the shared native graph-output
     // detour and invokes captureNativeGraphOutput through its V1 phase API.
@@ -93,4 +125,8 @@ namespace rock_reanimate::native_animation_authority
         CapturedTransform* outTransforms,
         std::uint32_t maxTransforms);
     [[nodiscard]] bool queryNativeHandPose(bool left, NativeHandPose& outPose);
+    // Game-thread-only diagnostic snapshot. Values are copied and contain no
+    // scene pointers, so callers may use them only for the current publication.
+    [[nodiscard]] bool queryDebugAuthoritySnapshot(
+        DebugAuthoritySnapshot& outSnapshot);
 }

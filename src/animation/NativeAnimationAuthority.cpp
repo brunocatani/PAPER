@@ -117,8 +117,12 @@ namespace rock_reanimate::native_animation_authority
         {
             RE::NiTransform nativeBaselineHandInWeapon{};
             RE::NiTransform liveBaselineHandInWeapon{};
+            RE::NiTransform resolvedHandWorld{};
+            float motionTranslationGameUnits{ 0.0f };
+            float motionRotationDegrees{ 0.0f };
             bool captured{ false };
             bool motionQualified{ false };
+            bool resolvedHandWorldValid{ false };
         };
 
         enum class ManualCycleHandVisualResult : std::uint8_t
@@ -1253,6 +1257,10 @@ namespace rock_reanimate::native_animation_authority
             const auto motion = measureManualCycleHandMotion(
                 handRebase.nativeBaselineHandInWeapon,
                 handInWeapon);
+            handRebase.motionTranslationGameUnits =
+                motion.translationGameUnits;
+            handRebase.motionRotationDegrees = motion.rotationDegrees;
+            handRebase.resolvedHandWorldValid = false;
             const bool wasMotionQualified = handRebase.motionQualified;
             handRebase.motionQualified =
                 native_animation_authority_policy::
@@ -1260,6 +1268,12 @@ namespace rock_reanimate::native_animation_authority
                         handRebase.motionQualified,
                         motion);
             if (!handRebase.motionQualified) {
+                handRebase.resolvedHandWorld =
+                    transform_math::composeTransforms(
+                        fixedWeaponWorld,
+                        handRebase.liveBaselineHandInWeapon);
+                handRebase.resolvedHandWorldValid =
+                    finiteTransform(handRebase.resolvedHandWorld);
                 // Leave ROCK's priority-100 grip tag as the visual owner. This
                 // preserves its exact position, rotation, and finger pose
                 // instead of forwarding native idle/squirm noise.
@@ -1317,6 +1331,8 @@ namespace rock_reanimate::native_animation_authority
                 (void)clearManualCycleVisualForHand(hand);
                 return ManualCycleHandVisualResult::Failed;
             }
+            handRebase.resolvedHandWorld = handWorld;
+            handRebase.resolvedHandWorldValid = true;
 
             if (fingerLocals.enabledMask != 0) {
                 // FRIK's local-transform override augments an existing pose
@@ -2452,6 +2468,80 @@ namespace rock_reanimate::native_animation_authority
         outPose.captureSequence =
             s_captureSequence.load(std::memory_order_acquire);
         outPose.valid = true;
+        return true;
+    }
+
+    bool queryDebugAuthoritySnapshot(DebugAuthoritySnapshot& outSnapshot)
+    {
+        outSnapshot = {};
+        if (!claimOrValidateThread()) {
+            return false;
+        }
+
+        outSnapshot.runtime = queryRuntimeStatus();
+        outSnapshot.frameCaptureSequence = s_frameCaptureSequence;
+        outSnapshot.frameCaptureReady = s_frameCaptureReady;
+        outSnapshot.weaponFixedHandsExpected =
+            s_frameWeaponFixedHandsExpected;
+        outSnapshot.partialReloadExpected = s_framePartialReloadExpected;
+        outSnapshot.weaponFixedHandsApplied =
+            s_frameWeaponFixedHandsApplied;
+
+        const auto& aimFrame = s_sourceAimFrame;
+        if (aimFrame.controlCaptured &&
+            finiteTransform(aimFrame.controlWeaponWorld)) {
+            outSnapshot.controllerWeaponWorld =
+                aimFrame.controlWeaponWorld;
+            outSnapshot.controllerWeaponValid = true;
+        }
+        if (aimFrame.nativeBaselineCaptured &&
+            finiteTransform(aimFrame.nativeBaselineWeaponWorld)) {
+            outSnapshot.nativeBaselineWeaponWorld =
+                aimFrame.nativeBaselineWeaponWorld;
+            outSnapshot.nativeBaselineWeaponValid = true;
+        }
+        if (aimFrame.desiredCaptured &&
+            finiteTransform(aimFrame.desiredWeaponWorld)) {
+            outSnapshot.desiredWeaponWorld = aimFrame.desiredWeaponWorld;
+            outSnapshot.desiredWeaponValid = true;
+        }
+
+        const auto copyHand = [&](const bool left,
+                                  DebugHandSnapshot& destination) {
+            const auto& pose = left ?
+                s_nativeHandPoseCapture.supportHandInWeapon :
+                s_nativeHandPoseCapture.primaryHandInWeapon;
+            const bool poseValid = left ?
+                s_nativeHandPoseCapture.supportHandValid :
+                s_nativeHandPoseCapture.primaryHandValid;
+            if (poseValid && finiteTransform(pose)) {
+                destination.nativeHandInWeapon = pose;
+                destination.nativeHandValid = true;
+            }
+
+            const auto handIndex = left ? 1u : 0u;
+            const auto& rebase = aimFrame.manualCycleHandRebases[handIndex];
+            if (rebase.captured &&
+                finiteTransform(rebase.liveBaselineHandInWeapon)) {
+                destination.liveBaselineHandInWeapon =
+                    rebase.liveBaselineHandInWeapon;
+                destination.liveBaselineValid = true;
+            }
+            if (rebase.resolvedHandWorldValid &&
+                finiteTransform(rebase.resolvedHandWorld)) {
+                destination.resolvedHandWorld = rebase.resolvedHandWorld;
+                destination.resolvedHandWorldValid = true;
+            }
+            destination.motionTranslationGameUnits =
+                rebase.motionTranslationGameUnits;
+            destination.motionRotationDegrees =
+                rebase.motionRotationDegrees;
+            destination.motionQualified = rebase.motionQualified;
+            destination.visualAuthorityPublished =
+                s_manualCycleVisualPublications[handIndex].worldPublished;
+        };
+        copyHand(false, outSnapshot.rightHand);
+        copyHand(true, outSnapshot.leftHand);
         return true;
     }
 }
