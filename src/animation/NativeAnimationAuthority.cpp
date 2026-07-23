@@ -156,8 +156,8 @@ namespace rock_reanimate::native_animation_authority
         NativeHandBoneCache s_nativeHandBoneCache{};
         NativeHandPoseCapture s_nativeHandPoseCapture{};
         std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
-        // Frame-local values copied from ROCK's two-hand solver on the game
-        // thread. Never retained across authority loss or skeleton teardown.
+        // Optional frame-local live-grip baselines copied from ROCK on the
+        // game thread. Never retained across authority loss or skeleton teardown.
         ManualCycleRockGripBaselines s_manualCycleRockGripBaselines{};
         ControllerAimFrame s_sourceAimFrame{};
         WeaponFireHandlerFn s_originalWeaponFire{ nullptr };
@@ -172,7 +172,7 @@ namespace rock_reanimate::native_animation_authority
         std::atomic<bool> s_localReloadTestEnabled{ false };
         std::atomic<bool> s_localReloadPartialAuthorityEnabled{ false };
         std::atomic<bool> s_localReloadLeasePartialAuthority{ false };
-        std::atomic<bool> s_manualCycleTwoHandAuthorityActive{ false };
+        std::atomic<bool> s_manualCycleHandAnimationEligible{ false };
         std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
         std::atomic<bool> s_captureValid{ false };
         std::atomic<bool> s_threadMismatch{ false };
@@ -365,7 +365,7 @@ namespace rock_reanimate::native_animation_authority
                                 std::memory_order_acquire),
                     });
             if (s_localManualCycleTestLeaseActive.load(std::memory_order_acquire) &&
-                s_manualCycleTwoHandAuthorityActive.load(std::memory_order_acquire)) {
+                s_manualCycleHandAnimationEligible.load(std::memory_order_acquire)) {
                 localFlags |= native_animation_authority_policy::kManualCyclePose;
             }
             return localFlags & kImplementedFlags;
@@ -835,6 +835,19 @@ namespace rock_reanimate::native_animation_authority
                    hasRevolverAnimationKeyword(weaponData.keywords);
         }
 
+        [[nodiscard]] bool isShotgun(
+            const RE::TESObjectWEAP& weapon)
+        {
+            rock::provider::RockProviderWeaponClassificationV1 classification{};
+            return rockApiClient().queryEquippedWeaponClassification(
+                       classification) &&
+                   classification.valid != 0 &&
+                   classification.formId == weapon.formID &&
+                   rock::provider::hasWeaponKeywordFlagV1(
+                       classification.keywordFlags,
+                       rock::provider::RockProviderWeaponKeywordFlagV1::Shotgun);
+        }
+
         void cancelLocalManualCycleTestLease()
         {
             s_localManualCycleRequestedWatchdogMilliseconds.store(0, std::memory_order_release);
@@ -891,7 +904,7 @@ namespace rock_reanimate::native_animation_authority
             if (!handled || !actor || actor != player ||
                 !s_runtimeEnabled.load(std::memory_order_acquire) ||
                 !s_localManualCycleTestEnabled.load(std::memory_order_acquire) ||
-                !s_manualCycleTwoHandAuthorityActive.load(std::memory_order_acquire) ||
+                !s_manualCycleHandAnimationEligible.load(std::memory_order_acquire) ||
                 s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ||
                 s_playerReloadEventActive.load(std::memory_order_acquire)) {
                 return handled;
@@ -907,6 +920,7 @@ namespace rock_reanimate::native_animation_authority
                         .revolverAnimation = usesRevolverFireAnimation(
                             *weapon,
                             *weaponData),
+                        .shotgun = isShotgun(*weapon),
                     })) {
                 return handled;
             }
@@ -2034,7 +2048,7 @@ namespace rock_reanimate::native_animation_authority
     {
         s_runtimeEnabled.store(enabled && s_hookInstalled.load(std::memory_order_acquire), std::memory_order_release);
         if (!enabled) {
-            s_manualCycleTwoHandAuthorityActive.store(false, std::memory_order_release);
+            s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
             s_manualCycleRockGripBaselines = {};
             cancelLocalManualCycleTestLease();
             const DWORD ownerThread =
@@ -2083,22 +2097,22 @@ namespace rock_reanimate::native_animation_authority
             std::memory_order_release);
     }
 
-    void setManualCycleTwoHandAuthorityActive(const bool active)
+    void setManualCycleHandAnimationEligible(const bool eligible)
     {
-        const bool effectiveActive = active &&
+        const bool effectiveEligibility = eligible &&
             s_runtimeEnabled.load(std::memory_order_acquire) &&
             s_localManualCycleTestEnabled.load(std::memory_order_acquire);
-        const bool wasActive = s_manualCycleTwoHandAuthorityActive.exchange(
-            effectiveActive,
+        const bool wasEligible = s_manualCycleHandAnimationEligible.exchange(
+            effectiveEligibility,
             std::memory_order_acq_rel);
-        if (!effectiveActive) {
+        if (!effectiveEligibility) {
             s_manualCycleRockGripBaselines = {};
         }
-        if (wasActive && !effectiveActive &&
+        if (wasEligible && !effectiveEligibility &&
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
             cancelLocalManualCycleTestLease();
             REANIMATE_LOG_DEBUG(Animation,
-                "Native manual-cycle hand-only authority released: full two-hand weapon authority lost");
+                "Native manual-cycle hand-only authority released: equipped-weapon animation eligibility lost");
         }
     }
 
@@ -2106,7 +2120,7 @@ namespace rock_reanimate::native_animation_authority
         const ManualCycleRockGripBaselines& baselines)
     {
         s_manualCycleRockGripBaselines = {};
-        if (!s_manualCycleTwoHandAuthorityActive.load(std::memory_order_acquire)) {
+        if (!s_manualCycleHandAnimationEligible.load(std::memory_order_acquire)) {
             return;
         }
         if (baselines.rightValid &&
@@ -2222,7 +2236,7 @@ namespace rock_reanimate::native_animation_authority
                 (currentFlags & native_animation_authority_policy::kWeapon) == 0 &&
                 (currentFlags & native_animation_authority_policy::kArms) != 0;
             if (!weaponFixedHandsStillRequested) {
-                // A cycle can lose its support-hand eligibility, or a reload
+                // A cycle can lose its equipped-weapon eligibility, or a reload
                 // can end, during ROCK's own update. Drop the native overlay
                 // only afterward, when normal grip tags hold current-frame
                 // controller/weapon targets.
@@ -2323,7 +2337,7 @@ namespace rock_reanimate::native_animation_authority
         s_localReloadTestEnabled.store(false, std::memory_order_release);
         s_localReloadPartialAuthorityEnabled.store(false, std::memory_order_release);
         s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
-        s_manualCycleTwoHandAuthorityActive.store(false, std::memory_order_release);
+        s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
         s_manualCycleRockGripBaselines = {};
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
         cancelLocalManualCycleTestLease();

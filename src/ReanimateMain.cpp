@@ -62,21 +62,16 @@ namespace
         const bool valid = queried && hasGripFlag(
             s_gripState.flags,
             rock::provider::RockProviderEquippedWeaponGripStateFlagV1::Valid);
-        const bool twoHandEligible = valid &&
+        const bool manualCycleEligible =
             native_animation_authority_policy::canApplyManualCycleHandAnimation(
-                native_animation_authority_policy::ManualCycleTwoHandEligibility{
-                    .twoHandGripActive = hasGripFlag(
-                        s_gripState.flags,
-                        rock::provider::RockProviderEquippedWeaponGripStateFlagV1::TwoHandGripActive),
+                native_animation_authority_policy::ManualCycleHandAnimationEligibility{
+                    .gripStateValid = valid,
                     .firingHandIsLeft = hasGripFlag(
                         s_gripState.flags,
                         rock::provider::RockProviderEquippedWeaponGripStateFlagV1::FiringHandLeft),
-                    .weaponTransformOwned = hasGripFlag(
-                        s_gripState.flags,
-                        rock::provider::RockProviderEquippedWeaponGripStateFlagV1::WeaponTransformOwned),
                 });
-        native_animation_authority::setManualCycleTwoHandAuthorityActive(
-            twoHandEligible);
+        native_animation_authority::setManualCycleHandAnimationEligible(
+            manualCycleEligible);
 
         native_animation_authority::ManualCycleRockGripBaselines baselines{};
         if (valid && hasGripFlag(

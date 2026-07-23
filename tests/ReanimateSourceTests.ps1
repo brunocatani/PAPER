@@ -38,7 +38,10 @@ Require-Text 'src/ReanimateMain.cpp' 'AfterRock[\s\S]*ApplyPhase::AfterRock[\s\S
 Require-Text 'src/ReanimateMain.cpp' 'resetSession\(\)[\s\S]*debug_visualization::clear\(\)' 'Session teardown must clear Reanimate-owned overlay publications.'
 Require-Text 'src/animation/NativeAnimationAuthority.cpp' 'installReloadStateChangeHook\(\)[\s\S]*installWeaponFireHook\(\)[\s\S]*captureNativeGraphOutput\(\)' 'Reload, manual-cycle fire, and native graph capture behavior must remain in Reanimate.'
 Require-Text 'src/animation/NativeAnimationAuthority.cpp' '"Anims44"[\s\S]*"Revolver"[\s\S]*weaponData\.keywords[\s\S]*isManualCycleFireAnimationAllowed' 'Manual-cycle fire animation eligibility must admit Bethesda-style revolver animation keywords on both base and live instance data.'
+Require-Text 'src/animation/NativeAnimationAuthority.cpp' 'queryEquippedWeaponClassification[\s\S]*classification\.formId\s*==\s*weapon\.formID[\s\S]*RockProviderWeaponKeywordFlagV1::Shotgun[\s\S]*isManualCycleFireAnimationAllowed' 'Manual-cycle fire animation eligibility must admit only the current weapon''s ROCK-classified shotgun family.'
 Reject-Text 'src/animation/NativeAnimationAuthority.cpp' 'WeaponTypePistol|RockProviderWeaponSizeClassV1::Pistol' 'Revolver admission must not broaden manual-cycle authority to every pistol.'
+Reject-Text 'src/animation/NativeAnimationAuthority.cpp' 'RockProviderWeaponSizeClassV1::Rifle' 'Shotgun admission must use ROCK''s specific shotgun keyword instead of broadening manual-cycle authority to every rifle.'
+Reject-Text 'src/ReanimateMain.cpp' 'TwoHandGripActive|WeaponTransformOwned' 'Manual-cycle hand animation must not require ROCK two-hand or weapon-transform ownership.'
 Reject-Text 'src/animation/NativeAnimationAuthority.cpp' 'kExpectedPostFrikPrefix|kFunc_PlayerPostUpdateAnimationGraphManager|entry_trampoline_hook' 'Reanimate must not install a competing PostUpdateAnimationGraphManager detour.'
 Reject-Text 'src/native/NativeOffsets.h' 'PostUpdateAnimationGraphManager|UpdateFirstPersonArm' 'Reanimate native offsets must be limited to its reload/manual-cycle lifecycle ownership.'
 

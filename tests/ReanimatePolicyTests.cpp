@@ -66,26 +66,24 @@ int main()
         ManualCycleWeaponEligibility{
             .revolverAnimation = true,
         }));
+    static_assert(isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{
+            .shotgun = true,
+        }));
 
-    constexpr ManualCycleTwoHandEligibility eligible{
-        .twoHandGripActive = true,
+    constexpr ManualCycleHandAnimationEligibility eligible{
+        .gripStateValid = true,
         .firingHandIsLeft = false,
-        .weaponTransformOwned = true,
     };
     static_assert(canApplyManualCycleHandAnimation(eligible));
     static_assert([=] {
         auto input = eligible;
-        input.twoHandGripActive = false;
+        input.gripStateValid = false;
         return !canApplyManualCycleHandAnimation(input);
     }());
     static_assert([=] {
         auto input = eligible;
         input.firingHandIsLeft = true;
-        return !canApplyManualCycleHandAnimation(input);
-    }());
-    static_assert([=] {
-        auto input = eligible;
-        input.weaponTransformOwned = false;
         return !canApplyManualCycleHandAnimation(input);
     }());
 

@@ -55,6 +55,7 @@ namespace rock_reanimate
         if (!_api->getProviderLimitsV1(&limits) ||
             !rock::provider::supportsAnimationPhasesV1(limits) ||
             !rock::provider::supportsEquippedWeaponGripStateV1(limits) ||
+            !rock::provider::supportsWeaponClassificationV1(limits) ||
             !rock::provider::supportsHandVisualAuthorityV1(limits) ||
             !rock::provider::supportsNativeAnimationRuntimeProviderV1(limits) ||
             !rock::provider::supportsDebugOverlayPublicationV1(limits) ||
@@ -196,6 +197,14 @@ namespace rock_reanimate
         outState = {};
         return ready() &&
                _api->getEquippedWeaponGripStateV1(_ownerToken, &outState);
+    }
+
+    bool RockApiClient::queryEquippedWeaponClassification(
+        rock::provider::RockProviderWeaponClassificationV1& outClassification) const
+    {
+        outClassification = {};
+        return ready() &&
+               _api->queryEquippedWeaponClassificationV1(&outClassification);
     }
 
     bool RockApiClient::setHandVisualAuthority(

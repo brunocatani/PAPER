@@ -140,27 +140,28 @@ namespace rock_reanimate::native_animation_authority_policy
     {
         bool boltAction{ false };
         bool revolverAnimation{ false };
+        bool shotgun{ false };
     };
 
     [[nodiscard]] inline constexpr bool isManualCycleFireAnimationAllowed(
         const ManualCycleWeaponEligibility& eligibility)
     {
-        return eligibility.boltAction || eligibility.revolverAnimation;
+        return eligibility.boltAction ||
+               eligibility.revolverAnimation ||
+               eligibility.shotgun;
     }
 
-    struct ManualCycleTwoHandEligibility
+    struct ManualCycleHandAnimationEligibility
     {
-        bool twoHandGripActive{ false };
+        bool gripStateValid{ false };
         bool firingHandIsLeft{ false };
-        bool weaponTransformOwned{ false };
     };
 
     [[nodiscard]] inline constexpr bool canApplyManualCycleHandAnimation(
-        const ManualCycleTwoHandEligibility& eligibility)
+        const ManualCycleHandAnimationEligibility& eligibility)
     {
-        return eligibility.twoHandGripActive &&
-               !eligibility.firingHandIsLeft &&
-               eligibility.weaponTransformOwned;
+        return eligibility.gripStateValid &&
+               !eligibility.firingHandIsLeft;
     }
 
     struct ManualCycleHandMotionSample

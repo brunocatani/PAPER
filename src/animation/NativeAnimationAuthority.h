@@ -109,7 +109,7 @@ namespace rock_reanimate::native_animation_authority
     void setLocalManualCycleTestEnabled(bool enabled);
     void setLocalReloadTestEnabled(bool enabled);
     void setLocalReloadPartialAuthorityEnabled(bool enabled);
-    void setManualCycleTwoHandAuthorityActive(bool active);
+    void setManualCycleHandAnimationEligible(bool eligible);
     void setManualCycleRockGripBaselines(
         const ManualCycleRockGripBaselines& baselines);
 
