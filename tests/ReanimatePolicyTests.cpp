@@ -55,6 +55,10 @@ int main()
                       true,
                       WeaponFixedHandRole::Support) ==
                   WeaponFixedHandTargetMode::NativeWeaponRelative);
+    static_assert(!shouldPublishWeaponFixedSupportHand(false, false));
+    static_assert(shouldPublishWeaponFixedSupportHand(false, true));
+    static_assert(shouldPublishWeaponFixedSupportHand(true, false));
+    static_assert(shouldPublishWeaponFixedSupportHand(true, true));
 
     static_assert(!isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{}));
@@ -69,6 +73,10 @@ int main()
     static_assert(isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{
             .shotgun = true,
+        }));
+    static_assert(isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{
+            .manualCycleAnimationKeyword = true,
         }));
 
     constexpr ManualCycleHandAnimationEligibility eligible{
@@ -108,6 +116,44 @@ int main()
     static_assert(updateManualCycleHandMotionQualification(
         true,
         ManualCycleHandMotionSample{}));
+
+    constexpr AuthoredSupportGripMatchSample authoredSupportGripMatch{
+        .transformDelta = {
+            .translationGameUnits =
+                kAuthoredSupportGripTranslationToleranceGameUnits,
+            .rotationDegrees =
+                kAuthoredSupportGripRotationToleranceDegrees,
+        },
+        .scaleDelta = kAuthoredSupportGripScaleTolerance,
+        .supportGripValid = true,
+        .authoredGripValid = true,
+    };
+    static_assert(isAuthoredSupportGripMatch(authoredSupportGripMatch));
+    static_assert([=] {
+        auto input = authoredSupportGripMatch;
+        input.supportGripValid = false;
+        return !isAuthoredSupportGripMatch(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportGripMatch;
+        input.authoredGripValid = false;
+        return !isAuthoredSupportGripMatch(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportGripMatch;
+        input.transformDelta.translationGameUnits += 0.001f;
+        return !isAuthoredSupportGripMatch(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportGripMatch;
+        input.transformDelta.rotationDegrees += 0.001f;
+        return !isAuthoredSupportGripMatch(input);
+    }());
+    static_assert([=] {
+        auto input = authoredSupportGripMatch;
+        input.scaleDelta += 0.001f;
+        return !isAuthoredSupportGripMatch(input);
+    }());
 
     constexpr AffineTransform nativeWeaponModel{ 2.0f, 40.0f };
     constexpr AffineTransform nativeHandModel{ 4.0f, 80.0f };
@@ -237,6 +283,15 @@ int main()
     static_assert(classifyBone("COM") == 0);
     static_assert(classifyBone("SPINE1") == 0);
     static_assert(classifyBone("WeaponMagazine") == 0);
+    static_assert(containsIgnoreCase(
+        "AnimsDakVintageRepeater",
+        "repeater"));
+    static_assert(containsIgnoreCase(
+        "DLC03_ma_LeverGun",
+        "LEVER"));
+    static_assert(!containsIgnoreCase(
+        "WeaponTypeRifle",
+        "lever"));
 
     assert(isRequested(classifyBone("LArm_Hand"), kArms));
     assert(isRequested(classifyBone("LArm_Hand"), kHands));

@@ -41,12 +41,15 @@ namespace rock_reanimate::native_animation_authority
         bool localManualCycleLeaseActive{ false };
     };
 
-    struct ManualCycleRockGripBaselines
+    struct ManualCycleRockGripSnapshot
     {
         RE::NiTransform rightHandInWeapon{};
-        RE::NiTransform leftHandInWeapon{};
+        RE::NiTransform leftSupportHandInWeapon{};
+        RE::NiTransform authoredLeftHandInWeapon{};
+        std::uint64_t weaponGenerationKey{ 0 };
         bool rightValid{ false };
-        bool leftValid{ false };
+        bool leftSupportGripValid{ false };
+        bool authoredLeftValid{ false };
     };
 
     struct CapturedTransform
@@ -110,8 +113,8 @@ namespace rock_reanimate::native_animation_authority
     void setLocalReloadTestEnabled(bool enabled);
     void setLocalReloadPartialAuthorityEnabled(bool enabled);
     void setManualCycleHandAnimationEligible(bool eligible);
-    void setManualCycleRockGripBaselines(
-        const ManualCycleRockGripBaselines& baselines);
+    void setManualCycleRockGripSnapshot(
+        const ManualCycleRockGripSnapshot& snapshot);
 
     void beginRockFrame(float deltaSeconds);
     [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);

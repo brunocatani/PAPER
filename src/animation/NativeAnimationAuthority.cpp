@@ -46,6 +46,17 @@ namespace rock_reanimate::native_animation_authority
             "ROCK_Reanimate_NativeManualCycle";
         constexpr std::string_view kFortyFourAnimationKeyword = "Anims44";
         constexpr std::string_view kRevolverAnimationKeywordToken = "Revolver";
+        constexpr std::uint32_t kWeaponTypeShotgunKeywordFormId = 0x00226454;
+        constexpr std::array<std::string_view, 3>
+            kManualCycleAnimationKeywordTokens{
+                "BoltAction",
+                "Lever",
+                "Repeater",
+            };
+        constexpr std::array<std::string_view, 1>
+            kShotgunAnimationKeywordTokens{
+                "Shotgun",
+            };
         constexpr std::uint32_t kImplementedFlags = native_animation_authority_policy::kReloadPose;
         constexpr std::array<std::string_view, 15> kManualCyclePrimaryFingerBoneNames{
             "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
@@ -125,6 +136,15 @@ namespace rock_reanimate::native_animation_authority
             bool resolvedHandWorldValid{ false };
         };
 
+        struct ResolvedManualCycleRockGripBaselines
+        {
+            RE::NiTransform rightHandInWeapon{};
+            RE::NiTransform leftHandInWeapon{};
+            std::uint64_t weaponGenerationKey{ 0 };
+            bool rightValid{ false };
+            bool authoredLeftActive{ false };
+        };
+
         enum class ManualCycleHandVisualResult : std::uint8_t
         {
             Failed,
@@ -158,7 +178,8 @@ namespace rock_reanimate::native_animation_authority
         std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
         // Optional frame-local live-grip baselines copied from ROCK on the
         // game thread. Never retained across authority loss or skeleton teardown.
-        ManualCycleRockGripBaselines s_manualCycleRockGripBaselines{};
+        ResolvedManualCycleRockGripBaselines
+            s_manualCycleRockGripBaselines{};
         ControllerAimFrame s_sourceAimFrame{};
         WeaponFireHandlerFn s_originalWeaponFire{ nullptr };
         ReloadStateChangeHandlerFn s_originalReloadStateChange{ nullptr };
@@ -824,7 +845,36 @@ namespace rock_reanimate::native_animation_authority
             return keywords &&
                    (keywords->HasKeywordString(kFortyFourAnimationKeyword) ||
                        keywords->ContainsKeywordString(
-                           kRevolverAnimationKeywordToken));
+                       kRevolverAnimationKeywordToken));
+        }
+
+        template <std::size_t TokenCount>
+        [[nodiscard]] bool hasKeywordEditorIdToken(
+            const RE::BGSKeywordForm* keywords,
+            const std::array<std::string_view, TokenCount>& tokens)
+        {
+            if (!keywords) {
+                return false;
+            }
+
+            bool matched = false;
+            keywords->ForEachKeyword(
+                [&](const RE::BGSKeyword* keyword) {
+                    const char* editorId =
+                        keyword ? keyword->formEditorID.c_str() : nullptr;
+                    if (editorId) {
+                        const std::string_view value{ editorId };
+                        for (const auto token : tokens) {
+                            if (native_animation_authority_policy::
+                                    containsIgnoreCase(value, token)) {
+                                matched = true;
+                                return RE::BSContainer::ForEachResult::kStop;
+                            }
+                        }
+                    }
+                    return RE::BSContainer::ForEachResult::kContinue;
+                });
+            return matched;
         }
 
         [[nodiscard]] bool usesRevolverFireAnimation(
@@ -835,17 +885,45 @@ namespace rock_reanimate::native_animation_authority
                    hasRevolverAnimationKeyword(weaponData.keywords);
         }
 
+        [[nodiscard]] bool usesManualCycleAnimationKeyword(
+            const RE::TESObjectWEAP& weapon,
+            const RE::TESObjectWEAP::InstanceData& weaponData)
+        {
+            return hasKeywordEditorIdToken(
+                       &weapon,
+                       kManualCycleAnimationKeywordTokens) ||
+                   hasKeywordEditorIdToken(
+                       weaponData.keywords,
+                       kManualCycleAnimationKeywordTokens);
+        }
+
+        [[nodiscard]] bool hasShotgunKeyword(
+            const RE::BGSKeywordForm* keywords)
+        {
+            return keywords &&
+                   (keywords->HasKeywordID(
+                        kWeaponTypeShotgunKeywordFormId) ||
+                       hasKeywordEditorIdToken(
+                           keywords,
+                           kShotgunAnimationKeywordTokens));
+        }
+
         [[nodiscard]] bool isShotgun(
-            const RE::TESObjectWEAP& weapon)
+            const RE::TESObjectWEAP& weapon,
+            const RE::TESObjectWEAP::InstanceData& weaponData)
         {
             rock::provider::RockProviderWeaponClassificationV1 classification{};
-            return rockApiClient().queryEquippedWeaponClassification(
-                       classification) &&
-                   classification.valid != 0 &&
-                   classification.formId == weapon.formID &&
-                   rock::provider::hasWeaponKeywordFlagV1(
-                       classification.keywordFlags,
-                       rock::provider::RockProviderWeaponKeywordFlagV1::Shotgun);
+            const bool rockClassifiesCurrentWeaponAsShotgun =
+                rockApiClient().queryEquippedWeaponClassification(
+                    classification) &&
+                classification.valid != 0 &&
+                classification.formId == weapon.formID &&
+                rock::provider::hasWeaponKeywordFlagV1(
+                    classification.keywordFlags,
+                    rock::provider::RockProviderWeaponKeywordFlagV1::Shotgun);
+            return rockClassifiesCurrentWeaponAsShotgun ||
+                   hasShotgunKeyword(&weapon) ||
+                   hasShotgunKeyword(weaponData.keywords);
         }
 
         void cancelLocalManualCycleTestLease()
@@ -920,7 +998,11 @@ namespace rock_reanimate::native_animation_authority
                         .revolverAnimation = usesRevolverFireAnimation(
                             *weapon,
                             *weaponData),
-                        .shotgun = isShotgun(*weapon),
+                        .shotgun = isShotgun(*weapon, *weaponData),
+                        .manualCycleAnimationKeyword =
+                            usesManualCycleAnimationKeyword(
+                                *weapon,
+                                *weaponData),
                     })) {
                 return handled;
             }
@@ -1230,7 +1312,7 @@ namespace rock_reanimate::native_animation_authority
             if (!handRebase.captured) {
                 const bool rockBaselineValid =
                     hand == frik_visual_authority::Hand::Left ?
-                    s_manualCycleRockGripBaselines.leftValid :
+                    s_manualCycleRockGripBaselines.authoredLeftActive :
                     s_manualCycleRockGripBaselines.rightValid;
                 const RE::NiTransform& rockBaselineHandInWeapon =
                     hand == frik_visual_authority::Hand::Left ?
@@ -1415,7 +1497,11 @@ namespace rock_reanimate::native_animation_authority
                             s_framePartialReloadExpected,
                             native_animation_authority_policy::
                                 WeaponFixedHandRole::Primary));
-            if (s_nativeHandPoseCapture.supportHandValid) {
+            if (s_nativeHandPoseCapture.supportHandValid &&
+                native_animation_authority_policy::
+                    shouldPublishWeaponFixedSupportHand(
+                        s_framePartialReloadExpected,
+                        s_manualCycleRockGripBaselines.authoredLeftActive)) {
                 (void)publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_nativeHandPoseCapture.supportHandInWeapon,
@@ -2116,25 +2202,60 @@ namespace rock_reanimate::native_animation_authority
         }
     }
 
-    void setManualCycleRockGripBaselines(
-        const ManualCycleRockGripBaselines& baselines)
+    void setManualCycleRockGripSnapshot(
+        const ManualCycleRockGripSnapshot& snapshot)
     {
-        s_manualCycleRockGripBaselines = {};
-        if (!s_manualCycleHandAnimationEligible.load(std::memory_order_acquire)) {
-            return;
+        ResolvedManualCycleRockGripBaselines resolved{};
+        if (s_manualCycleHandAnimationEligible.load(
+                std::memory_order_acquire)) {
+            resolved.weaponGenerationKey = snapshot.weaponGenerationKey;
+            if (snapshot.rightValid &&
+                finiteTransform(snapshot.rightHandInWeapon)) {
+                resolved.rightHandInWeapon = snapshot.rightHandInWeapon;
+                resolved.rightValid = true;
+            }
+            if (snapshot.leftSupportGripValid &&
+                snapshot.authoredLeftValid &&
+                finiteTransform(snapshot.leftSupportHandInWeapon) &&
+                finiteTransform(snapshot.authoredLeftHandInWeapon)) {
+                const auto transformDelta = measureManualCycleHandMotion(
+                    snapshot.leftSupportHandInWeapon,
+                    snapshot.authoredLeftHandInWeapon);
+                const float scaleDelta = std::abs(
+                    snapshot.leftSupportHandInWeapon.scale -
+                    snapshot.authoredLeftHandInWeapon.scale);
+                if (native_animation_authority_policy::
+                        isAuthoredSupportGripMatch(
+                            native_animation_authority_policy::
+                                AuthoredSupportGripMatchSample{
+                                    .transformDelta = transformDelta,
+                                    .scaleDelta = scaleDelta,
+                                    .supportGripValid =
+                                        snapshot.leftSupportGripValid,
+                                    .authoredGripValid =
+                                        snapshot.authoredLeftValid,
+                                })) {
+                    resolved.leftHandInWeapon =
+                        snapshot.leftSupportHandInWeapon;
+                    resolved.authoredLeftActive = true;
+                }
+            }
         }
-        if (baselines.rightValid &&
-            finiteTransform(baselines.rightHandInWeapon)) {
-            s_manualCycleRockGripBaselines.rightHandInWeapon =
-                baselines.rightHandInWeapon;
-            s_manualCycleRockGripBaselines.rightValid = true;
+
+        const bool weaponGenerationChanged =
+            s_manualCycleRockGripBaselines.weaponGenerationKey !=
+            resolved.weaponGenerationKey;
+        const bool authoredLeftStateChanged =
+            s_manualCycleRockGripBaselines.authoredLeftActive !=
+            resolved.authoredLeftActive;
+        if (weaponGenerationChanged) {
+            s_sourceAimFrame.manualCycleHandRebases = {};
+        } else if (authoredLeftStateChanged) {
+            s_sourceAimFrame.manualCycleHandRebases[
+                manualCycleHandIndex(
+                    frik_visual_authority::Hand::Left)] = {};
         }
-        if (baselines.leftValid &&
-            finiteTransform(baselines.leftHandInWeapon)) {
-            s_manualCycleRockGripBaselines.leftHandInWeapon =
-                baselines.leftHandInWeapon;
-            s_manualCycleRockGripBaselines.leftValid = true;
-        }
+        s_manualCycleRockGripBaselines = resolved;
     }
 
     void beginRockFrame(const float deltaSeconds)

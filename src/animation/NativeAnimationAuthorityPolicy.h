@@ -13,6 +13,9 @@ namespace rock_reanimate::native_animation_authority_policy
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
     inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 1.5f;
     inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 10.0f;
+    inline constexpr float kAuthoredSupportGripTranslationToleranceGameUnits = 0.05f;
+    inline constexpr float kAuthoredSupportGripRotationToleranceDegrees = 0.5f;
+    inline constexpr float kAuthoredSupportGripScaleTolerance = 0.001f;
 
     enum class LocalReloadLeaseEndReason : std::uint32_t
     {
@@ -101,6 +104,13 @@ namespace rock_reanimate::native_animation_authority_policy
             WeaponFixedHandTargetMode::LiveGripDelta;
     }
 
+    [[nodiscard]] inline constexpr bool shouldPublishWeaponFixedSupportHand(
+        const bool partialReload,
+        const bool authoredSupportGripActive)
+    {
+        return partialReload || authoredSupportGripActive;
+    }
+
     enum class LocalManualCycleLeaseEndReason : std::uint32_t
     {
         None = 0,
@@ -141,6 +151,7 @@ namespace rock_reanimate::native_animation_authority_policy
         bool boltAction{ false };
         bool revolverAnimation{ false };
         bool shotgun{ false };
+        bool manualCycleAnimationKeyword{ false };
     };
 
     [[nodiscard]] inline constexpr bool isManualCycleFireAnimationAllowed(
@@ -148,7 +159,8 @@ namespace rock_reanimate::native_animation_authority_policy
     {
         return eligibility.boltAction ||
                eligibility.revolverAnimation ||
-               eligibility.shotgun;
+               eligibility.shotgun ||
+               eligibility.manualCycleAnimationKeyword;
     }
 
     struct ManualCycleHandAnimationEligibility
@@ -169,6 +181,26 @@ namespace rock_reanimate::native_animation_authority_policy
         float translationGameUnits{ 0.0f };
         float rotationDegrees{ 0.0f };
     };
+
+    struct AuthoredSupportGripMatchSample
+    {
+        ManualCycleHandMotionSample transformDelta{};
+        float scaleDelta{ 0.0f };
+        bool supportGripValid{ false };
+        bool authoredGripValid{ false };
+    };
+
+    [[nodiscard]] inline constexpr bool isAuthoredSupportGripMatch(
+        const AuthoredSupportGripMatchSample& sample)
+    {
+        return sample.supportGripValid &&
+               sample.authoredGripValid &&
+               sample.transformDelta.translationGameUnits <=
+                   kAuthoredSupportGripTranslationToleranceGameUnits &&
+               sample.transformDelta.rotationDegrees <=
+                   kAuthoredSupportGripRotationToleranceDegrees &&
+               sample.scaleDelta <= kAuthoredSupportGripScaleTolerance;
+    }
 
     [[nodiscard]] inline constexpr bool updateManualCycleHandMotionQualification(
         const bool alreadyQualified,
@@ -347,6 +379,24 @@ namespace rock_reanimate::native_animation_authority_policy
     [[nodiscard]] constexpr bool startsWithIgnoreCase(std::string_view value, std::string_view prefix)
     {
         return value.size() >= prefix.size() && equalsIgnoreCase(value.substr(0, prefix.size()), prefix);
+    }
+
+    [[nodiscard]] constexpr bool containsIgnoreCase(
+        const std::string_view value,
+        const std::string_view token)
+    {
+        if (token.empty()) {
+            return true;
+        }
+        if (token.size() > value.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i <= value.size() - token.size(); ++i) {
+            if (equalsIgnoreCase(value.substr(i, token.size()), token)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /*

@@ -40,6 +40,24 @@ namespace
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
+    [[nodiscard]] bool hasAuthoredGripFlag(
+        const std::uint32_t flags,
+        const rock::provider::RockProviderAuthoredGripPoseFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    [[nodiscard]] bool isSupportGripKind(
+        const rock::provider::RockProviderWeaponPartGripKindV1 kind)
+    {
+        return kind ==
+                   rock::provider::RockProviderWeaponPartGripKindV1::
+                       SupportFullAuthority ||
+               kind ==
+                   rock::provider::RockProviderWeaponPartGripKindV1::
+                       SupportVisualOnly;
+    }
+
     void publishConfigState()
     {
         api::ReanimateConfigStateV1 state{};
@@ -73,22 +91,58 @@ namespace
         native_animation_authority::setManualCycleHandAnimationEligible(
             manualCycleEligible);
 
-        native_animation_authority::ManualCycleRockGripBaselines baselines{};
+        native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
+        snapshot.weaponGenerationKey =
+            valid ? s_gripState.weaponGenerationKey : 0;
         if (valid && hasGripFlag(
                 s_gripState.flags,
                 rock::provider::RockProviderEquippedWeaponGripStateFlagV1::RightHandInWeaponValid)) {
-            baselines.rightHandInWeapon =
+            snapshot.rightHandInWeapon =
                 api_transform::toNi(s_gripState.rightHandInWeapon);
-            baselines.rightValid = true;
+            snapshot.rightValid = true;
         }
-        if (valid && hasGripFlag(
-                s_gripState.flags,
-                rock::provider::RockProviderEquippedWeaponGripStateFlagV1::LeftHandInWeaponValid)) {
-            baselines.leftHandInWeapon =
-                api_transform::toNi(s_gripState.leftHandInWeapon);
-            baselines.leftValid = true;
+
+        rock::provider::RockProviderWeaponPartGripStateV1 leftPartGrip{};
+        const bool leftSupportCandidate =
+            valid &&
+            s_gripState.weaponFormId != 0 &&
+            s_gripState.weaponGenerationKey != 0 &&
+            rockApiClient().queryWeaponPartGripState(
+                rock::provider::RockProviderHand::Left,
+                leftPartGrip) &&
+            leftPartGrip.hand == rock::provider::RockProviderHand::Left &&
+            leftPartGrip.active != 0 &&
+            isSupportGripKind(leftPartGrip.gripKind) &&
+            leftPartGrip.hasHandPartLocal != 0 &&
+            leftPartGrip.handPartLocalSpace ==
+                rock::provider::RockProviderWeaponPartGripLocalSpaceV1::
+                    WeaponRootLocal &&
+            leftPartGrip.weaponGenerationKey ==
+                s_gripState.weaponGenerationKey;
+
+        rock::provider::RockProviderAuthoredGripPoseV1 authoredGrip{};
+        const bool authoredSupportMatchesIdentity =
+            leftSupportCandidate &&
+            rockApiClient().querySelectedAuthoredGripPose(authoredGrip) &&
+            hasAuthoredGripFlag(
+                authoredGrip.flags,
+                rock::provider::RockProviderAuthoredGripPoseFlagV1::Valid) &&
+            hasAuthoredGripFlag(
+                authoredGrip.flags,
+                rock::provider::RockProviderAuthoredGripPoseFlagV1::
+                    LeftHandValid) &&
+            authoredGrip.weaponGenerationKey ==
+                s_gripState.weaponGenerationKey &&
+            authoredGrip.weaponFormId == s_gripState.weaponFormId;
+        if (authoredSupportMatchesIdentity) {
+            snapshot.leftSupportHandInWeapon =
+                api_transform::toNi(leftPartGrip.handPartLocal);
+            snapshot.authoredLeftHandInWeapon =
+                api_transform::toNi(authoredGrip.leftHandInWeapon);
+            snapshot.leftSupportGripValid = true;
+            snapshot.authoredLeftValid = true;
         }
-        native_animation_authority::setManualCycleRockGripBaselines(baselines);
+        native_animation_authority::setManualCycleRockGripSnapshot(snapshot);
     }
 
     void configureRuntime(const bool operational)

@@ -25,6 +25,11 @@ namespace rock_reanimate
             rock::provider::RockProviderNativeAnimationAuthorityStateV1& outState) const;
         [[nodiscard]] bool queryEquippedWeaponGripState(
             rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
+        [[nodiscard]] bool queryWeaponPartGripState(
+            rock::provider::RockProviderHand hand,
+            rock::provider::RockProviderWeaponPartGripStateV1& outState) const;
+        [[nodiscard]] bool querySelectedAuthoredGripPose(
+            rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
         [[nodiscard]] bool queryEquippedWeaponClassification(
             rock::provider::RockProviderWeaponClassificationV1& outClassification) const;
         [[nodiscard]] bool setHandVisualAuthority(

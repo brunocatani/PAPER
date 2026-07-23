@@ -20,7 +20,9 @@ namespace rock_reanimate
             static_cast<std::uint32_t>(
                 rock::provider::RockProviderConsumerCapabilityV1::NativeAnimationRuntimeProvider) |
             static_cast<std::uint32_t>(
-                rock::provider::RockProviderConsumerCapabilityV1::DebugOverlayPublication);
+                rock::provider::RockProviderConsumerCapabilityV1::DebugOverlayPublication) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::PoseReadback);
         constexpr std::uint32_t kRollingLeaseFrames = 3;
     }
 
@@ -60,6 +62,8 @@ namespace rock_reanimate
             !rock::provider::supportsNativeAnimationRuntimeProviderV1(limits) ||
             !rock::provider::supportsDebugOverlayPublicationV1(limits) ||
             !rock::provider::supportsPresentedHandFramesV1(limits) ||
+            !rock::provider::supportsWeaponPartGripStateV1(limits) ||
+            !rock::provider::supportsPoseReadbackV1() ||
             !rock::provider::supportsNativeAnimationAuthorityV1(limits)) {
             REANIMATE_LOG_ERROR(
                 Api,
@@ -197,6 +201,25 @@ namespace rock_reanimate
         outState = {};
         return ready() &&
                _api->getEquippedWeaponGripStateV1(_ownerToken, &outState);
+    }
+
+    bool RockApiClient::queryWeaponPartGripState(
+        const rock::provider::RockProviderHand hand,
+        rock::provider::RockProviderWeaponPartGripStateV1& outState) const
+    {
+        outState = {};
+        return ready() && _api->getWeaponPartGripStateV1(hand, &outState);
+    }
+
+    bool RockApiClient::querySelectedAuthoredGripPose(
+        rock::provider::RockProviderAuthoredGripPoseV1& outPose) const
+    {
+        outPose = {};
+        return ready() &&
+               _api->getSelectedAuthoredGripPoseV1(
+                   _ownerToken,
+                   &outPose) ==
+                   rock::provider::RockProviderResultV1::Ok;
     }
 
     bool RockApiClient::queryEquippedWeaponClassification(
