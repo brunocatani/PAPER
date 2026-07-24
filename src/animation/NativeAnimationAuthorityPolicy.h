@@ -151,6 +151,7 @@ namespace rock_reanimate::native_animation_authority_policy
         bool boltAction{ false };
         bool revolverAnimation{ false };
         bool shotgun{ false };
+        bool rifle{ false };
         bool manualCycleAnimationKeyword{ false };
     };
 
@@ -160,6 +161,7 @@ namespace rock_reanimate::native_animation_authority_policy
         return eligibility.boltAction ||
                eligibility.revolverAnimation ||
                eligibility.shotgun ||
+               eligibility.rifle ||
                eligibility.manualCycleAnimationKeyword;
     }
 
@@ -174,6 +176,57 @@ namespace rock_reanimate::native_animation_authority_policy
     {
         return eligibility.gripStateValid &&
                !eligibility.firingHandIsLeft;
+    }
+
+    struct ManualCycleAuthoredSupportGripLatchState
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        bool active{ false };
+    };
+
+    struct ManualCycleAuthoredSupportGripLatchObservation
+    {
+        std::uint64_t observedWeaponGenerationKey{ 0 };
+        bool leaseActive{ false };
+        bool leaseStarted{ false };
+        bool authoredSupportGripActive{ false };
+        bool activeNonAuthoredGripObserved{ false };
+    };
+
+    /*
+     * ROCK can clear its support-grip report after Reanimate publishes the
+     * higher-priority hand authority needed for a native manual cycle. Latch
+     * only the authored grip observed at that cycle's entry, then retain it
+     * across an absent post-ROCK report. A weapon change, lease end, or a
+     * positively observed non-authored grip invalidates the latch.
+     */
+    [[nodiscard]] inline constexpr ManualCycleAuthoredSupportGripLatchState
+        advanceManualCycleAuthoredSupportGripLatch(
+            const ManualCycleAuthoredSupportGripLatchState state,
+            const ManualCycleAuthoredSupportGripLatchObservation& observation)
+    {
+        if (!observation.leaseActive) {
+            return {};
+        }
+        if (observation.leaseStarted) {
+            if (!observation.authoredSupportGripActive ||
+                observation.observedWeaponGenerationKey == 0) {
+                return {};
+            }
+            return {
+                .weaponGenerationKey =
+                    observation.observedWeaponGenerationKey,
+                .active = true,
+            };
+        }
+        if (!state.active ||
+            observation.observedWeaponGenerationKey == 0 ||
+            observation.observedWeaponGenerationKey !=
+                state.weaponGenerationKey ||
+            observation.activeNonAuthoredGripObserved) {
+            return {};
+        }
+        return state;
     }
 
     struct ManualCycleHandMotionSample

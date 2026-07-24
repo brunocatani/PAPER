@@ -145,6 +145,13 @@ namespace rock_reanimate::native_animation_authority
             bool authoredLeftActive{ false };
         };
 
+        struct LatchedManualCycleAuthoredSupportGrip
+        {
+            RE::NiTransform handInWeapon{};
+            native_animation_authority_policy::
+                ManualCycleAuthoredSupportGripLatchState state{};
+        };
+
         enum class ManualCycleHandVisualResult : std::uint8_t
         {
             Failed,
@@ -176,10 +183,15 @@ namespace rock_reanimate::native_animation_authority
         NativeHandBoneCache s_nativeHandBoneCache{};
         NativeHandPoseCapture s_nativeHandPoseCapture{};
         std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
-        // Optional frame-local live-grip baselines copied from ROCK on the
-        // game thread. Never retained across authority loss or skeleton teardown.
+        // Current provider observation and the effective baselines are copied
+        // on the game thread. The effective left baseline may retain only the
+        // authored support grip latched at a manual cycle's entry.
+        ResolvedManualCycleRockGripBaselines
+            s_latestManualCycleRockGripBaselines{};
         ResolvedManualCycleRockGripBaselines
             s_manualCycleRockGripBaselines{};
+        LatchedManualCycleAuthoredSupportGrip
+            s_manualCycleAuthoredSupportGripLatch{};
         ControllerAimFrame s_sourceAimFrame{};
         WeaponFireHandlerFn s_originalWeaponFire{ nullptr };
         ReloadStateChangeHandlerFn s_originalReloadStateChange{ nullptr };
@@ -295,6 +307,51 @@ namespace rock_reanimate::native_animation_authority
             const frik_visual_authority::Hand hand)
         {
             return hand == frik_visual_authority::Hand::Left ? 1u : 0u;
+        }
+
+        void setEffectiveManualCycleRockGripBaselines(
+            const ResolvedManualCycleRockGripBaselines& resolved)
+        {
+            const bool weaponGenerationChanged =
+                s_manualCycleRockGripBaselines.weaponGenerationKey !=
+                resolved.weaponGenerationKey;
+            const bool authoredLeftStateChanged =
+                s_manualCycleRockGripBaselines.authoredLeftActive !=
+                resolved.authoredLeftActive;
+            if (weaponGenerationChanged) {
+                s_sourceAimFrame.manualCycleHandRebases = {};
+            } else if (authoredLeftStateChanged) {
+                s_sourceAimFrame.manualCycleHandRebases[
+                    manualCycleHandIndex(
+                        frik_visual_authority::Hand::Left)] = {};
+            }
+            s_manualCycleRockGripBaselines = resolved;
+        }
+
+        void refreshEffectiveManualCycleRockGripBaselines(
+            const bool manualCycleLeaseActive)
+        {
+            auto effective = s_latestManualCycleRockGripBaselines;
+            if (manualCycleLeaseActive) {
+                effective.authoredLeftActive = false;
+                const auto& latch =
+                    s_manualCycleAuthoredSupportGripLatch;
+                if (latch.state.active &&
+                    latch.state.weaponGenerationKey ==
+                        effective.weaponGenerationKey) {
+                    effective.leftHandInWeapon =
+                        latch.handInWeapon;
+                    effective.authoredLeftActive = true;
+                }
+            }
+            setEffectiveManualCycleRockGripBaselines(effective);
+        }
+
+        void clearManualCycleRockGripState()
+        {
+            s_latestManualCycleRockGripBaselines = {};
+            s_manualCycleAuthoredSupportGripLatch = {};
+            setEffectiveManualCycleRockGripBaselines({});
         }
 
         [[nodiscard]] bool clearManualCycleVisualForHand(
@@ -908,18 +965,27 @@ namespace rock_reanimate::native_animation_authority
                            kShotgunAnimationKeywordTokens));
         }
 
+        [[nodiscard]] bool queryCurrentWeaponClassification(
+            const RE::TESObjectWEAP& weapon,
+            rock::provider::RockProviderWeaponClassificationV1& outClassification)
+        {
+            outClassification = {};
+            return rockApiClient().queryEquippedWeaponClassification(
+                       outClassification) &&
+                   outClassification.valid != 0 &&
+                   outClassification.formId == weapon.formID;
+        }
+
         [[nodiscard]] bool isShotgun(
             const RE::TESObjectWEAP& weapon,
-            const RE::TESObjectWEAP::InstanceData& weaponData)
+            const RE::TESObjectWEAP::InstanceData& weaponData,
+            const rock::provider::RockProviderWeaponClassificationV1*
+                currentClassification)
         {
-            rock::provider::RockProviderWeaponClassificationV1 classification{};
             const bool rockClassifiesCurrentWeaponAsShotgun =
-                rockApiClient().queryEquippedWeaponClassification(
-                    classification) &&
-                classification.valid != 0 &&
-                classification.formId == weapon.formID &&
+                currentClassification &&
                 rock::provider::hasWeaponKeywordFlagV1(
-                    classification.keywordFlags,
+                    currentClassification->keywordFlags,
                     rock::provider::RockProviderWeaponKeywordFlagV1::Shotgun);
             return rockClassifiesCurrentWeaponAsShotgun ||
                    hasShotgunKeyword(&weapon) ||
@@ -990,6 +1056,13 @@ namespace rock_reanimate::native_animation_authority
 
             RE::TESObjectWEAP* weapon = nullptr;
             const auto* weaponData = currentPlayerWeaponInstanceData(weapon);
+            rock::provider::RockProviderWeaponClassificationV1
+                weaponClassification{};
+            const bool currentWeaponClassificationValid =
+                weapon &&
+                queryCurrentWeaponClassification(
+                    *weapon,
+                    weaponClassification);
             if (!weapon || !weaponData ||
                 !native_animation_authority_policy::isManualCycleFireAnimationAllowed(
                     native_animation_authority_policy::ManualCycleWeaponEligibility{
@@ -998,7 +1071,17 @@ namespace rock_reanimate::native_animation_authority
                         .revolverAnimation = usesRevolverFireAnimation(
                             *weapon,
                             *weaponData),
-                        .shotgun = isShotgun(*weapon, *weaponData),
+                        .shotgun = isShotgun(
+                            *weapon,
+                            *weaponData,
+                            currentWeaponClassificationValid ?
+                                &weaponClassification :
+                                nullptr),
+                        .rifle =
+                            currentWeaponClassificationValid &&
+                            weaponClassification.sizeClass ==
+                                rock::provider::
+                                    RockProviderWeaponSizeClassV1::Rifle,
                         .manualCycleAnimationKeyword =
                             usesManualCycleAnimationKeyword(
                                 *weapon,
@@ -1956,9 +2039,39 @@ namespace rock_reanimate::native_animation_authority
                             s_localManualCycleReloadEndSequenceAtArm.load(
                                 std::memory_order_acquire),
                     };
+
+                const bool leaseActive =
+                    s_localManualCycleTestLeaseActive.load(
+                        std::memory_order_acquire);
+                const auto latchState =
+                    native_animation_authority_policy::
+                        advanceManualCycleAuthoredSupportGripLatch(
+                            {},
+                            native_animation_authority_policy::
+                                ManualCycleAuthoredSupportGripLatchObservation{
+                                    .observedWeaponGenerationKey =
+                                        s_latestManualCycleRockGripBaselines.
+                                            weaponGenerationKey,
+                                    .leaseActive = leaseActive,
+                                    .leaseStarted = true,
+                                    .authoredSupportGripActive =
+                                        s_latestManualCycleRockGripBaselines.
+                                            authoredLeftActive,
+                                });
+                s_manualCycleAuthoredSupportGripLatch = {};
+                if (latchState.active) {
+                    s_manualCycleAuthoredSupportGripLatch.handInWeapon =
+                        s_latestManualCycleRockGripBaselines.
+                            leftHandInWeapon;
+                    s_manualCycleAuthoredSupportGripLatch.state =
+                        latchState;
+                }
+                refreshEffectiveManualCycleRockGripBaselines(leaseActive);
             }
 
             if (!s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
+                s_manualCycleAuthoredSupportGripLatch = {};
+                refreshEffectiveManualCycleRockGripBaselines(false);
                 return requestChanged;
             }
 
@@ -1975,6 +2088,8 @@ namespace rock_reanimate::native_animation_authority
             s_localManualCycleLeaseState = step.state;
             if (!step.active()) {
                 s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
+                s_manualCycleAuthoredSupportGripLatch = {};
+                refreshEffectiveManualCycleRockGripBaselines(false);
                 REANIMATE_LOG_DEBUG(Animation,
                     "Native manual-cycle hand-only authority released: {}",
                     localManualCycleLeaseEndReasonName(step.endReason));
@@ -2135,7 +2250,7 @@ namespace rock_reanimate::native_animation_authority
         s_runtimeEnabled.store(enabled && s_hookInstalled.load(std::memory_order_acquire), std::memory_order_release);
         if (!enabled) {
             s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
-            s_manualCycleRockGripBaselines = {};
+            clearManualCycleRockGripState();
             cancelLocalManualCycleTestLease();
             const DWORD ownerThread =
                 s_ownerThreadId.load(std::memory_order_acquire);
@@ -2155,7 +2270,7 @@ namespace rock_reanimate::native_animation_authority
             s_weaponFireHookInstalled.load(std::memory_order_acquire);
         s_localManualCycleTestEnabled.store(effectiveEnabled, std::memory_order_release);
         if (!effectiveEnabled) {
-            s_manualCycleRockGripBaselines = {};
+            clearManualCycleRockGripState();
             cancelLocalManualCycleTestLease();
         }
     }
@@ -2192,7 +2307,7 @@ namespace rock_reanimate::native_animation_authority
             effectiveEligibility,
             std::memory_order_acq_rel);
         if (!effectiveEligibility) {
-            s_manualCycleRockGripBaselines = {};
+            clearManualCycleRockGripState();
         }
         if (wasEligible && !effectiveEligibility &&
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
@@ -2242,20 +2357,40 @@ namespace rock_reanimate::native_animation_authority
             }
         }
 
-        const bool weaponGenerationChanged =
-            s_manualCycleRockGripBaselines.weaponGenerationKey !=
-            resolved.weaponGenerationKey;
-        const bool authoredLeftStateChanged =
-            s_manualCycleRockGripBaselines.authoredLeftActive !=
-            resolved.authoredLeftActive;
-        if (weaponGenerationChanged) {
-            s_sourceAimFrame.manualCycleHandRebases = {};
-        } else if (authoredLeftStateChanged) {
-            s_sourceAimFrame.manualCycleHandRebases[
-                manualCycleHandIndex(
-                    frik_visual_authority::Hand::Left)] = {};
+        s_latestManualCycleRockGripBaselines = resolved;
+        const bool manualCycleLeaseActive =
+            s_localManualCycleTestLeaseActive.load(
+                std::memory_order_acquire);
+        if (manualCycleLeaseActive) {
+            const bool activeNonAuthoredGripObserved =
+                snapshot.leftPartGripStateValid &&
+                snapshot.leftPartGripActive &&
+                (!snapshot.leftSupportGripValid ||
+                    (snapshot.authoredLeftValid &&
+                        !resolved.authoredLeftActive));
+            const auto latchState =
+                native_animation_authority_policy::
+                    advanceManualCycleAuthoredSupportGripLatch(
+                        s_manualCycleAuthoredSupportGripLatch.state,
+                        native_animation_authority_policy::
+                            ManualCycleAuthoredSupportGripLatchObservation{
+                                .observedWeaponGenerationKey =
+                                    resolved.weaponGenerationKey,
+                                .leaseActive = true,
+                                .activeNonAuthoredGripObserved =
+                                    activeNonAuthoredGripObserved,
+                            });
+            if (latchState.active) {
+                s_manualCycleAuthoredSupportGripLatch.state =
+                    latchState;
+            } else {
+                s_manualCycleAuthoredSupportGripLatch = {};
+            }
+        } else {
+            s_manualCycleAuthoredSupportGripLatch = {};
         }
-        s_manualCycleRockGripBaselines = resolved;
+        refreshEffectiveManualCycleRockGripBaselines(
+            manualCycleLeaseActive);
     }
 
     void beginRockFrame(const float deltaSeconds)
@@ -2459,7 +2594,7 @@ namespace rock_reanimate::native_animation_authority
         s_localReloadPartialAuthorityEnabled.store(false, std::memory_order_release);
         s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
         s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
-        s_manualCycleRockGripBaselines = {};
+        clearManualCycleRockGripState();
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
         cancelLocalManualCycleTestLease();
         s_localReloadLeaseState = {};

@@ -76,6 +76,10 @@ int main()
         }));
     static_assert(isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{
+            .rifle = true,
+        }));
+    static_assert(isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{
             .manualCycleAnimationKeyword = true,
         }));
 
@@ -94,6 +98,57 @@ int main()
         input.firingHandIsLeft = true;
         return !canApplyManualCycleHandAnimation(input);
     }());
+
+    constexpr auto authoredSupportGripLatch =
+        advanceManualCycleAuthoredSupportGripLatch(
+            {},
+            ManualCycleAuthoredSupportGripLatchObservation{
+                .observedWeaponGenerationKey = 42,
+                .leaseActive = true,
+                .leaseStarted = true,
+                .authoredSupportGripActive = true,
+            });
+    static_assert(authoredSupportGripLatch.active);
+    static_assert(
+        authoredSupportGripLatch.weaponGenerationKey == 42);
+    static_assert(
+        advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
+                .observedWeaponGenerationKey = 42,
+                .leaseActive = true,
+            }).active);
+    static_assert(
+        !advanceManualCycleAuthoredSupportGripLatch(
+            {},
+            ManualCycleAuthoredSupportGripLatchObservation{
+                .observedWeaponGenerationKey = 42,
+                .leaseActive = true,
+                .leaseStarted = true,
+                .authoredSupportGripActive = false,
+            }).active);
+    static_assert(
+        !advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
+                .observedWeaponGenerationKey = 42,
+                .leaseActive = true,
+                .activeNonAuthoredGripObserved = true,
+            }).active);
+    static_assert(
+        !advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
+                .observedWeaponGenerationKey = 43,
+                .leaseActive = true,
+            }).active);
+    static_assert(
+        !advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
+                .observedWeaponGenerationKey = 42,
+                .leaseActive = false,
+            }).active);
 
     static_assert(!updateManualCycleHandMotionQualification(
         false,

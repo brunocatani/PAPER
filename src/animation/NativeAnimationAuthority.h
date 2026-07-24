@@ -48,6 +48,8 @@ namespace rock_reanimate::native_animation_authority
         RE::NiTransform authoredLeftHandInWeapon{};
         std::uint64_t weaponGenerationKey{ 0 };
         bool rightValid{ false };
+        bool leftPartGripStateValid{ false };
+        bool leftPartGripActive{ false };
         bool leftSupportGripValid{ false };
         bool authoredLeftValid{ false };
     };

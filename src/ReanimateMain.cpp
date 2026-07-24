@@ -103,15 +103,20 @@ namespace
         }
 
         rock::provider::RockProviderWeaponPartGripStateV1 leftPartGrip{};
-        const bool leftSupportCandidate =
+        const bool leftPartGripStateValid =
             valid &&
             s_gripState.weaponFormId != 0 &&
             s_gripState.weaponGenerationKey != 0 &&
             rockApiClient().queryWeaponPartGripState(
                 rock::provider::RockProviderHand::Left,
                 leftPartGrip) &&
-            leftPartGrip.hand == rock::provider::RockProviderHand::Left &&
-            leftPartGrip.active != 0 &&
+            leftPartGrip.hand == rock::provider::RockProviderHand::Left;
+        snapshot.leftPartGripStateValid = leftPartGripStateValid;
+        snapshot.leftPartGripActive =
+            leftPartGripStateValid && leftPartGrip.active != 0;
+
+        const bool leftSupportCandidate =
+            snapshot.leftPartGripActive &&
             isSupportGripKind(leftPartGrip.gripKind) &&
             leftPartGrip.hasHandPartLocal != 0 &&
             leftPartGrip.handPartLocalSpace ==
@@ -119,9 +124,14 @@ namespace
                     WeaponRootLocal &&
             leftPartGrip.weaponGenerationKey ==
                 s_gripState.weaponGenerationKey;
+        if (leftSupportCandidate) {
+            snapshot.leftSupportHandInWeapon =
+                api_transform::toNi(leftPartGrip.handPartLocal);
+            snapshot.leftSupportGripValid = true;
+        }
 
         rock::provider::RockProviderAuthoredGripPoseV1 authoredGrip{};
-        const bool authoredSupportMatchesIdentity =
+        const bool authoredSupportPoseValid =
             leftSupportCandidate &&
             rockApiClient().querySelectedAuthoredGripPose(authoredGrip) &&
             hasAuthoredGripFlag(
@@ -134,12 +144,9 @@ namespace
             authoredGrip.weaponGenerationKey ==
                 s_gripState.weaponGenerationKey &&
             authoredGrip.weaponFormId == s_gripState.weaponFormId;
-        if (authoredSupportMatchesIdentity) {
-            snapshot.leftSupportHandInWeapon =
-                api_transform::toNi(leftPartGrip.handPartLocal);
+        if (authoredSupportPoseValid) {
             snapshot.authoredLeftHandInWeapon =
                 api_transform::toNi(authoredGrip.leftHandInWeapon);
-            snapshot.leftSupportGripValid = true;
             snapshot.authoredLeftValid = true;
         }
         native_animation_authority::setManualCycleRockGripSnapshot(snapshot);
