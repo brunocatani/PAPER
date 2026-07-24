@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 4.2)
 
-set(NAME "ROCK_Reanimate")
-set(FRIENDLY_NAME "ROCK Reanimate")
+set(NAME "PAPER")
+set(FRIENDLY_NAME "PAPER")
 set(VERSION 0.1.0)
 
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
 set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
-get_filename_component(WORKSPACE_ROOT "${ROOT_DIR}/../../.." ABSOLUTE)
+get_filename_component(WORKSPACE_ROOT "${ROOT_DIR}/../.." ABSOLUTE)
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds are not allowed")
@@ -67,7 +67,7 @@ add_library(${PROJECT_NAME} SHARED
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-  ROCK_REANIMATE_API_EXPORTS
+  PAPER_API_EXPORTS
   UNICODE
   _UNICODE
   WIN32_LEAN_AND_MEAN
@@ -106,7 +106,7 @@ target_link_options(${PROJECT_NAME} PRIVATE
 )
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
-option(POST_BUILD_COPY_PLUGIN "Copy ROCK_Reanimate and packaged data to a mod root." OFF)
+option(POST_BUILD_COPY_PLUGIN "Copy PAPER and packaged data to a mod root." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots containing F4SE/Plugins.")
 if(POST_BUILD_COPY_PLUGIN)
   if(COPY_PLUGIN_BASE_PATH STREQUAL "")
@@ -123,19 +123,19 @@ if(POST_BUILD_COPY_PLUGIN)
   endforeach()
 endif()
 
-option(BUILD_ROCK_REANIMATE_TESTS "Build focused ROCK Reanimate policy tests." OFF)
-if(BUILD_ROCK_REANIMATE_TESTS)
+option(BUILD_PAPER_TESTS "Build focused PAPER policy tests." OFF)
+if(BUILD_PAPER_TESTS)
   enable_testing()
-  add_executable(ROCKReanimatePolicyTests "${ROOT_DIR}/tests/ReanimatePolicyTests.cpp")
-  target_compile_features(ROCKReanimatePolicyTests PRIVATE cxx_std_23)
-  target_include_directories(ROCKReanimatePolicyTests PRIVATE "${SOURCE_DIR}")
-  add_test(NAME ROCKReanimatePolicyTests COMMAND "$<TARGET_FILE:ROCKReanimatePolicyTests>")
+  add_executable(PAPERPolicyTests "${ROOT_DIR}/tests/PaperPolicyTests.cpp")
+  target_compile_features(PAPERPolicyTests PRIVATE cxx_std_23)
+  target_include_directories(PAPERPolicyTests PRIVATE "${SOURCE_DIR}")
+  add_test(NAME PAPERPolicyTests COMMAND "$<TARGET_FILE:PAPERPolicyTests>")
 
   find_program(PWSH_EXECUTABLE NAMES pwsh REQUIRED)
   add_test(
-    NAME ROCKReanimateSourceTests
+    NAME PAPERSourceTests
     COMMAND "${PWSH_EXECUTABLE}" -NoProfile -File
-      "${ROOT_DIR}/tests/ReanimateSourceTests.ps1"
+      "${ROOT_DIR}/tests/PaperSourceTests.ps1"
       -Root "${ROOT_DIR}"
   )
 endif()

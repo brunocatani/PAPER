@@ -3,7 +3,7 @@
 #include "api/RockApiClient.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "native/NativeOffsets.h"
-#include "ReanimateLog.h"
+#include "PaperLog.h"
 #include "support/TransformMath.h"
 #include "api/RockVisualAuthorityBridge.h"
 
@@ -24,7 +24,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace rock_reanimate::native_animation_authority
+namespace paper::native_animation_authority
 {
     namespace
     {
@@ -43,7 +43,7 @@ namespace rock_reanimate::native_animation_authority
         constexpr float kManualCycleMaximumWatchdogSeconds = 12.0f;
         constexpr int kManualCycleVisualAuthorityPriority = 110;
         constexpr const char* kManualCycleVisualAuthorityTag =
-            "ROCK_Reanimate_NativeManualCycle";
+            "PAPER_NativeManualCycle";
         constexpr std::string_view kFortyFourAnimationKeyword = "Anims44";
         constexpr std::string_view kRevolverAnimationKeywordToken = "Revolver";
         constexpr std::uint32_t kWeaponTypeShotgunKeywordFormId = 0x00226454;
@@ -841,7 +841,7 @@ namespace rock_reanimate::native_animation_authority
                 }
             } else {
                 // Full reload authority does not require this derived hand pose
-                // for application, but retain it for Reanimate API consumers.
+                // for application, but retain it for Paper API consumers.
                 (void)captureNativeHandPose(*source);
             }
 
@@ -1021,7 +1021,7 @@ namespace rock_reanimate::native_animation_authority
                 1,
                 std::memory_order_acq_rel);
 
-            REANIMATE_LOG_INFO(Animation,
+            PAPER_LOG_INFO(Animation,
                 "Native reload {}-authority local test lease armed from Bethesda player reload-start; composition={} watchdog={} ROCK frames",
                 partialAuthority ? "partial" : "full",
                 partialAuthority ?
@@ -1462,7 +1462,7 @@ namespace rock_reanimate::native_animation_authority
                 return ManualCycleHandVisualResult::Suppressed;
             }
             if (!wasMotionQualified) {
-                REANIMATE_LOG_DEBUG(Animation,
+                PAPER_LOG_DEBUG(Animation,
                     "Native weapon-fixed hand motion qualified hand={} anchor={} translation={:.3f}gu rotation={:.2f}deg",
                     hand == frik_visual_authority::Hand::Left ? "left" : "right",
                     targetMode == native_animation_authority_policy::
@@ -1616,7 +1616,7 @@ namespace rock_reanimate::native_animation_authority
             }
 
             if (!s_sourceAimFrame.manualCycleIkLogged) {
-                REANIMATE_LOG_INFO(Animation,
+                PAPER_LOG_INFO(Animation,
                     "Native weapon-fixed hand IK ready priority={} motionGate=({:.2f}gu,{:.1f}deg) weaponT=({:.3f},{:.3f},{:.3f})",
                     kManualCycleVisualAuthorityPriority,
                     native_animation_authority_policy::
@@ -1825,7 +1825,7 @@ namespace rock_reanimate::native_animation_authority
             }
 
             if (initializedBaseline) {
-                REANIMATE_LOG_INFO(Animation,
+                PAPER_LOG_INFO(Animation,
                     "Native animation shared weapon frame ready tree=first-person roots={} controlWeaponT=({:.3f},{:.3f},{:.3f}) nativeWeaponT=({:.3f},{:.3f},{:.3f}) sharedWeaponT=({:.3f},{:.3f},{:.3f})",
                     rootCount,
                     aimFrame.controlWeaponWorld.translate.x,
@@ -1841,7 +1841,7 @@ namespace rock_reanimate::native_animation_authority
                 const RE::NiTransform resolvedWeaponWorld = transform_math::composeTransforms(
                     correction,
                     nativeWeaponWorld);
-                REANIMATE_LOG_INFO(Animation,
+                PAPER_LOG_INFO(Animation,
                     "Native animation shared weapon frame applied tree=full-body roots={} nativeWeaponT=({:.3f},{:.3f},{:.3f}) sharedWeaponT=({:.3f},{:.3f},{:.3f}) resolvedWeaponT=({:.3f},{:.3f},{:.3f})",
                     rootCount,
                     nativeWeaponWorld.translate.x,
@@ -1984,7 +1984,7 @@ namespace rock_reanimate::native_animation_authority
                 });
             s_localReloadLeaseState = step.state;
             if (!wasReloadStartObserved && step.state.observedReloadStart) {
-                REANIMATE_LOG_INFO(Animation,
+                PAPER_LOG_INFO(Animation,
                     "Native reload animation authority observed Bethesda's player reload-start event; exact-end return armed");
             }
 
@@ -1993,7 +1993,7 @@ namespace rock_reanimate::native_animation_authority
             } else {
                 s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
                 s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
-                REANIMATE_LOG_INFO(Animation,
+                PAPER_LOG_INFO(Animation,
                     "Native reload animation authority local test lease released: {}",
                     localReloadLeaseEndReasonName(step.endReason));
             }
@@ -2090,7 +2090,7 @@ namespace rock_reanimate::native_animation_authority
                 s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
                 s_manualCycleAuthoredSupportGripLatch = {};
                 refreshEffectiveManualCycleRockGripBaselines(false);
-                REANIMATE_LOG_DEBUG(Animation,
+                PAPER_LOG_DEBUG(Animation,
                     "Native manual-cycle hand-only authority released: {}",
                     localManualCycleLeaseEndReasonName(step.endReason));
             }
@@ -2114,7 +2114,7 @@ namespace rock_reanimate::native_animation_authority
             };
             auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
             if (!slot || *slot != expectedTarget.address()) {
-                REANIMATE_LOG_ERROR(Init,
+                PAPER_LOG_ERROR(Init,
                     "WeaponFireHandler hook validation failed at 0x{:X}; expected target 0x{:X}, found 0x{:X}",
                     entry.address(),
                     expectedTarget.address(),
@@ -2126,7 +2126,7 @@ namespace rock_reanimate::native_animation_authority
             s_originalWeaponFire = reinterpret_cast<WeaponFireHandlerFn>(*slot);
             DWORD oldProtect = 0;
             if (!VirtualProtect(slot, sizeof(*slot), PAGE_EXECUTE_READWRITE, &oldProtect)) {
-                REANIMATE_LOG_ERROR(Init,
+                PAPER_LOG_ERROR(Init,
                     "WeaponFireHandler hook install failed at 0x{:X}: VirtualProtect failed",
                     entry.address());
                 s_originalWeaponFire = nullptr;
@@ -2138,13 +2138,13 @@ namespace rock_reanimate::native_animation_authority
             FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
             DWORD unusedProtect = 0;
             if (!VirtualProtect(slot, sizeof(*slot), oldProtect, &unusedProtect)) {
-                REANIMATE_LOG_WARN(Init,
+                PAPER_LOG_WARN(Init,
                     "WeaponFireHandler hook installed at 0x{:X}, but restoring page protection failed",
                     entry.address());
             }
 
             s_weaponFireHookInstalled.store(true, std::memory_order_release);
-            REANIMATE_LOG_INFO(Init,
+            PAPER_LOG_INFO(Init,
                 "Installed validated WeaponFireHandler manual-cycle hook at 0x{:X}, original=0x{:X}",
                 entry.address(),
                 reinterpret_cast<std::uintptr_t>(s_originalWeaponFire));
@@ -2165,7 +2165,7 @@ namespace rock_reanimate::native_animation_authority
             };
             auto* slot = reinterpret_cast<std::uintptr_t*>(entry.address());
             if (!slot || *slot != expectedTarget.address()) {
-                REANIMATE_LOG_ERROR(Init,
+                PAPER_LOG_ERROR(Init,
                     "ReloadStateChangeHandler hook validation failed at 0x{:X}; expected target 0x{:X}, found 0x{:X}",
                     entry.address(),
                     expectedTarget.address(),
@@ -2176,7 +2176,7 @@ namespace rock_reanimate::native_animation_authority
             s_originalReloadStateChange = reinterpret_cast<ReloadStateChangeHandlerFn>(*slot);
             DWORD oldProtect = 0;
             if (!VirtualProtect(slot, sizeof(*slot), PAGE_EXECUTE_READWRITE, &oldProtect)) {
-                REANIMATE_LOG_ERROR(Init,
+                PAPER_LOG_ERROR(Init,
                     "ReloadStateChangeHandler hook install failed at 0x{:X}: VirtualProtect failed",
                     entry.address());
                 s_originalReloadStateChange = nullptr;
@@ -2187,13 +2187,13 @@ namespace rock_reanimate::native_animation_authority
             FlushInstructionCache(GetCurrentProcess(), slot, sizeof(*slot));
             DWORD unusedProtect = 0;
             if (!VirtualProtect(slot, sizeof(*slot), oldProtect, &unusedProtect)) {
-                REANIMATE_LOG_WARN(Init,
+                PAPER_LOG_WARN(Init,
                     "ReloadStateChangeHandler hook installed at 0x{:X}, but restoring page protection failed",
                     entry.address());
             }
 
             s_reloadStateHookInstalled.store(true, std::memory_order_release);
-            REANIMATE_LOG_INFO(Init,
+            PAPER_LOG_INFO(Init,
                 "Installed validated ReloadStateChangeHandler lifecycle hook at 0x{:X}, original=0x{:X}",
                 entry.address(),
                 reinterpret_cast<std::uintptr_t>(s_originalReloadStateChange));
@@ -2208,7 +2208,7 @@ namespace rock_reanimate::native_animation_authority
             if (!s_weaponFireHookInstalled.load(std::memory_order_acquire) &&
                 !s_weaponFireHookInstallFailed.load(std::memory_order_acquire)) {
                 if (!installWeaponFireHook()) {
-                    REANIMATE_LOG_WARN(Init,
+                    PAPER_LOG_WARN(Init,
                         "Native reload authority remains available, but manual-cycle hand-only animation is disabled because WeaponFireHandler was not installed");
                 }
             }
@@ -2223,10 +2223,10 @@ namespace rock_reanimate::native_animation_authority
         }
         s_hookInstalled.store(true, std::memory_order_release);
         if (!installWeaponFireHook()) {
-            REANIMATE_LOG_WARN(Init,
+            PAPER_LOG_WARN(Init,
                 "Native reload authority remains available, but manual-cycle hand-only animation is disabled because WeaponFireHandler was not installed");
         }
-        REANIMATE_LOG_INFO(Init,
+        PAPER_LOG_INFO(Init,
             "Native animation lifecycle hooks ready; graph capture=ROCK V1 NativeGraphOutput scope=arms,hands,Weapon/WeaponLeft lifecycle=WeaponFireHandler+ReloadStateChangeHandler");
         return true;
     }
@@ -2312,7 +2312,7 @@ namespace rock_reanimate::native_animation_authority
         if (wasEligible && !effectiveEligibility &&
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
             cancelLocalManualCycleTestLease();
-            REANIMATE_LOG_DEBUG(Animation,
+            PAPER_LOG_DEBUG(Animation,
                 "Native manual-cycle hand-only authority released: equipped-weapon animation eligibility lost");
         }
     }
@@ -2442,7 +2442,7 @@ namespace rock_reanimate::native_animation_authority
             const char* composition = s_frameWeaponFixedHandsExpected ?
                 "post-rock-weapon-anchored-hand-ik" :
                 "visible-weapon-shared-rigid-pose";
-            REANIMATE_LOG_INFO(Animation,
+            PAPER_LOG_INFO(Animation,
                 "Native animation authority {} flags=0x{:X} composition={}",
                 currentFlags != 0 ? "enabled" : "disabled",
                 currentFlags,

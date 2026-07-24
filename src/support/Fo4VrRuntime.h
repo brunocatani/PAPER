@@ -4,7 +4,7 @@
 
 #include <RE/Fallout.h>
 
-namespace rock_reanimate::fo4vr
+namespace paper::fo4vr
 {
     class BSFlattenedBoneTree : public RE::NiNode
     {
@@ -50,4 +50,4 @@ namespace rock_reanimate::fo4vr
     void updateTransformsDown(RE::NiAVObject* node, bool updateSelf) noexcept;
 }
 
-namespace f4vr = rock_reanimate::fo4vr;
+namespace f4vr = paper::fo4vr;

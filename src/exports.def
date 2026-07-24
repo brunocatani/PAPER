@@ -1,5 +1,5 @@
-LIBRARY "ROCK_Reanimate"
+LIBRARY "PAPER"
 EXPORTS
     F4SEPlugin_Query
     F4SEPlugin_Load
-    ROCKREANIMATEAPI_GetProviderApi
+    PAPERAPI_GetProviderApi

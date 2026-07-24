@@ -2,9 +2,9 @@
 
 #include <string>
 
-namespace rock_reanimate
+namespace paper
 {
-    struct ReanimateConfig
+    struct PaperConfig
     {
         bool enabled{ true };
         bool nativeReloadAnimationAuthorityTestEnabled{ true };
@@ -19,5 +19,5 @@ namespace rock_reanimate
         [[nodiscard]] bool reload();
     };
 
-    extern ReanimateConfig g_config;
+    extern PaperConfig g_config;
 }

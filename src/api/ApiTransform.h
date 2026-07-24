@@ -1,11 +1,11 @@
 #pragma once
 
 #include "api/ROCKProviderApi.h"
-#include "api/ROCKReanimateApi.h"
+#include "api/PAPERApi.h"
 
 #include <RE/NetImmerse/NiTransform.h>
 
-namespace rock_reanimate::api_transform
+namespace paper::api_transform
 {
     [[nodiscard]] inline RE::NiTransform toNi(
         const rock::provider::RockProviderTransform& source)
@@ -42,7 +42,7 @@ namespace rock_reanimate::api_transform
 
     inline void fromNi(
         const RE::NiTransform& source,
-        api::ReanimateTransformV1& target)
+        api::PaperTransformV1& target)
     {
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {

@@ -5,7 +5,7 @@
 
 #include <atomic>
 
-namespace rock_reanimate::frik_visual_authority
+namespace paper::frik_visual_authority
 {
     namespace
     {

@@ -3,8 +3,8 @@
 #include "animation/NativeAnimationAuthority.h"
 #include "api/ApiTransform.h"
 #include "api/RockApiClient.h"
-#include "ReanimateConfig.h"
-#include "ReanimateLog.h"
+#include "PaperConfig.h"
+#include "PaperLog.h"
 #include "support/TransformMath.h"
 
 #include "RE/NetImmerse/NiPoint.h"
@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <utility>
 
-namespace rock_reanimate::debug_visualization
+namespace paper::debug_visualization
 {
     namespace
     {
@@ -524,7 +524,7 @@ namespace rock_reanimate::debug_visualization
             20.0f,
             76.0f,
             kTextColor,
-            "REANIMATE %s cap=%llu flags=%X frame=%llu ready=%u applied=%u",
+            "PAPER %s cap=%llu flags=%X frame=%llu ready=%u applied=%u",
             modeName(snapshot),
             static_cast<unsigned long long>(snapshot.frameCaptureSequence),
             snapshot.runtime.effectiveFlags,
@@ -555,9 +555,9 @@ namespace rock_reanimate::debug_visualization
             // frame frozen in ROCK's owner-scoped store.
             rockApiClient().clearDebugOverlay();
             if (!s_publishFailureReported) {
-                REANIMATE_LOG_WARN(
+                PAPER_LOG_WARN(
                     Api,
-                    "ROCK rejected the Reanimate debug-overlay publication");
+                    "ROCK rejected the Paper debug-overlay publication");
                 s_publishFailureReported = true;
             }
             s_published = false;

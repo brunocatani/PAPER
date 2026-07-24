@@ -4,7 +4,7 @@
 
 int main()
 {
-    using namespace rock_reanimate::native_animation_authority_policy;
+    using namespace paper::native_animation_authority_policy;
 
     struct AffineTransform
     {

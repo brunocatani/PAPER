@@ -1,6 +1,6 @@
-#include "ReanimateConfig.h"
+#include "PaperConfig.h"
 
-#include "ReanimateLog.h"
+#include "PaperLog.h"
 
 #include <Windows.h>
 #include <ShlObj.h>
@@ -10,7 +10,7 @@
 #include <cmath>
 #include <filesystem>
 
-namespace rock_reanimate
+namespace paper
 {
     namespace
     {
@@ -24,22 +24,22 @@ namespace rock_reanimate
                     0,
                     documents))) {
                 return std::string(documents) +
-                    R"(\My Games\Fallout4VR\ROCK_Reanimate_Config\ROCK_Reanimate.ini)";
+                    R"(\My Games\Fallout4VR\PAPER_Config\PAPER.ini)";
             }
-            return R"(Data\ROCK_Reanimate_Config\ROCK_Reanimate.ini)";
+            return R"(Data\PAPER_Config\PAPER.ini)";
         }
     }
 
-    ReanimateConfig g_config{};
+    PaperConfig g_config{};
 
-    bool ReanimateConfig::reload()
+    bool PaperConfig::reload()
     {
         activePath = resolveActiveIniPath();
         CSimpleIniA ini;
         ini.SetUnicode();
         const SI_Error result = ini.LoadFile(activePath.c_str());
         if (result < 0) {
-            REANIMATE_LOG_WARN(
+            PAPER_LOG_WARN(
                 Config,
                 "Could not load '{}'; retaining safe compiled defaults",
                 activePath);
@@ -89,7 +89,7 @@ namespace rock_reanimate
             0.25f,
             5.0f);
         logger::setLevel(logLevel);
-        REANIMATE_LOG_INFO(
+        PAPER_LOG_INFO(
             Config,
             "Loaded '{}' enabled={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f}",
             activePath,

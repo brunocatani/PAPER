@@ -1,10 +1,10 @@
 #pragma once
 
-#include "api/ROCKReanimateApi.h"
+#include "api/PAPERApi.h"
 
 #include <cstdint>
 
-namespace rock_reanimate::provider
+namespace paper::provider
 {
     void initialize();
     void shutdown();
@@ -12,9 +12,9 @@ namespace rock_reanimate::provider
     void completeFrame();
     void resetRuntime();
 
-    void publishConfig(const api::ReanimateConfigStateV1& state);
-    void publishRuntime(const api::ReanimateRuntimeStateV1& state);
-    void dispatchEvent(api::ReanimateEventKindV1 kind);
+    void publishConfig(const api::PaperConfigStateV1& state);
+    void publishRuntime(const api::PaperRuntimeStateV1& state);
+    void dispatchEvent(api::PaperEventKindV1 kind);
 
     [[nodiscard]] std::uint32_t currentConsumerAuthorityFlags();
     [[nodiscard]] std::uint32_t generation();

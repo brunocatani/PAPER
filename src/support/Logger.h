@@ -9,7 +9,7 @@
 #include <spdlog/sinks/rotating_file_sink.h>
 #include <spdlog/spdlog.h>
 
-namespace rock_reanimate::logger
+namespace paper::logger
 {
     inline std::shared_ptr<spdlog::logger> instance;
 
@@ -21,13 +21,13 @@ namespace rock_reanimate::logger
         if (!directory.value().generic_string().ends_with(expectedGamePath)) {
             directory = directory.value().parent_path().append(expectedGamePath);
         }
-        *directory /= "ROCK_Reanimate.log";
+        *directory /= "PAPER.log";
         auto sink = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
             directory->string(),
             10 * 1024 * 1024,
             5,
             true);
-        instance = std::make_shared<spdlog::logger>("ROCK_Reanimate", sink);
+        instance = std::make_shared<spdlog::logger>("PAPER", sink);
         instance->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
         instance->set_level(spdlog::level::info);
         instance->flush_on(spdlog::level::err);

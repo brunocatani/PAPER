@@ -5,7 +5,7 @@
 #include <array>
 #include <cstdint>
 
-namespace rock_reanimate::native_animation_authority
+namespace paper::native_animation_authority
 {
     inline constexpr std::size_t kMaxCapturedTransforms = 192;
     inline constexpr std::size_t kFingerTransformCount = 15;

@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-namespace rock_reanimate
+namespace paper
 {
     class RockApiClient
     {

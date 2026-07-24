@@ -3,7 +3,7 @@
 #include <cmath>
 #include <type_traits>
 
-namespace rock_reanimate::transform_math
+namespace paper::transform_math
 {
     namespace detail
     {

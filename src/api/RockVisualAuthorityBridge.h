@@ -5,7 +5,7 @@
 
 #include <RE/NetImmerse/NiTransform.h>
 
-namespace rock_reanimate::frik_visual_authority
+namespace paper::frik_visual_authority
 {
     enum class Hand : std::uint8_t
     {

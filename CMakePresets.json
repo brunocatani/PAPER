@@ -48,7 +48,7 @@
       "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
       "binaryDir": "${sourceDir}/build-fast",
       "cacheVariables": {
-        "BUILD_ROCK_REANIMATE_TESTS": false,
+        "BUILD_PAPER_TESTS": false,
         "POST_BUILD_COPY_PLUGIN": false
       }
     },
@@ -57,7 +57,7 @@
       "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
       "binaryDir": "${sourceDir}/build-tests",
       "cacheVariables": {
-        "BUILD_ROCK_REANIMATE_TESTS": true,
+        "BUILD_PAPER_TESTS": true,
         "POST_BUILD_COPY_PLUGIN": false
       }
     }

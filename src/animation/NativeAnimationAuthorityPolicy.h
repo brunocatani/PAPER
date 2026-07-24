@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace rock_reanimate::native_animation_authority_policy
+namespace paper::native_animation_authority_policy
 {
     inline constexpr std::uint32_t kArms = 1u << 0;
     inline constexpr std::uint32_t kHands = 1u << 1;
@@ -194,7 +194,7 @@ namespace rock_reanimate::native_animation_authority_policy
     };
 
     /*
-     * ROCK can clear its support-grip report after Reanimate publishes the
+     * ROCK can clear its support-grip report after Paper publishes the
      * higher-priority hand authority needed for a native manual cycle. Latch
      * only the authored grip observed at that cycle's entry, then retain it
      * across an absent post-ROCK report. A weapon change, lease end, or a

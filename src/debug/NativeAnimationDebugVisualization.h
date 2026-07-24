@@ -2,7 +2,7 @@
 
 #include "api/ROCKProviderApi.h"
 
-namespace rock_reanimate::debug_visualization
+namespace paper::debug_visualization
 {
     void publish(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,

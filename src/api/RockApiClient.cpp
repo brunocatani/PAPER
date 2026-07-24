@@ -1,10 +1,10 @@
 #include "api/RockApiClient.h"
 
-#include "ReanimateLog.h"
+#include "PaperLog.h"
 
 #include <cstring>
 
-namespace rock_reanimate
+namespace paper
 {
     namespace
     {
@@ -42,7 +42,7 @@ namespace rock_reanimate
                 rock::provider::ROCK_PROVIDER_API_VERSION,
                 rock::provider::ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES);
         if (initializeResult != 0) {
-            REANIMATE_LOG_ERROR(
+            PAPER_LOG_ERROR(
                 Api,
                 "ROCK V1 provider initialization failed with result {}",
                 initializeResult);
@@ -65,9 +65,9 @@ namespace rock_reanimate
             !rock::provider::supportsWeaponPartGripStateV1(limits) ||
             !rock::provider::supportsPoseReadbackV1() ||
             !rock::provider::supportsNativeAnimationAuthorityV1(limits)) {
-            REANIMATE_LOG_ERROR(
+            PAPER_LOG_ERROR(
                 Api,
-                "Loaded ROCK provider does not expose the complete Reanimate V1 support surface");
+                "Loaded ROCK provider does not expose the complete Paper V1 support surface");
             _api = nullptr;
             return false;
         }
@@ -75,8 +75,8 @@ namespace rock_reanimate
         rock::provider::RockProviderConsumerRegistrationV1 registration{};
         std::memcpy(
             registration.modName,
-            "ROCK_Reanimate",
-            sizeof("ROCK_Reanimate"));
+            "PAPER",
+            sizeof("PAPER"));
         registration.requestedCapabilities = kRequiredCapabilities;
         rock::provider::RockProviderConsumerHandleV1 handle{};
         const auto result = _api->registerConsumerV1(&registration, &handle);
@@ -84,7 +84,7 @@ namespace rock_reanimate
             handle.ownerToken == 0 ||
             (handle.grantedCapabilities & kRequiredCapabilities) !=
                 kRequiredCapabilities) {
-            REANIMATE_LOG_ERROR(
+            PAPER_LOG_ERROR(
                 Api,
                 "ROCK consumer registration failed result={} granted=0x{:08X}",
                 static_cast<std::uint32_t>(result),
@@ -97,7 +97,7 @@ namespace rock_reanimate
         }
 
         _ownerToken = handle.ownerToken;
-        REANIMATE_LOG_INFO(
+        PAPER_LOG_INFO(
             Api,
             "Registered with ROCK V1 owner={:016X} capabilities=0x{:08X}",
             _ownerToken,

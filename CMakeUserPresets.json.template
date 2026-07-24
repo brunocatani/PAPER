@@ -10,7 +10,7 @@
       "cacheVariables": {
         "CMAKE_TOOLCHAIN_FILE": "C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake",
         "POST_BUILD_COPY_PLUGIN": true,
-        "COPY_PLUGIN_BASE_PATH": "C:/path/to/mods/ROCK_Reanimate",
+        "COPY_PLUGIN_BASE_PATH": "C:/path/to/mods/PAPER",
         "COMMON_LIB_F4VR_PATH": "C:/path/to/CommonLibF4VR"
       }
     },

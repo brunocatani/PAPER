@@ -3,12 +3,12 @@
 #include "animation/NativeAnimationAuthority.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "api/ApiTransform.h"
-#include "api/ROCKReanimateProvider.h"
+#include "api/PAPERProvider.h"
 #include "api/RockApiClient.h"
 #include "api/RockVisualAuthorityBridge.h"
 #include "debug/NativeAnimationDebugVisualization.h"
-#include "ReanimateConfig.h"
-#include "ReanimateLog.h"
+#include "PaperConfig.h"
+#include "PaperLog.h"
 
 #include <atomic>
 #include <cstdint>
@@ -16,7 +16,7 @@
 
 namespace
 {
-    using namespace rock_reanimate;
+    using namespace paper;
 
     const F4SE::MessagingInterface* s_messaging{ nullptr };
     std::atomic<bool> s_gameLoaded{ false };
@@ -60,7 +60,7 @@ namespace
 
     void publishConfigState()
     {
-        api::ReanimateConfigStateV1 state{};
+        api::PaperConfigStateV1 state{};
         state.enabled = g_config.enabled ? 1u : 0u;
         state.nativeReloadAuthorityEnabled =
             g_config.nativeReloadAnimationAuthorityTestEnabled ? 1u : 0u;
@@ -69,7 +69,7 @@ namespace
         state.logLevel = g_config.logLevel;
         state.revision = ++s_configRevision;
         provider::publishConfig(state);
-        provider::dispatchEvent(api::ReanimateEventKindV1::ConfigReloaded);
+        provider::dispatchEvent(api::PaperEventKindV1::ConfigReloaded);
     }
 
     void refreshGripState()
@@ -175,7 +175,7 @@ namespace
             return;
         }
         if (s_lastAuthorityPublishFailureFlags != requestedFlags) {
-            REANIMATE_LOG_ERROR(
+            PAPER_LOG_ERROR(
                 Api,
                 "Could not publish native animation authority flags=0x{:X} to ROCK",
                 requestedFlags);
@@ -212,54 +212,54 @@ namespace
             (void)rockApiClient().publishNativeAnimationRuntime(rockState);
         }
 
-        api::ReanimateRuntimeStateV1 state{};
+        api::PaperRuntimeStateV1 state{};
         state.statusFlags = static_cast<std::uint32_t>(
-            api::ReanimateRuntimeStatusFlagV1::ProviderReady);
+            api::PaperRuntimeStatusFlagV1::ProviderReady);
         if (rockConnected) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::RockConnected);
+                api::PaperRuntimeStatusFlagV1::RockConnected);
         }
         if (skeletonReady) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::RockSkeletonReady);
+                api::PaperRuntimeStatusFlagV1::RockSkeletonReady);
         }
         if ((native.statusFlags & static_cast<std::uint32_t>(
                 native_animation_authority::RuntimeStatusFlag::HookInstalled)) != 0) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::HookInstalled);
+                api::PaperRuntimeStatusFlagV1::HookInstalled);
         }
         if ((native.statusFlags & static_cast<std::uint32_t>(
                 native_animation_authority::RuntimeStatusFlag::RuntimeEnabled)) != 0) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::RuntimeEnabled);
+                api::PaperRuntimeStatusFlagV1::RuntimeEnabled);
         }
         if ((native.statusFlags & static_cast<std::uint32_t>(
                 native_animation_authority::RuntimeStatusFlag::CaptureValid)) != 0) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::CaptureValid);
+                api::PaperRuntimeStatusFlagV1::CaptureValid);
         }
         if ((native.statusFlags & static_cast<std::uint32_t>(
                 native_animation_authority::RuntimeStatusFlag::HookInstallFailed)) != 0) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::HookInstallFailed);
+                api::PaperRuntimeStatusFlagV1::HookInstallFailed);
         }
         if ((native.statusFlags & static_cast<std::uint32_t>(
                 native_animation_authority::RuntimeStatusFlag::ThreadMismatch)) != 0) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::ThreadMismatch);
+                api::PaperRuntimeStatusFlagV1::ThreadMismatch);
         }
         if ((native.statusFlags & static_cast<std::uint32_t>(
                 native_animation_authority::RuntimeStatusFlag::CaptureFault)) != 0) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::CaptureFault);
+                api::PaperRuntimeStatusFlagV1::CaptureFault);
         }
         if (native.reloadEventActive) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::ReloadEventActive);
+                api::PaperRuntimeStatusFlagV1::ReloadEventActive);
         }
         if (native.localManualCycleLeaseActive) {
             state.statusFlags |= static_cast<std::uint32_t>(
-                api::ReanimateRuntimeStatusFlagV1::ManualCycleActive);
+                api::PaperRuntimeStatusFlagV1::ManualCycleActive);
         }
         state.activeAuthorityFlags = native.effectiveFlags;
         state.localAuthorityFlags = localFlags;
@@ -274,7 +274,7 @@ namespace
         state.worldGeneration = context.worldGeneration;
         state.skeletonGeneration = context.skeletonGeneration;
         state.rockProviderGeneration = context.providerGeneration;
-        state.reanimateProviderGeneration = provider::generation();
+        state.paperProviderGeneration = provider::generation();
         provider::publishRuntime(state);
     }
 
@@ -304,7 +304,7 @@ namespace
             const bool runtimeOperational =
                 operational && s_runtimeOperational;
             // Publish before capture so ROCK's local authored-grip reader can
-            // yield at this same graph sample when Reanimate owns authority.
+            // yield at this same graph sample when Paper owns authority.
             publishRockAuthority(runtimeOperational);
             native_animation_authority::captureNativeGraphOutput();
             break;
@@ -315,9 +315,9 @@ namespace
             if (operational &&
                 !s_hookAttempted.exchange(true, std::memory_order_acq_rel)) {
                 if (!native_animation_authority::installEventHooks()) {
-                    REANIMATE_LOG_CRITICAL(
+                    PAPER_LOG_CRITICAL(
                         Init,
-                        "Native animation lifecycle hooks failed validation; Reanimate authority remains disabled");
+                        "Native animation lifecycle hooks failed validation; Paper authority remains disabled");
                 }
             }
 
@@ -348,7 +348,7 @@ namespace
         case rock::provider::RockProviderAnimationPhaseV1::Complete:
             native_animation_authority::completeRockFrame();
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
-            provider::dispatchEvent(api::ReanimateEventKindV1::FrameComplete);
+            provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
             provider::completeFrame();
             break;
         default:
@@ -359,20 +359,20 @@ namespace
     bool connectRock()
     {
         if (!rockApiClient().initialize()) {
-            REANIMATE_LOG_ERROR(
+            PAPER_LOG_ERROR(
                 Api,
-                "ROCK V1 connection unavailable; Reanimate will retry on the next game-session message");
+                "ROCK V1 connection unavailable; Paper will retry on the next game-session message");
             return false;
         }
         if (!rockApiClient().registerAnimationPhaseCallback(
                 &onRockAnimationPhase,
                 nullptr)) {
-            REANIMATE_LOG_ERROR(
+            PAPER_LOG_ERROR(
                 Api,
                 "Could not register ROCK animation-phase callback");
             return false;
         }
-        REANIMATE_LOG_INFO(
+        PAPER_LOG_INFO(
             Api,
             "Connected to ROCK V1 animation coordination surface");
         return true;
@@ -401,7 +401,7 @@ namespace
             publishConfigState();
             s_gameLoaded.store(true, std::memory_order_release);
             (void)connectRock();
-            REANIMATE_LOG_INFO(
+            PAPER_LOG_INFO(
                 Init,
                 "GameLoaded complete; waiting for ROCK skeleton-ready phases");
             return;
@@ -426,27 +426,27 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(
     const F4SE::QueryInterface* f4se,
     F4SE::PluginInfo* info)
 {
-    rock_reanimate::logger::init();
-    REANIMATE_LOG_INFO(Init, "=== ROCK_Reanimate v{} query ===", Version::NAME);
+    paper::logger::init();
+    PAPER_LOG_INFO(Init, "=== PAPER v{} query ===", Version::NAME);
 
     info->infoVersion = F4SE::PluginInfo::kVersion;
-    info->name = "ROCK_Reanimate";
+    info->name = "PAPER";
     info->version =
         static_cast<std::uint32_t>(Version::MAJOR * 10000 +
             Version::MINOR * 100 + Version::PATCH);
 
     if (f4se->IsEditor()) {
-        REANIMATE_LOG_CRITICAL(Init, "Editor runtime is unsupported");
+        PAPER_LOG_CRITICAL(Init, "Editor runtime is unsupported");
         return false;
     }
     if (!REL::Module::IsVR()) {
-        REANIMATE_LOG_CRITICAL(Init, "Fallout 4 VR runtime is required");
+        PAPER_LOG_CRITICAL(Init, "Fallout 4 VR runtime is required");
         return false;
     }
 
     const auto requiredRuntime = F4SE::RUNTIME_LATEST_VR;
     if (f4se->RuntimeVersion() < requiredRuntime) {
-        REANIMATE_LOG_CRITICAL(
+        PAPER_LOG_CRITICAL(
             Init,
             "Unsupported F4SE runtime {} (need >= {})",
             f4se->RuntimeVersion().string(),
@@ -460,20 +460,20 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(
     const F4SE::LoadInterface* f4se)
 {
     F4SE::Init(f4se, false);
-    rock_reanimate::provider::initialize();
+    paper::provider::initialize();
 
     s_messaging = F4SE::GetMessagingInterface();
     if (!s_messaging || !s_messaging->RegisterListener(onF4SEMessage)) {
-        REANIMATE_LOG_CRITICAL(
+        PAPER_LOG_CRITICAL(
             Init,
             "F4SE messaging registration failed");
-        rock_reanimate::provider::shutdown();
+        paper::provider::shutdown();
         return false;
     }
 
-    REANIMATE_LOG_INFO(
+    PAPER_LOG_INFO(
         Init,
         "Plugin loaded; provider API V{} ready",
-        rock_reanimate::api::ROCK_REANIMATE_API_VERSION);
+        paper::api::PAPER_API_VERSION);
     return true;
 }

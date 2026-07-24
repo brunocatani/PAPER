@@ -1,6 +1,6 @@
 #include "support/Fo4VrRuntime.h"
 
-namespace rock_reanimate::fo4vr
+namespace paper::fo4vr
 {
     RE::PlayerCharacter* getPlayer() noexcept
     {

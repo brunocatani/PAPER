@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace rock_reanimate::offsets
+namespace paper::offsets
 {
     inline constexpr std::uintptr_t kFunc_WeaponFireHandler_Handle = 0x0FF2A40;
     inline constexpr std::uintptr_t kFunc_ReloadStateChangeHandler_Handle = 0x0FF2B90;
