@@ -82,6 +82,21 @@ int main()
         ManualCycleWeaponEligibility{
             .manualCycleAnimationKeyword = true,
         }));
+    static_assert(isManualCycleFireAnimationAllowed(
+        ManualCycleWeaponEligibility{
+            .semanticActionPart = true,
+        }));
+    static_assert(isManualCycleSemanticActionPart(4, 0));
+    static_assert(isManualCycleSemanticActionPart(9, 0));
+    static_assert(isManualCycleSemanticActionPart(12, 0));
+    static_assert(isManualCycleSemanticActionPart(13, 0));
+    static_assert(isManualCycleSemanticActionPart(18, 0));
+    static_assert(isManualCycleSemanticActionPart(22, 1));
+    static_assert(isManualCycleSemanticActionPart(22, 4));
+    static_assert(isManualCycleSemanticActionPart(22, 7));
+    static_assert(!isManualCycleSemanticActionPart(10, 2));
+    static_assert(!isManualCycleSemanticActionPart(11, 3));
+    static_assert(!isManualCycleSemanticActionPart(22, 0));
 
     constexpr ManualCycleHandAnimationEligibility eligible{
         .gripStateValid = true,
@@ -171,43 +186,82 @@ int main()
     static_assert(updateManualCycleHandMotionQualification(
         true,
         ManualCycleHandMotionSample{}));
-
-    constexpr AuthoredSupportGripMatchSample authoredSupportGripMatch{
-        .transformDelta = {
+    static_assert(!isManualCycleActionPartMotion(
+        ManualCycleHandMotionSample{
+            .translationGameUnits = 0.049f,
+            .rotationDegrees = 0.499f,
+        }));
+    static_assert(isManualCycleActionPartMotion(
+        ManualCycleHandMotionSample{
             .translationGameUnits =
-                kAuthoredSupportGripTranslationToleranceGameUnits,
+                kManualCycleActionPartTranslationThresholdGameUnits,
+        }));
+    static_assert(isManualCycleActionPartMotion(
+        ManualCycleHandMotionSample{
             .rotationDegrees =
-                kAuthoredSupportGripRotationToleranceDegrees,
-        },
-        .scaleDelta = kAuthoredSupportGripScaleTolerance,
-        .supportGripValid = true,
-        .authoredGripValid = true,
+                kManualCycleActionPartRotationThresholdDegrees,
+        }));
+
+    constexpr LocalManualCycleCandidateState cycleCandidate{
+        .watchdogSecondsRemaining = 4.0f,
+        .reloadStartSequenceAtArm = 7,
+        .reloadEndSequenceAtArm = 20,
+        .actionPartMotionSequenceAtArm = 11,
+        .weaponGenerationKey = 42,
+        .weaponFormId = 0x1234,
     };
-    static_assert(isAuthoredSupportGripMatch(authoredSupportGripMatch));
+    constexpr LocalManualCycleCandidateSignal stableCandidateSignal{
+        .reloadStartSequence = 7,
+        .reloadEndSequence = 20,
+        .actionPartMotionSequence = 11,
+        .weaponGenerationKey = 42,
+        .weaponFormId = 0x1234,
+        .deltaSeconds = 0.01f,
+    };
+    static_assert(advanceLocalManualCycleCandidate(
+                      cycleCandidate,
+                      stableCandidateSignal)
+                      .pending());
     static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.supportGripValid = false;
-        return !isAuthoredSupportGripMatch(input);
+        auto signal = stableCandidateSignal;
+        ++signal.reloadEndSequence;
+        const auto step = advanceLocalManualCycleCandidate(
+            cycleCandidate,
+            signal);
+        return step.activate() &&
+               step.result ==
+                   LocalManualCycleCandidateResult::
+                       ActivateReloadEnd;
     }());
     static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.authoredGripValid = false;
-        return !isAuthoredSupportGripMatch(input);
+        auto signal = stableCandidateSignal;
+        ++signal.actionPartMotionSequence;
+        const auto step = advanceLocalManualCycleCandidate(
+            cycleCandidate,
+            signal);
+        return step.activate() &&
+               step.result ==
+                   LocalManualCycleCandidateResult::
+                       ActivateActionPartMotion;
     }());
     static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.transformDelta.translationGameUnits += 0.001f;
-        return !isAuthoredSupportGripMatch(input);
+        auto signal = stableCandidateSignal;
+        ++signal.weaponGenerationKey;
+        return advanceLocalManualCycleCandidate(
+                   cycleCandidate,
+                   signal)
+                   .result ==
+               LocalManualCycleCandidateResult::
+                   WeaponIdentityChanged;
     }());
     static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.transformDelta.rotationDegrees += 0.001f;
-        return !isAuthoredSupportGripMatch(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.scaleDelta += 0.001f;
-        return !isAuthoredSupportGripMatch(input);
+        auto signal = stableCandidateSignal;
+        ++signal.reloadStartSequence;
+        return advanceLocalManualCycleCandidate(
+                   cycleCandidate,
+                   signal)
+                   .result ==
+               LocalManualCycleCandidateResult::ReloadStarted;
     }());
 
     constexpr AffineTransform nativeWeaponModel{ 2.0f, 40.0f };

@@ -1528,7 +1528,10 @@ namespace rock::provider
         std::uint32_t omodFormId{ 0 };
         std::uint32_t attachPointFormId{ 0 };
         std::uint32_t classificationSource{ 0 };
-        std::uint32_t reserved[6]{};
+        // Exact ROCK grip provenance. Nonzero only when the active support
+        // grip was acquired from the current authored support-pose capture.
+        std::uint32_t authoredSupportGrip{ 0 };
+        std::uint32_t reserved[5]{};
     };
 
     /*
@@ -2179,7 +2182,8 @@ namespace rock::provider
         std::uint32_t omodFormId{ 0 };
         std::uint32_t attachPointFormId{ 0 };
         std::uint32_t flags{ 0 };
-        std::uint32_t reserved0{ 0 };
+        // RockProviderWeaponActionRoleV1 for this semantic source.
+        std::uint32_t actionRole{ 0 };
         RockProviderTransform sourceParentLocal{};
         RockProviderTransform weaponRootLocal{};
         char sourceName[ROCK_PROVIDER_MAX_EVIDENCE_NAME]{};

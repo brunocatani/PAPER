@@ -206,19 +206,31 @@ namespace paper::native_animation_authority
         std::atomic<bool> s_localReloadPartialAuthorityEnabled{ false };
         std::atomic<bool> s_localReloadLeasePartialAuthority{ false };
         std::atomic<bool> s_manualCycleHandAnimationEligible{ false };
+        std::atomic<bool> s_localManualCycleCandidatePending{ false };
         std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
+        std::atomic<bool> s_semanticManualCycleActionPresent{ false };
         std::atomic<bool> s_captureValid{ false };
         std::atomic<bool> s_threadMismatch{ false };
         std::atomic<bool> s_captureFault{ false };
         std::atomic<DWORD> s_ownerThreadId{ 0 };
         std::atomic<std::uint32_t> s_localReloadTestLeaseFrames{ 0 };
         std::atomic<std::uint64_t> s_localReloadTestRequestSequence{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleCandidateRequestSequence{ 0 };
+        std::atomic<std::uint32_t> s_localManualCycleCandidateWatchdogMilliseconds{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleCandidateReloadStartSequenceAtArm{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleCandidateReloadEndSequenceAtArm{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleCandidateActionMotionSequenceAtArm{ 0 };
+        std::atomic<std::uint64_t> s_localManualCycleCandidateWeaponGenerationKey{ 0 };
+        std::atomic<std::uint32_t> s_localManualCycleCandidateWeaponFormId{ 0 };
         std::atomic<std::uint64_t> s_localManualCycleTestRequestSequence{ 0 };
         std::atomic<std::uint32_t> s_localManualCycleRequestedWatchdogMilliseconds{ 0 };
         std::atomic<std::uint64_t> s_localManualCycleReloadStartSequenceAtArm{ 0 };
         std::atomic<std::uint64_t> s_localManualCycleReloadEndSequenceAtArm{ 0 };
         std::atomic<std::uint64_t> s_playerReloadStartSequence{ 0 };
         std::atomic<std::uint64_t> s_playerReloadEndSequence{ 0 };
+        std::atomic<std::uint64_t> s_manualCycleActionMotionSequence{ 0 };
+        std::atomic<std::uint64_t> s_equippedWeaponGenerationKey{ 0 };
+        std::atomic<std::uint32_t> s_equippedWeaponFormId{ 0 };
         std::atomic<bool> s_playerReloadEventActive{ false };
         std::atomic<std::uint32_t> s_capturedFlags{ 0 };
         std::atomic<std::uint32_t> s_capturedTransformCount{ 0 };
@@ -228,10 +240,13 @@ namespace paper::native_animation_authority
         std::uint64_t s_frameCaptureSequence{ 0 };
         std::uint64_t s_lastCompletedCaptureSequence{ 0 };
         std::uint64_t s_seenLocalReloadTestRequestSequence{ 0 };
+        std::uint64_t s_seenLocalManualCycleCandidateRequestSequence{ 0 };
         std::uint64_t s_seenLocalManualCycleTestRequestSequence{ 0 };
         std::uint32_t s_frameCaptureFlags{ 0 };
         std::uint32_t s_lastLoggedEffectiveFlags{ 0 };
         native_animation_authority_policy::LocalReloadLeaseState s_localReloadLeaseState{};
+        native_animation_authority_policy::LocalManualCycleCandidateState
+            s_localManualCycleCandidateState{};
         native_animation_authority_policy::LocalManualCycleLeaseState s_localManualCycleLeaseState{};
         bool s_frameCaptureReady{ false };
         bool s_frameWeaponFixedHandsExpected{ false };
@@ -994,8 +1009,25 @@ namespace paper::native_animation_authority
 
         void cancelLocalManualCycleTestLease()
         {
+            s_localManualCycleCandidateWatchdogMilliseconds.store(
+                0,
+                std::memory_order_release);
+            s_localManualCycleCandidatePending.store(
+                false,
+                std::memory_order_release);
             s_localManualCycleRequestedWatchdogMilliseconds.store(0, std::memory_order_release);
             s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
+        }
+
+        void cancelLocalReloadTestLease()
+        {
+            s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
+            s_localReloadLeasePartialAuthority.store(
+                false,
+                std::memory_order_release);
+            s_playerReloadEventActive.store(
+                false,
+                std::memory_order_release);
         }
 
         void armLocalReloadTestLeaseFromNativeStart()
@@ -1040,6 +1072,9 @@ namespace paper::native_animation_authority
                 s_playerReloadStartSequence.load(std::memory_order_acquire);
             const auto reloadEndSequenceBeforeFire =
                 s_playerReloadEndSequence.load(std::memory_order_acquire);
+            const auto actionMotionSequenceBeforeFire =
+                s_manualCycleActionMotionSequence.load(
+                    std::memory_order_acquire);
             const bool handled = s_originalWeaponFire ?
                 s_originalWeaponFire(handler, actor, eventData) :
                 false;
@@ -1050,6 +1085,8 @@ namespace paper::native_animation_authority
                 !s_localManualCycleTestEnabled.load(std::memory_order_acquire) ||
                 !s_manualCycleHandAnimationEligible.load(std::memory_order_acquire) ||
                 s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ||
+                s_localManualCycleTestLeaseActive.load(
+                    std::memory_order_acquire) ||
                 s_playerReloadEventActive.load(std::memory_order_acquire)) {
                 return handled;
             }
@@ -1086,24 +1123,58 @@ namespace paper::native_animation_authority
                             usesManualCycleAnimationKeyword(
                                 *weapon,
                                 *weaponData),
+                        .semanticActionPart =
+                            s_semanticManualCycleActionPresent.load(
+                                std::memory_order_acquire),
                     })) {
+                return handled;
+            }
+
+            const auto weaponGenerationKey =
+                s_equippedWeaponGenerationKey.load(
+                    std::memory_order_acquire);
+            const auto weaponFormId =
+                s_equippedWeaponFormId.load(
+                    std::memory_order_acquire);
+            if (weaponGenerationKey == 0 ||
+                weaponFormId == 0 ||
+                weaponFormId != weapon->formID) {
                 return handled;
             }
 
             const float watchdogSeconds = manualCycleWatchdogSeconds(*weaponData);
             const auto watchdogMilliseconds = static_cast<std::uint32_t>(
                 watchdogSeconds * 1000.0f + 0.5f);
-            s_localManualCycleReloadStartSequenceAtArm.store(
+            s_localManualCycleCandidateReloadStartSequenceAtArm.store(
                 reloadStartSequenceBeforeFire,
                 std::memory_order_release);
-            s_localManualCycleReloadEndSequenceAtArm.store(
+            s_localManualCycleCandidateReloadEndSequenceAtArm.store(
                 reloadEndSequenceBeforeFire,
                 std::memory_order_release);
-            s_localManualCycleRequestedWatchdogMilliseconds.store(
+            s_localManualCycleCandidateActionMotionSequenceAtArm.store(
+                actionMotionSequenceBeforeFire,
+                std::memory_order_release);
+            s_localManualCycleCandidateWeaponGenerationKey.store(
+                weaponGenerationKey,
+                std::memory_order_release);
+            s_localManualCycleCandidateWeaponFormId.store(
+                weaponFormId,
+                std::memory_order_release);
+            s_localManualCycleCandidateWatchdogMilliseconds.store(
                 watchdogMilliseconds,
                 std::memory_order_release);
-            s_localManualCycleTestRequestSequence.fetch_add(1, std::memory_order_acq_rel);
-            s_localManualCycleTestLeaseActive.store(true, std::memory_order_release);
+            s_localManualCycleCandidateRequestSequence.fetch_add(
+                1,
+                std::memory_order_acq_rel);
+            s_localManualCycleCandidatePending.store(
+                true,
+                std::memory_order_release);
+            PAPER_LOG_DEBUG(
+                Animation,
+                "Native manual-cycle candidate armed formID={:08X} generation={:016X} watchdog={:.3f}s; awaiting reload-end or ROCK action-part motion",
+                weaponFormId,
+                weaponGenerationKey,
+                watchdogSeconds);
             return handled;
         }
 
@@ -1137,8 +1208,11 @@ namespace paper::native_animation_authority
             const auto* startToken = nativeReloadStartStateToken();
             if (startToken && *stateToken == *startToken) {
                 cancelLocalManualCycleTestLease();
-                s_playerReloadEventActive.store(true, std::memory_order_release);
+                cancelLocalReloadTestLease();
                 s_playerReloadStartSequence.fetch_add(1, std::memory_order_acq_rel);
+                s_playerReloadEventActive.store(
+                    true,
+                    std::memory_order_release);
                 armLocalReloadTestLeaseFromNativeStart();
                 return handled;
             }
@@ -1991,8 +2065,7 @@ namespace paper::native_animation_authority
             if (step.active()) {
                 s_localReloadTestLeaseFrames.store(step.state.watchdogFramesRemaining, std::memory_order_release);
             } else {
-                s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
-                s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
+                cancelLocalReloadTestLease();
                 PAPER_LOG_INFO(Animation,
                     "Native reload animation authority local test lease released: {}",
                     localReloadLeaseEndReasonName(step.endReason));
@@ -2015,6 +2088,145 @@ namespace paper::native_animation_authority
             default:
                 return "active";
             }
+        }
+
+        [[nodiscard]] const char* localManualCycleCandidateResultName(
+            const native_animation_authority_policy::
+                LocalManualCycleCandidateResult result)
+        {
+            using Result = native_animation_authority_policy::
+                LocalManualCycleCandidateResult;
+            switch (result) {
+            case Result::ActivateReloadEnd:
+                return "native reload-end marker";
+            case Result::ActivateActionPartMotion:
+                return "ROCK semantic action-part motion";
+            case Result::ReloadStarted:
+                return "native reload-start preemption";
+            case Result::WeaponIdentityChanged:
+                return "equipped weapon identity changed";
+            case Result::WatchdogExpired:
+                return "candidate watchdog expired";
+            case Result::Pending:
+            default:
+                return "pending";
+            }
+        }
+
+        [[nodiscard]] bool refreshLocalManualCycleCandidate(
+            const float deltaSeconds)
+        {
+            const auto requestSequence =
+                s_localManualCycleCandidateRequestSequence.load(
+                    std::memory_order_acquire);
+            const bool requestChanged =
+                requestSequence !=
+                s_seenLocalManualCycleCandidateRequestSequence;
+            if (requestChanged) {
+                s_seenLocalManualCycleCandidateRequestSequence =
+                    requestSequence;
+                const auto watchdogMilliseconds =
+                    s_localManualCycleCandidateWatchdogMilliseconds.load(
+                        std::memory_order_acquire);
+                s_localManualCycleCandidateState =
+                    native_animation_authority_policy::
+                        LocalManualCycleCandidateState{
+                            .watchdogSecondsRemaining =
+                                static_cast<float>(
+                                    watchdogMilliseconds) /
+                                1000.0f,
+                            .reloadStartSequenceAtArm =
+                                s_localManualCycleCandidateReloadStartSequenceAtArm.load(
+                                    std::memory_order_acquire),
+                            .reloadEndSequenceAtArm =
+                                s_localManualCycleCandidateReloadEndSequenceAtArm.load(
+                                    std::memory_order_acquire),
+                            .actionPartMotionSequenceAtArm =
+                                s_localManualCycleCandidateActionMotionSequenceAtArm.load(
+                                    std::memory_order_acquire),
+                            .weaponGenerationKey =
+                                s_localManualCycleCandidateWeaponGenerationKey.load(
+                                    std::memory_order_acquire),
+                            .weaponFormId =
+                                s_localManualCycleCandidateWeaponFormId.load(
+                                    std::memory_order_acquire),
+                        };
+            }
+
+            if (!s_localManualCycleCandidatePending.load(
+                    std::memory_order_acquire)) {
+                return requestChanged;
+            }
+
+            const auto step =
+                native_animation_authority_policy::
+                    advanceLocalManualCycleCandidate(
+                        s_localManualCycleCandidateState,
+                        native_animation_authority_policy::
+                            LocalManualCycleCandidateSignal{
+                                .reloadStartSequence =
+                                    s_playerReloadStartSequence.load(
+                                        std::memory_order_acquire),
+                                .reloadEndSequence =
+                                    s_playerReloadEndSequence.load(
+                                        std::memory_order_acquire),
+                                .actionPartMotionSequence =
+                                    s_manualCycleActionMotionSequence.load(
+                                        std::memory_order_acquire),
+                                .weaponGenerationKey =
+                                    s_equippedWeaponGenerationKey.load(
+                                        std::memory_order_acquire),
+                                .weaponFormId =
+                                    s_equippedWeaponFormId.load(
+                                        std::memory_order_acquire),
+                                .deltaSeconds = deltaSeconds,
+                            });
+            s_localManualCycleCandidateState = step.state;
+            if (step.pending()) {
+                return requestChanged;
+            }
+
+            s_localManualCycleCandidatePending.store(
+                false,
+                std::memory_order_release);
+            s_localManualCycleCandidateWatchdogMilliseconds.store(
+                0,
+                std::memory_order_release);
+            if (!step.activate()) {
+                PAPER_LOG_DEBUG(
+                    Animation,
+                    "Native manual-cycle candidate rejected: {}",
+                    localManualCycleCandidateResultName(step.result));
+                return true;
+            }
+
+            const auto watchdogMilliseconds =
+                static_cast<std::uint32_t>(
+                    step.state.watchdogSecondsRemaining * 1000.0f +
+                    0.5f);
+            s_localManualCycleReloadStartSequenceAtArm.store(
+                step.state.reloadStartSequenceAtArm,
+                std::memory_order_release);
+            s_localManualCycleReloadEndSequenceAtArm.store(
+                step.state.reloadEndSequenceAtArm,
+                std::memory_order_release);
+            s_localManualCycleRequestedWatchdogMilliseconds.store(
+                watchdogMilliseconds,
+                std::memory_order_release);
+            s_localManualCycleTestRequestSequence.fetch_add(
+                1,
+                std::memory_order_acq_rel);
+            s_localManualCycleTestLeaseActive.store(
+                true,
+                std::memory_order_release);
+            PAPER_LOG_INFO(
+                Animation,
+                "Native manual-cycle hand authority activated formID={:08X} generation={:016X} evidence={} watchdog={:.3f}s",
+                step.state.weaponFormId,
+                step.state.weaponGenerationKey,
+                localManualCycleCandidateResultName(step.result),
+                step.state.watchdogSecondsRemaining);
+            return true;
         }
 
         [[nodiscard]] bool refreshLocalManualCycleTestLease(const float deltaSeconds)
@@ -2090,7 +2302,7 @@ namespace paper::native_animation_authority
                 s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
                 s_manualCycleAuthoredSupportGripLatch = {};
                 refreshEffectiveManualCycleRockGripBaselines(false);
-                PAPER_LOG_DEBUG(Animation,
+                PAPER_LOG_INFO(Animation,
                     "Native manual-cycle hand-only authority released: {}",
                     localManualCycleLeaseEndReasonName(step.endReason));
             }
@@ -2251,6 +2463,7 @@ namespace paper::native_animation_authority
         if (!enabled) {
             s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
             clearManualCycleRockGripState();
+            cancelLocalReloadTestLease();
             cancelLocalManualCycleTestLease();
             const DWORD ownerThread =
                 s_ownerThreadId.load(std::memory_order_acquire);
@@ -2310,10 +2523,13 @@ namespace paper::native_animation_authority
             clearManualCycleRockGripState();
         }
         if (wasEligible && !effectiveEligibility &&
-            s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
+            (s_localManualCycleCandidatePending.load(
+                 std::memory_order_acquire) ||
+                s_localManualCycleTestLeaseActive.load(
+                    std::memory_order_acquire))) {
             cancelLocalManualCycleTestLease();
             PAPER_LOG_DEBUG(Animation,
-                "Native manual-cycle hand-only authority released: equipped-weapon animation eligibility lost");
+                "Native manual-cycle candidate/authority released: equipped-weapon animation eligibility lost");
         }
     }
 
@@ -2330,30 +2546,11 @@ namespace paper::native_animation_authority
                 resolved.rightValid = true;
             }
             if (snapshot.leftSupportGripValid &&
-                snapshot.authoredLeftValid &&
-                finiteTransform(snapshot.leftSupportHandInWeapon) &&
-                finiteTransform(snapshot.authoredLeftHandInWeapon)) {
-                const auto transformDelta = measureManualCycleHandMotion(
-                    snapshot.leftSupportHandInWeapon,
-                    snapshot.authoredLeftHandInWeapon);
-                const float scaleDelta = std::abs(
-                    snapshot.leftSupportHandInWeapon.scale -
-                    snapshot.authoredLeftHandInWeapon.scale);
-                if (native_animation_authority_policy::
-                        isAuthoredSupportGripMatch(
-                            native_animation_authority_policy::
-                                AuthoredSupportGripMatchSample{
-                                    .transformDelta = transformDelta,
-                                    .scaleDelta = scaleDelta,
-                                    .supportGripValid =
-                                        snapshot.leftSupportGripValid,
-                                    .authoredGripValid =
-                                        snapshot.authoredLeftValid,
-                                })) {
-                    resolved.leftHandInWeapon =
-                        snapshot.leftSupportHandInWeapon;
-                    resolved.authoredLeftActive = true;
-                }
+                snapshot.authoredLeftActive &&
+                finiteTransform(snapshot.leftSupportHandInWeapon)) {
+                resolved.leftHandInWeapon =
+                    snapshot.leftSupportHandInWeapon;
+                resolved.authoredLeftActive = true;
             }
         }
 
@@ -2366,8 +2563,7 @@ namespace paper::native_animation_authority
                 snapshot.leftPartGripStateValid &&
                 snapshot.leftPartGripActive &&
                 (!snapshot.leftSupportGripValid ||
-                    (snapshot.authoredLeftValid &&
-                        !resolved.authoredLeftActive));
+                    !snapshot.authoredLeftActive);
             const auto latchState =
                 native_animation_authority_policy::
                     advanceManualCycleAuthoredSupportGripLatch(
@@ -2393,9 +2589,36 @@ namespace paper::native_animation_authority
             manualCycleLeaseActive);
     }
 
+    void setManualCycleWeaponEvidence(
+        const ManualCycleWeaponEvidence& evidence)
+    {
+        const bool identityValid =
+            evidence.weaponGenerationKey != 0 &&
+            evidence.weaponFormId != 0;
+
+        s_equippedWeaponGenerationKey.store(
+            identityValid ? evidence.weaponGenerationKey : 0,
+            std::memory_order_release);
+        s_equippedWeaponFormId.store(
+            identityValid ? evidence.weaponFormId : 0,
+            std::memory_order_release);
+        s_semanticManualCycleActionPresent.store(
+            identityValid &&
+                evidence.semanticManualCycleActionPresent,
+            std::memory_order_release);
+        if (identityValid &&
+            evidence.semanticManualCycleActionMoved) {
+            s_manualCycleActionMotionSequence.fetch_add(
+                1,
+                std::memory_order_acq_rel);
+        }
+    }
+
     void beginRockFrame(const float deltaSeconds)
     {
         const bool localReloadRequestChanged = refreshLocalReloadTestLease();
+        const bool localManualCycleCandidateChanged =
+            refreshLocalManualCycleCandidate(deltaSeconds);
         const bool localManualCycleRequestChanged =
             refreshLocalManualCycleTestLease(deltaSeconds);
         s_frameCaptureReady = false;
@@ -2431,7 +2654,9 @@ namespace paper::native_animation_authority
             // Clearing here re-selects those previous-frame targets and feeds
             // a stale hand/weapon pose back into the current weapon solve.
         }
-        if (localReloadRequestChanged || localManualCycleRequestChanged ||
+        if (localReloadRequestChanged ||
+            localManualCycleCandidateChanged ||
+            localManualCycleRequestChanged ||
             currentFlags != previousFlags) {
             resetHybridPoseState();
         }
@@ -2594,12 +2819,20 @@ namespace paper::native_animation_authority
         s_localReloadPartialAuthorityEnabled.store(false, std::memory_order_release);
         s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
         s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
+        s_semanticManualCycleActionPresent.store(false, std::memory_order_release);
+        s_equippedWeaponGenerationKey.store(0, std::memory_order_release);
+        s_equippedWeaponFormId.store(0, std::memory_order_release);
+        s_manualCycleActionMotionSequence.store(0, std::memory_order_release);
         clearManualCycleRockGripState();
-        s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
+        cancelLocalReloadTestLease();
         cancelLocalManualCycleTestLease();
         s_localReloadLeaseState = {};
+        s_localManualCycleCandidateState = {};
         s_localManualCycleLeaseState = {};
         s_seenLocalReloadTestRequestSequence = s_localReloadTestRequestSequence.load(std::memory_order_acquire);
+        s_seenLocalManualCycleCandidateRequestSequence =
+            s_localManualCycleCandidateRequestSequence.load(
+                std::memory_order_acquire);
         s_seenLocalManualCycleTestRequestSequence =
             s_localManualCycleTestRequestSequence.load(std::memory_order_acquire);
         s_playerReloadEventActive.store(false, std::memory_order_release);
@@ -2641,6 +2874,9 @@ namespace paper::native_animation_authority
             s_playerReloadEndSequence.load(std::memory_order_acquire);
         result.reloadEventActive =
             s_playerReloadEventActive.load(std::memory_order_acquire);
+        result.localManualCycleCandidatePending =
+            s_localManualCycleCandidatePending.load(
+                std::memory_order_acquire);
         result.localManualCycleLeaseActive =
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire);
         if (s_hookInstalled.load(std::memory_order_acquire)) {

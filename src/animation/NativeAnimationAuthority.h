@@ -38,6 +38,7 @@ namespace paper::native_animation_authority
         std::uint64_t reloadStartSequence{ 0 };
         std::uint64_t reloadEndSequence{ 0 };
         bool reloadEventActive{ false };
+        bool localManualCycleCandidatePending{ false };
         bool localManualCycleLeaseActive{ false };
     };
 
@@ -45,13 +46,20 @@ namespace paper::native_animation_authority
     {
         RE::NiTransform rightHandInWeapon{};
         RE::NiTransform leftSupportHandInWeapon{};
-        RE::NiTransform authoredLeftHandInWeapon{};
         std::uint64_t weaponGenerationKey{ 0 };
         bool rightValid{ false };
         bool leftPartGripStateValid{ false };
         bool leftPartGripActive{ false };
         bool leftSupportGripValid{ false };
-        bool authoredLeftValid{ false };
+        bool authoredLeftActive{ false };
+    };
+
+    struct ManualCycleWeaponEvidence
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        bool semanticManualCycleActionPresent{ false };
+        bool semanticManualCycleActionMoved{ false };
     };
 
     struct CapturedTransform
@@ -117,6 +125,8 @@ namespace paper::native_animation_authority
     void setManualCycleHandAnimationEligible(bool eligible);
     void setManualCycleRockGripSnapshot(
         const ManualCycleRockGripSnapshot& snapshot);
+    void setManualCycleWeaponEvidence(
+        const ManualCycleWeaponEvidence& evidence);
 
     void beginRockFrame(float deltaSeconds);
     [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);

@@ -13,9 +13,8 @@ namespace paper::native_animation_authority_policy
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
     inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 1.5f;
     inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 10.0f;
-    inline constexpr float kAuthoredSupportGripTranslationToleranceGameUnits = 0.05f;
-    inline constexpr float kAuthoredSupportGripRotationToleranceDegrees = 0.5f;
-    inline constexpr float kAuthoredSupportGripScaleTolerance = 0.001f;
+    inline constexpr float kManualCycleActionPartTranslationThresholdGameUnits = 0.05f;
+    inline constexpr float kManualCycleActionPartRotationThresholdDegrees = 0.5f;
 
     enum class LocalReloadLeaseEndReason : std::uint32_t
     {
@@ -153,6 +152,7 @@ namespace paper::native_animation_authority_policy
         bool shotgun{ false };
         bool rifle{ false };
         bool manualCycleAnimationKeyword{ false };
+        bool semanticActionPart{ false };
     };
 
     [[nodiscard]] inline constexpr bool isManualCycleFireAnimationAllowed(
@@ -162,7 +162,53 @@ namespace paper::native_animation_authority_policy
                eligibility.revolverAnimation ||
                eligibility.shotgun ||
                eligibility.rifle ||
-               eligibility.manualCycleAnimationKeyword;
+               eligibility.manualCycleAnimationKeyword ||
+               eligibility.semanticActionPart;
+    }
+
+    enum class ManualCycleSemanticPartKind : std::uint32_t
+    {
+        Pump = 4,
+        Bolt = 9,
+        BreakAction = 12,
+        Cylinder = 13,
+        Lever = 18,
+    };
+
+    enum class ManualCycleSemanticActionRole : std::uint32_t
+    {
+        Bolt = 1,
+        Pump = 4,
+        BreakAction = 5,
+        Cylinder = 6,
+        Lever = 7,
+    };
+
+    [[nodiscard]] inline constexpr bool isManualCycleSemanticActionPart(
+        const std::uint32_t partKind,
+        const std::uint32_t actionRole)
+    {
+        switch (static_cast<ManualCycleSemanticActionRole>(actionRole)) {
+        case ManualCycleSemanticActionRole::Bolt:
+        case ManualCycleSemanticActionRole::Pump:
+        case ManualCycleSemanticActionRole::BreakAction:
+        case ManualCycleSemanticActionRole::Cylinder:
+        case ManualCycleSemanticActionRole::Lever:
+            return true;
+        default:
+            break;
+        }
+
+        switch (static_cast<ManualCycleSemanticPartKind>(partKind)) {
+        case ManualCycleSemanticPartKind::Pump:
+        case ManualCycleSemanticPartKind::Bolt:
+        case ManualCycleSemanticPartKind::BreakAction:
+        case ManualCycleSemanticPartKind::Cylinder:
+        case ManualCycleSemanticPartKind::Lever:
+            return true;
+        default:
+            return false;
+        }
     }
 
     struct ManualCycleHandAnimationEligibility
@@ -235,24 +281,13 @@ namespace paper::native_animation_authority_policy
         float rotationDegrees{ 0.0f };
     };
 
-    struct AuthoredSupportGripMatchSample
+    [[nodiscard]] inline constexpr bool isManualCycleActionPartMotion(
+        const ManualCycleHandMotionSample& sample)
     {
-        ManualCycleHandMotionSample transformDelta{};
-        float scaleDelta{ 0.0f };
-        bool supportGripValid{ false };
-        bool authoredGripValid{ false };
-    };
-
-    [[nodiscard]] inline constexpr bool isAuthoredSupportGripMatch(
-        const AuthoredSupportGripMatchSample& sample)
-    {
-        return sample.supportGripValid &&
-               sample.authoredGripValid &&
-               sample.transformDelta.translationGameUnits <=
-                   kAuthoredSupportGripTranslationToleranceGameUnits &&
-               sample.transformDelta.rotationDegrees <=
-                   kAuthoredSupportGripRotationToleranceDegrees &&
-               sample.scaleDelta <= kAuthoredSupportGripScaleTolerance;
+        return sample.translationGameUnits >=
+                   kManualCycleActionPartTranslationThresholdGameUnits ||
+               sample.rotationDegrees >=
+                   kManualCycleActionPartRotationThresholdDegrees;
     }
 
     [[nodiscard]] inline constexpr bool updateManualCycleHandMotionQualification(
@@ -264,6 +299,124 @@ namespace paper::native_animation_authority_policy
                    kManualCycleHandMotionTranslationThresholdGameUnits ||
                sample.rotationDegrees >=
                    kManualCycleHandMotionRotationThresholdDegrees;
+    }
+
+    enum class LocalManualCycleCandidateResult : std::uint32_t
+    {
+        Pending = 0,
+        ActivateReloadEnd,
+        ActivateActionPartMotion,
+        ReloadStarted,
+        WeaponIdentityChanged,
+        WatchdogExpired,
+    };
+
+    struct LocalManualCycleCandidateState
+    {
+        float watchdogSecondsRemaining{ 0.0f };
+        std::uint64_t reloadStartSequenceAtArm{ 0 };
+        std::uint64_t reloadEndSequenceAtArm{ 0 };
+        std::uint64_t actionPartMotionSequenceAtArm{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+    };
+
+    struct LocalManualCycleCandidateSignal
+    {
+        std::uint64_t reloadStartSequence{ 0 };
+        std::uint64_t reloadEndSequence{ 0 };
+        std::uint64_t actionPartMotionSequence{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        float deltaSeconds{ 0.0f };
+    };
+
+    struct LocalManualCycleCandidateStep
+    {
+        LocalManualCycleCandidateState state{};
+        LocalManualCycleCandidateResult result{
+            LocalManualCycleCandidateResult::Pending
+        };
+
+        [[nodiscard]] constexpr bool pending() const
+        {
+            return result == LocalManualCycleCandidateResult::Pending &&
+                   state.watchdogSecondsRemaining > 0.0f;
+        }
+
+        [[nodiscard]] constexpr bool activate() const
+        {
+            return result ==
+                       LocalManualCycleCandidateResult::ActivateReloadEnd ||
+                   result ==
+                       LocalManualCycleCandidateResult::
+                           ActivateActionPartMotion;
+        }
+    };
+
+    [[nodiscard]] constexpr LocalManualCycleCandidateStep
+        advanceLocalManualCycleCandidate(
+            LocalManualCycleCandidateState state,
+            const LocalManualCycleCandidateSignal& signal)
+    {
+        if (state.watchdogSecondsRemaining <= 0.0f) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return {
+                state,
+                LocalManualCycleCandidateResult::WatchdogExpired,
+            };
+        }
+        if (state.weaponGenerationKey == 0 ||
+            state.weaponFormId == 0 ||
+            signal.weaponGenerationKey != state.weaponGenerationKey ||
+            signal.weaponFormId != state.weaponFormId) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return {
+                state,
+                LocalManualCycleCandidateResult::WeaponIdentityChanged,
+            };
+        }
+        if (signal.reloadStartSequence !=
+            state.reloadStartSequenceAtArm) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return {
+                state,
+                LocalManualCycleCandidateResult::ReloadStarted,
+            };
+        }
+        if (signal.reloadEndSequence !=
+            state.reloadEndSequenceAtArm) {
+            return {
+                state,
+                LocalManualCycleCandidateResult::ActivateReloadEnd,
+            };
+        }
+        if (signal.actionPartMotionSequence !=
+            state.actionPartMotionSequenceAtArm) {
+            return {
+                state,
+                LocalManualCycleCandidateResult::
+                    ActivateActionPartMotion,
+            };
+        }
+
+        const float deltaSeconds =
+            signal.deltaSeconds > 0.0f &&
+                    signal.deltaSeconds <= 0.1f ?
+                signal.deltaSeconds :
+                (1.0f / 90.0f);
+        state.watchdogSecondsRemaining -= deltaSeconds;
+        if (state.watchdogSecondsRemaining <= 0.0f) {
+            state.watchdogSecondsRemaining = 0.0f;
+            return {
+                state,
+                LocalManualCycleCandidateResult::WatchdogExpired,
+            };
+        }
+        return {
+            state,
+            LocalManualCycleCandidateResult::Pending,
+        };
     }
 
     [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(
@@ -291,8 +444,10 @@ namespace paper::native_animation_authority_policy
      * Bethesda's manual-cycle action is bracketed by two ReloadEnd graph
      * events: one at the start of the bolt/lever or revolver hammer clip and
      * one at its end. A
-     * player WeaponFire event arms this state with the event sequence sampled
-     * at that exact boundary. A real reload start wins immediately, while the
+     * player WeaponFire event first creates a generation-bound candidate.
+     * The first ReloadEnd marker or semantic action-part movement activates
+     * this state with the pre-fire event sequence, preserving the complete
+     * two-marker bracket. A real reload start wins immediately, while the
      * duration derived from the equipped weapon's live animation data remains
      * a bounded fallback for non-conforming replacement clips.
      */
