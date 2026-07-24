@@ -9,12 +9,8 @@
 #include "debug/NativeAnimationDebugVisualization.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
-#include "support/TransformMath.h"
 
-#include <algorithm>
-#include <array>
 #include <atomic>
-#include <cmath>
 #include <cstdint>
 #include <string>
 
@@ -30,34 +26,6 @@ namespace
     bool s_runtimeOperational{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
 
-    struct ManualCycleActionPoseSample
-    {
-        RE::NiTransform local{};
-        std::uint32_t bodyId{ 0x7FFF'FFFF };
-        std::uint32_t partKind{ 0 };
-        std::uint32_t actionRole{ 0 };
-        bool sourceParentLocal{ false };
-        bool valid{ false };
-    };
-
-    struct ManualCycleActionPoseTracker
-    {
-        std::array<
-            ManualCycleActionPoseSample,
-            rock::provider::ROCK_PROVIDER_MAX_WEAPON_BODIES>
-            samples{};
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t sampleCount{ 0 };
-    };
-
-    struct ManualCycleActionEvidence
-    {
-        bool present{ false };
-        bool moved{ false };
-    };
-
-    ManualCycleActionPoseTracker s_manualCycleActionPoseTracker{};
-
     [[nodiscard]] bool hasContextFlag(
         const std::uint32_t flags,
         const rock::provider::RockProviderAnimationPhaseContextFlagV1 flag)
@@ -72,9 +40,9 @@ namespace
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
-    [[nodiscard]] bool hasWeaponPartPoseFlag(
+    [[nodiscard]] bool hasAuthoredGripFlag(
         const std::uint32_t flags,
-        const rock::provider::RockProviderWeaponPartPoseFlagV1 flag)
+        const rock::provider::RockProviderAuthoredGripPoseFlagV1 flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
@@ -88,170 +56,6 @@ namespace
                kind ==
                    rock::provider::RockProviderWeaponPartGripKindV1::
                        SupportVisualOnly;
-    }
-
-    [[nodiscard]] bool finiteTransform(const RE::NiTransform& transform)
-    {
-        for (int row = 0; row < 3; ++row) {
-            for (int column = 0; column < 3; ++column) {
-                if (!std::isfinite(
-                        transform.rotate.entry[row][column])) {
-                    return false;
-                }
-            }
-        }
-        return std::isfinite(transform.translate.x) &&
-               std::isfinite(transform.translate.y) &&
-               std::isfinite(transform.translate.z) &&
-               std::isfinite(transform.scale) &&
-               std::abs(transform.scale) > 0.000001f;
-    }
-
-    [[nodiscard]] native_animation_authority_policy::
-        ManualCycleHandMotionSample measureActionPartMotion(
-            const RE::NiTransform& previous,
-            const RE::NiTransform& current)
-    {
-        const auto delta = transform_math::composeTransforms(
-            transform_math::invertTransform(previous),
-            current);
-        if (!finiteTransform(delta)) {
-            return {};
-        }
-        const float translation = std::sqrt(
-            delta.translate.x * delta.translate.x +
-            delta.translate.y * delta.translate.y +
-            delta.translate.z * delta.translate.z);
-        const float trace =
-            delta.rotate.entry[0][0] +
-            delta.rotate.entry[1][1] +
-            delta.rotate.entry[2][2];
-        const float cosine = (std::clamp)(
-            (trace - 1.0f) * 0.5f,
-            -1.0f,
-            1.0f);
-        constexpr float kRadiansToDegrees = 57.29577951308232f;
-        return {
-            .translationGameUnits = translation,
-            .rotationDegrees =
-                std::acos(cosine) * kRadiansToDegrees,
-        };
-    }
-
-    [[nodiscard]] const ManualCycleActionPoseSample*
-        findPreviousActionPose(
-            const std::uint32_t bodyId,
-            const std::uint32_t partKind,
-            const std::uint32_t actionRole,
-            const bool sourceParentLocal)
-    {
-        for (std::uint32_t i = 0;
-             i < s_manualCycleActionPoseTracker.sampleCount;
-             ++i) {
-            const auto& sample =
-                s_manualCycleActionPoseTracker.samples[i];
-            if (sample.valid &&
-                sample.bodyId == bodyId &&
-                sample.partKind == partKind &&
-                sample.actionRole == actionRole &&
-                sample.sourceParentLocal == sourceParentLocal) {
-                return &sample;
-            }
-        }
-        return nullptr;
-    }
-
-    [[nodiscard]] ManualCycleActionEvidence
-        refreshManualCycleActionEvidence(
-            const std::uint64_t weaponGenerationKey)
-    {
-        ManualCycleActionEvidence evidence{};
-        std::array<
-            rock::provider::RockProviderWeaponPartPoseV1,
-            rock::provider::ROCK_PROVIDER_MAX_WEAPON_BODIES>
-            poses{};
-        std::uint32_t poseCount = 0;
-        if (weaponGenerationKey == 0 ||
-            !rockApiClient().copyWeaponPartPoses(
-                poses,
-                poseCount)) {
-            s_manualCycleActionPoseTracker = {};
-            return evidence;
-        }
-
-        ManualCycleActionPoseTracker next{};
-        next.weaponGenerationKey = weaponGenerationKey;
-        const auto boundedPoseCount = (std::min)(
-            poseCount,
-            static_cast<std::uint32_t>(poses.size()));
-        for (std::uint32_t i = 0; i < boundedPoseCount; ++i) {
-            const auto& pose = poses[i];
-            if (pose.weaponGenerationKey != weaponGenerationKey ||
-                !hasWeaponPartPoseFlag(
-                    pose.flags,
-                    rock::provider::
-                        RockProviderWeaponPartPoseFlagV1::Valid) ||
-                !native_animation_authority_policy::
-                    isManualCycleSemanticActionPart(
-                        pose.partKind,
-                        pose.actionRole)) {
-                continue;
-            }
-            evidence.present = true;
-
-            const bool sourceParentLocal =
-                hasWeaponPartPoseFlag(
-                    pose.flags,
-                    rock::provider::
-                        RockProviderWeaponPartPoseFlagV1::
-                            SourceParentLocalValid);
-            const bool weaponRootLocal =
-                hasWeaponPartPoseFlag(
-                    pose.flags,
-                    rock::provider::
-                        RockProviderWeaponPartPoseFlagV1::
-                            WeaponRootLocalValid);
-            if (!sourceParentLocal && !weaponRootLocal) {
-                continue;
-            }
-
-            ManualCycleActionPoseSample sample{};
-            sample.local = api_transform::toNi(
-                sourceParentLocal ?
-                    pose.sourceParentLocal :
-                    pose.weaponRootLocal);
-            sample.bodyId = pose.bodyId;
-            sample.partKind = pose.partKind;
-            sample.actionRole = pose.actionRole;
-            sample.sourceParentLocal = sourceParentLocal;
-            sample.valid = finiteTransform(sample.local);
-            if (!sample.valid) {
-                continue;
-            }
-
-            if (s_manualCycleActionPoseTracker.weaponGenerationKey ==
-                    weaponGenerationKey) {
-                const auto* previous = findPreviousActionPose(
-                    sample.bodyId,
-                    sample.partKind,
-                    sample.actionRole,
-                    sample.sourceParentLocal);
-                if (previous &&
-                    native_animation_authority_policy::
-                        isManualCycleActionPartMotion(
-                            measureActionPartMotion(
-                                previous->local,
-                                sample.local))) {
-                    evidence.moved = true;
-                }
-            }
-
-            if (next.sampleCount < next.samples.size()) {
-                next.samples[next.sampleCount++] = sample;
-            }
-        }
-        s_manualCycleActionPoseTracker = next;
-        return evidence;
     }
 
     void publishConfigState()
@@ -276,29 +80,6 @@ namespace
         const bool valid = queried && hasGripFlag(
             s_gripState.flags,
             rock::provider::RockProviderEquippedWeaponGripStateFlagV1::Valid);
-
-        const auto actionEvidence =
-            refreshManualCycleActionEvidence(
-                valid ?
-                    s_gripState.weaponGenerationKey :
-                    0);
-        native_animation_authority::
-            setManualCycleWeaponEvidence(
-                native_animation_authority::
-                    ManualCycleWeaponEvidence{
-                        .weaponGenerationKey =
-                            valid ?
-                                s_gripState.weaponGenerationKey :
-                                0,
-                        .weaponFormId =
-                            valid ?
-                                s_gripState.weaponFormId :
-                                0,
-                        .semanticManualCycleActionPresent =
-                            actionEvidence.present,
-                        .semanticManualCycleActionMoved =
-                            actionEvidence.moved,
-                    });
         const bool manualCycleEligible =
             native_animation_authority_policy::canApplyManualCycleHandAnimation(
                 native_animation_authority_policy::ManualCycleHandAnimationEligibility{
@@ -347,8 +128,26 @@ namespace
             snapshot.leftSupportHandInWeapon =
                 api_transform::toNi(leftPartGrip.handPartLocal);
             snapshot.leftSupportGripValid = true;
-            snapshot.authoredLeftActive =
-                leftPartGrip.authoredSupportGrip != 0;
+        }
+
+        rock::provider::RockProviderAuthoredGripPoseV1 authoredGrip{};
+        const bool authoredSupportPoseValid =
+            leftSupportCandidate &&
+            rockApiClient().querySelectedAuthoredGripPose(authoredGrip) &&
+            hasAuthoredGripFlag(
+                authoredGrip.flags,
+                rock::provider::RockProviderAuthoredGripPoseFlagV1::Valid) &&
+            hasAuthoredGripFlag(
+                authoredGrip.flags,
+                rock::provider::RockProviderAuthoredGripPoseFlagV1::
+                    LeftHandValid) &&
+            authoredGrip.weaponGenerationKey ==
+                s_gripState.weaponGenerationKey &&
+            authoredGrip.weaponFormId == s_gripState.weaponFormId;
+        if (authoredSupportPoseValid) {
+            snapshot.authoredLeftHandInWeapon =
+                api_transform::toNi(authoredGrip.leftHandInWeapon);
+            snapshot.authoredLeftValid = true;
         }
         native_animation_authority::setManualCycleRockGripSnapshot(snapshot);
     }
@@ -586,7 +385,6 @@ namespace
         native_animation_authority::resetTransientState();
         frik_visual_authority::setSkeletonReadyHint(false);
         s_gripState = {};
-        s_manualCycleActionPoseTracker = {};
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
         provider::resetRuntime();

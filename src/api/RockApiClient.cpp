@@ -23,10 +23,6 @@ namespace paper
                 rock::provider::RockProviderConsumerCapabilityV1::DebugOverlayPublication) |
             static_cast<std::uint32_t>(
                 rock::provider::RockProviderConsumerCapabilityV1::PoseReadback);
-        constexpr std::uint32_t kWeaponPartObservabilityCapability =
-            static_cast<std::uint32_t>(
-                rock::provider::RockProviderConsumerCapabilityV1::
-                    WeaponPartObservability);
         constexpr std::uint32_t kRollingLeaseFrames = 3;
     }
 
@@ -76,18 +72,12 @@ namespace paper
             return false;
         }
 
-        const bool weaponPartObservabilitySupported =
-            rock::provider::supportsWeaponPartObservabilityV1();
         rock::provider::RockProviderConsumerRegistrationV1 registration{};
         std::memcpy(
             registration.modName,
             "PAPER",
             sizeof("PAPER"));
-        registration.requestedCapabilities =
-            kRequiredCapabilities |
-            (weaponPartObservabilitySupported ?
-                    kWeaponPartObservabilityCapability :
-                    0);
+        registration.requestedCapabilities = kRequiredCapabilities;
         rock::provider::RockProviderConsumerHandleV1 handle{};
         const auto result = _api->registerConsumerV1(&registration, &handle);
         if (result != rock::provider::RockProviderResultV1::Ok ||
@@ -107,18 +97,11 @@ namespace paper
         }
 
         _ownerToken = handle.ownerToken;
-        _weaponPartObservabilityAvailable =
-            weaponPartObservabilitySupported &&
-            (handle.grantedCapabilities &
-                kWeaponPartObservabilityCapability) != 0;
         PAPER_LOG_INFO(
             Api,
-            "Registered with ROCK V1 owner={:016X} capabilities=0x{:08X} semanticParts={}",
+            "Registered with ROCK V1 owner={:016X} capabilities=0x{:08X}",
             _ownerToken,
-            handle.grantedCapabilities,
-            _weaponPartObservabilityAvailable ?
-                "available" :
-                "unavailable");
+            handle.grantedCapabilities);
         return true;
     }
 
@@ -140,7 +123,6 @@ namespace paper
         (void)_api->unregisterConsumerV1(_ownerToken);
         _ownerToken = 0;
         _api = nullptr;
-        _weaponPartObservabilityAvailable = false;
     }
 
     bool RockApiClient::ready() const
@@ -229,21 +211,14 @@ namespace paper
         return ready() && _api->getWeaponPartGripStateV1(hand, &outState);
     }
 
-    bool RockApiClient::copyWeaponPartPoses(
-        std::array<
-            rock::provider::RockProviderWeaponPartPoseV1,
-            rock::provider::ROCK_PROVIDER_MAX_WEAPON_BODIES>& outPoses,
-        std::uint32_t& outCount) const
+    bool RockApiClient::querySelectedAuthoredGripPose(
+        rock::provider::RockProviderAuthoredGripPoseV1& outPose) const
     {
-        outPoses = {};
-        outCount = 0;
+        outPose = {};
         return ready() &&
-               _weaponPartObservabilityAvailable &&
-               _api->copyWeaponPartPoseSnapshotV1(
+               _api->getSelectedAuthoredGripPoseV1(
                    _ownerToken,
-                   outPoses.data(),
-                   static_cast<std::uint32_t>(outPoses.size()),
-                   &outCount) ==
+                   &outPose) ==
                    rock::provider::RockProviderResultV1::Ok;
     }
 

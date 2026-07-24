@@ -2,7 +2,6 @@
 
 #include "api/ROCKProviderApi.h"
 
-#include <array>
 #include <cstdint>
 
 namespace paper
@@ -29,11 +28,8 @@ namespace paper
         [[nodiscard]] bool queryWeaponPartGripState(
             rock::provider::RockProviderHand hand,
             rock::provider::RockProviderWeaponPartGripStateV1& outState) const;
-        [[nodiscard]] bool copyWeaponPartPoses(
-            std::array<
-                rock::provider::RockProviderWeaponPartPoseV1,
-                rock::provider::ROCK_PROVIDER_MAX_WEAPON_BODIES>& outPoses,
-            std::uint32_t& outCount) const;
+        [[nodiscard]] bool querySelectedAuthoredGripPose(
+            rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
         [[nodiscard]] bool queryEquippedWeaponClassification(
             rock::provider::RockProviderWeaponClassificationV1& outClassification) const;
         [[nodiscard]] bool setHandVisualAuthority(
@@ -51,7 +47,6 @@ namespace paper
         std::uint64_t _ownerToken{ 0 };
         std::uint64_t _phaseCallbackToken{ 0 };
         std::uint32_t _publishedAuthorityFlags{ 0 };
-        bool _weaponPartObservabilityAvailable{ false };
     };
 
     RockApiClient& rockApiClient();
