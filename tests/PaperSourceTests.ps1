@@ -55,6 +55,14 @@ Reject-Text 'src/native/NativeOffsets.h' 'PostUpdateAnimationGraphManager|Update
 Require-Text 'data/config/PAPER.ini' 'bNativeReloadAnimationAuthorityTestEnabled\s*=\s*true[\s\S]*bNativeReloadAnimationPartialAuthorityTestEnabled\s*=\s*true' 'Both migrated reload authority switches must default true in Paper.'
 Require-Text 'data/config/PAPER.ini' '\[Debug\][\s\S]*bDebugDrawNativeAnimation\s*=\s*false[\s\S]*bDebugDrawNativeAnimationText\s*=\s*true[\s\S]*fDebugNativeAnimationAxisLength[\s\S]*fDebugNativeAnimationMarkerSize' 'Paper must retain bounded, opt-in native animation visualization controls.'
 Reject-Text 'data/config/PAPER.ini' 'AuthoredPrimaryFiringGrip|Offhand|EquippedWeaponGrab' 'ROCK-owned equipped-weapon grip settings must not migrate to Paper.'
+Require-Text 'CMakeLists.txt' 'file\(READ\s+"\$\{PAPER_DEFAULT_INI_SOURCE\}"\s+PAPER_DEFAULT_INI_CONTENT\)[\s\S]*PaperDefaultIni\.h\.in' 'Paper must compile its canonical reference INI into the plugin for first-run creation.'
+Require-Text 'src/PaperConfig.cpp' 'ensureFileExists\([\s\S]*config_defaults::kIni[\s\S]*ini\.LoadFile\(activePath\.c_str\(\)\)' 'Paper must create a missing production INI before attempting to load it.'
+
+$referenceIni = [System.IO.File]::ReadAllBytes((Join-Path $Root 'data/config/PAPER.ini'))
+$deployedIni = [System.IO.File]::ReadAllBytes((Join-Path $Root 'data/mod/PAPER_Config/PAPER.ini'))
+if (-not [System.Linq.Enumerable]::SequenceEqual[byte]($referenceIni, $deployedIni)) {
+    $failures.Add('Paper reference and deployed default INIs must remain byte-for-byte synchronized.')
+}
 
 Require-Text 'src/api/RockApiClient.cpp' 'DebugOverlayPublication[\s\S]*ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES[\s\S]*supportsDebugOverlayPublicationV1[\s\S]*supportsPresentedHandFramesV1' 'Paper must negotiate ROCK''s complete V1 debug and final presented-hand surfaces.'
 Require-Text 'src/api/RockApiClient.cpp' 'PoseReadback[\s\S]*supportsWeaponPartGripStateV1[\s\S]*supportsPoseReadbackV1[\s\S]*getWeaponPartGripStateV1[\s\S]*getSelectedAuthoredGripPoseV1' 'Paper must negotiate and consume ROCK''s V1 part-grip and authored-pose readback surfaces.'

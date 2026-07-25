@@ -51,6 +51,14 @@ add_subdirectory("${COMMON_LIB_F4VR_PATH_SELECTED}" "CommonLibF4" EXCLUDE_FROM_A
 
 configure_file("${ROOT_DIR}/cmake/version.rc.in" "${BUILD_DIR}/version.rc" @ONLY)
 configure_file("${ROOT_DIR}/cmake/Version.h.in" "${BUILD_DIR}/include/Version.h" @ONLY)
+set(PAPER_DEFAULT_INI_SOURCE "${ROOT_DIR}/data/config/PAPER.ini")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PAPER_DEFAULT_INI_SOURCE}")
+file(READ "${PAPER_DEFAULT_INI_SOURCE}" PAPER_DEFAULT_INI_CONTENT)
+configure_file(
+  "${ROOT_DIR}/cmake/PaperDefaultIni.h.in"
+  "${BUILD_DIR}/include/PaperDefaultIni.h"
+  @ONLY
+)
 
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${SOURCE_DIR}/*.h")
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${SOURCE_DIR}/*.cpp")
@@ -62,6 +70,7 @@ add_library(${PROJECT_NAME} SHARED
   ${sources}
   ${inls}
   "${BUILD_DIR}/include/Version.h"
+  "${BUILD_DIR}/include/PaperDefaultIni.h"
   "${BUILD_DIR}/version.rc"
 )
 
@@ -130,6 +139,31 @@ if(BUILD_PAPER_TESTS)
   target_compile_features(PAPERPolicyTests PRIVATE cxx_std_23)
   target_include_directories(PAPERPolicyTests PRIVATE "${SOURCE_DIR}")
   add_test(NAME PAPERPolicyTests COMMAND "$<TARGET_FILE:PAPERPolicyTests>")
+
+  add_executable(PAPERConfigFileTests
+    "${ROOT_DIR}/tests/PaperConfigFileTests.cpp"
+    "${SOURCE_DIR}/PaperConfigFile.cpp"
+  )
+  target_compile_features(PAPERConfigFileTests PRIVATE cxx_std_23)
+  target_compile_definitions(PAPERConfigFileTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+  )
+  target_compile_options(PAPERConfigFileTests PRIVATE
+    /sdl
+    /utf-8
+    /permissive-
+    /Zc:__cplusplus
+    /Zc:preprocessor
+    /W4
+  )
+  target_include_directories(PAPERConfigFileTests PRIVATE
+    "${BUILD_DIR}/include"
+    "${SOURCE_DIR}"
+  )
+  add_test(NAME PAPERConfigFileTests COMMAND "$<TARGET_FILE:PAPERConfigFileTests>")
 
   find_program(PWSH_EXECUTABLE NAMES pwsh REQUIRED)
   add_test(

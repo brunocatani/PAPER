@@ -1,5 +1,7 @@
 #include "PaperConfig.h"
 
+#include "PaperConfigFile.h"
+#include "PaperDefaultIni.h"
 #include "PaperLog.h"
 
 #include <Windows.h>
@@ -35,6 +37,19 @@ namespace paper
     bool PaperConfig::reload()
     {
         activePath = resolveActiveIniPath();
+        const auto ensureResult = config_file::ensureFileExists(
+            std::filesystem::path(activePath),
+            config_defaults::kIni);
+        if (ensureResult.status == config_file::EnsureStatus::Created) {
+            PAPER_LOG_INFO(Config, "Created default INI at '{}'", activePath);
+        } else if (ensureResult.status == config_file::EnsureStatus::Failed) {
+            PAPER_LOG_WARN(
+                Config,
+                "Could not create missing INI at '{}': {}; retaining safe compiled defaults if loading also fails",
+                activePath,
+                ensureResult.error.message());
+        }
+
         CSimpleIniA ini;
         ini.SetUnicode();
         const SI_Error result = ini.LoadFile(activePath.c_str());
