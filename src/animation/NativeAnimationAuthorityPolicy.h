@@ -165,31 +165,171 @@ namespace paper::native_animation_authority_policy
                eligibility.manualCycleAnimationKeyword;
     }
 
-    struct ManualCycleHandAnimationEligibility
+    enum class NativeAnimationCompatibilityReason : std::uint8_t
     {
+        None = 0,
+        HandlingStateUnavailable,
+        LeftFiringHand,
+        PartCarry,
+        WeaponUnavailable,
+        WeaponIdentityChanged,
+        AnimationRequestResetRequired,
+    };
+
+    struct NativeAnimationCompatibilityObservation
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        bool handlingStateValid{ false };
         bool gripStateValid{ false };
         bool firingHandIsLeft{ false };
+        bool partCarryActive{ false };
+        bool weaponPresent{ false };
+        bool weaponIdentityCoherent{ false };
     };
+
+    struct NativeAnimationCompatibilityState
+    {
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        bool weaponBound{ false };
+        bool animationRequestResetRequired{ false };
+    };
+
+    struct NativeAnimationCompatibilityStep
+    {
+        NativeAnimationCompatibilityState state{};
+        NativeAnimationCompatibilityReason reason{
+            NativeAnimationCompatibilityReason::None
+        };
+
+        [[nodiscard]] constexpr bool compatible() const
+        {
+            return reason == NativeAnimationCompatibilityReason::None;
+        }
+    };
+
+    [[nodiscard]] inline constexpr std::string_view
+        nativeAnimationCompatibilityReasonName(
+            const NativeAnimationCompatibilityReason reason)
+    {
+        switch (reason) {
+        case NativeAnimationCompatibilityReason::HandlingStateUnavailable:
+            return "handling-state-unavailable";
+        case NativeAnimationCompatibilityReason::LeftFiringHand:
+            return "left-firing-hand";
+        case NativeAnimationCompatibilityReason::PartCarry:
+            return "part-carry";
+        case NativeAnimationCompatibilityReason::WeaponUnavailable:
+            return "weapon-unavailable";
+        case NativeAnimationCompatibilityReason::WeaponIdentityChanged:
+            return "weapon-identity-changed";
+        case NativeAnimationCompatibilityReason::
+            AnimationRequestResetRequired:
+            return "animation-request-reset-required";
+        case NativeAnimationCompatibilityReason::None:
+        default:
+            return "compatible";
+        }
+    }
 
     /*
      * PAPER's captured graph topology is Bethesda's physical-right primary
-     * arm and physical-left support arm. A confirmed left firing hand must
-     * therefore yield all PAPER pose authority to native/ROCK presentation.
-     * An absent grip snapshot is not evidence of an incompatible hand and
-     * preserves reload lifecycle behavior outside an equipped-weapon frame.
+     * arm and physical-left support arm. ROCK's handling snapshot is the
+     * source of truth for physical topology, independent of which addon (if
+     * any) currently owns the rolling handling lease.
+     *
+     * Active local or consumer animation authority is additionally bound to
+     * one concrete equipped weapon generation. A physical drop, stash,
+     * unequip, replacement, or collision-generation change cancels that
+     * session instead of allowing a stale captured pose to attach to a
+     * different weapon. The request must clear before a new session can bind.
+     * With no animation request, an absent weapon is normal and does not
+     * disable PAPER's hooks for the next equip.
      */
-    [[nodiscard]] inline constexpr bool canApplyNativeAnimationForFiringHand(
-        const ManualCycleHandAnimationEligibility& eligibility)
+    [[nodiscard]] inline constexpr NativeAnimationCompatibilityStep
+        advanceNativeAnimationCompatibility(
+            NativeAnimationCompatibilityState state,
+            const NativeAnimationCompatibilityObservation& observation,
+            const bool animationAuthorityRequested)
     {
-        return !eligibility.gripStateValid ||
-               !eligibility.firingHandIsLeft;
+        const NativeAnimationCompatibilityState canceledState{
+            .animationRequestResetRequired =
+                animationAuthorityRequested,
+        };
+        if (!observation.handlingStateValid) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::
+                    HandlingStateUnavailable,
+            };
+        }
+        if (observation.firingHandIsLeft) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::LeftFiringHand,
+            };
+        }
+        if (observation.partCarryActive) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::PartCarry,
+            };
+        }
+        if (state.animationRequestResetRequired) {
+            if (animationAuthorityRequested) {
+                return {
+                    state,
+                    NativeAnimationCompatibilityReason::
+                        AnimationRequestResetRequired,
+                };
+            }
+            state = {};
+        }
+        if (!animationAuthorityRequested) {
+            return {};
+        }
+        if (!observation.weaponPresent ||
+            observation.weaponFormId == 0 ||
+            observation.weaponGenerationKey == 0) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::WeaponUnavailable,
+            };
+        }
+        if (!observation.weaponIdentityCoherent) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::WeaponIdentityChanged,
+            };
+        }
+        if (!state.weaponBound) {
+            state.weaponGenerationKey = observation.weaponGenerationKey;
+            state.weaponFormId = observation.weaponFormId;
+            state.weaponBound = true;
+            return { state, NativeAnimationCompatibilityReason::None };
+        }
+        if (state.weaponFormId != observation.weaponFormId ||
+            state.weaponGenerationKey != observation.weaponGenerationKey) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::WeaponIdentityChanged,
+            };
+        }
+        return { state, NativeAnimationCompatibilityReason::None };
     }
 
     [[nodiscard]] inline constexpr bool canApplyManualCycleHandAnimation(
-        const ManualCycleHandAnimationEligibility& eligibility)
+        const NativeAnimationCompatibilityObservation& observation)
     {
-        return eligibility.gripStateValid &&
-               canApplyNativeAnimationForFiringHand(eligibility);
+        return observation.handlingStateValid &&
+               observation.gripStateValid &&
+               observation.weaponPresent &&
+               observation.weaponIdentityCoherent &&
+               observation.weaponFormId != 0 &&
+               observation.weaponGenerationKey != 0 &&
+               !observation.firingHandIsLeft &&
+               !observation.partCarryActive;
     }
 
     struct ManualCycleAuthoredSupportGripLatchState

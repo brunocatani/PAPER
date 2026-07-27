@@ -57,6 +57,7 @@ namespace paper
         if (!_api->getProviderLimitsV1(&limits) ||
             !rock::provider::supportsAnimationPhasesV1(limits) ||
             !rock::provider::supportsEquippedWeaponGripStateV1(limits) ||
+            !rock::provider::supportsEquippedWeaponHandlingAuthorityV1(limits) ||
             !rock::provider::supportsWeaponClassificationV1(limits) ||
             !rock::provider::supportsHandVisualAuthorityV1(limits) ||
             !rock::provider::supportsNativeAnimationRuntimeProviderV1(limits) ||
@@ -201,6 +202,14 @@ namespace paper
         outState = {};
         return ready() &&
                _api->getEquippedWeaponGripStateV1(_ownerToken, &outState);
+    }
+
+    bool RockApiClient::queryEquippedWeaponHandlingState(
+        rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const
+    {
+        outState = {};
+        return ready() &&
+               _api->getEquippedWeaponHandlingStateV1(&outState);
     }
 
     bool RockApiClient::queryWeaponPartGripState(

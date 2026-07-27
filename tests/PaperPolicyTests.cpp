@@ -83,24 +83,191 @@ int main()
             .manualCycleAnimationKeyword = true,
         }));
 
-    constexpr ManualCycleHandAnimationEligibility eligible{
+    constexpr NativeAnimationCompatibilityObservation compatibleWeapon{
+        .weaponGenerationKey = 42,
+        .weaponFormId = 0x1234,
+        .handlingStateValid = true,
         .gripStateValid = true,
         .firingHandIsLeft = false,
+        .partCarryActive = false,
+        .weaponPresent = true,
+        .weaponIdentityCoherent = true,
     };
-    static_assert(canApplyNativeAnimationForFiringHand(eligible));
-    static_assert(canApplyManualCycleHandAnimation(eligible));
+    constexpr auto boundAnimation =
+        advanceNativeAnimationCompatibility(
+            {},
+            compatibleWeapon,
+            true);
+    static_assert(boundAnimation.compatible());
+    static_assert(boundAnimation.state.weaponBound);
+    static_assert(boundAnimation.state.weaponFormId ==
+                  compatibleWeapon.weaponFormId);
+    static_assert(boundAnimation.state.weaponGenerationKey ==
+                  compatibleWeapon.weaponGenerationKey);
+    static_assert(
+        advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            compatibleWeapon,
+            true).compatible());
+    static_assert(canApplyManualCycleHandAnimation(compatibleWeapon));
+
+    static_assert([] {
+        constexpr NativeAnimationCompatibilityObservation idleNoWeapon{
+            .handlingStateValid = true,
+            .weaponIdentityCoherent = true,
+        };
+        const auto step = advanceNativeAnimationCompatibility(
+            {},
+            idleNoWeapon,
+            false);
+        return step.compatible() && !step.state.weaponBound;
+    }());
+
     static_assert([=] {
-        auto input = eligible;
+        auto input = compatibleWeapon;
         input.gripStateValid = false;
-        return canApplyNativeAnimationForFiringHand(input) &&
+        const auto step = advanceNativeAnimationCompatibility(
+            {},
+            input,
+            true);
+        return step.compatible() && step.state.weaponBound &&
                !canApplyManualCycleHandAnimation(input);
     }());
+
     static_assert([=] {
-        auto input = eligible;
+        auto input = compatibleWeapon;
+        input.handlingStateValid = false;
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::
+                       HandlingStateUnavailable;
+    }());
+
+    static_assert([=] {
+        auto input = compatibleWeapon;
         input.firingHandIsLeft = true;
-        return !canApplyNativeAnimationForFiringHand(input) &&
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::LeftFiringHand &&
                !canApplyManualCycleHandAnimation(input);
     }());
+
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        input.partCarryActive = true;
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::PartCarry &&
+               !canApplyManualCycleHandAnimation(input);
+    }());
+
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        input.weaponPresent = false;
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::
+                       WeaponUnavailable &&
+               !canApplyManualCycleHandAnimation(input);
+    }());
+
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        ++input.weaponGenerationKey;
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::
+                       WeaponIdentityChanged;
+    }());
+
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        ++input.weaponFormId;
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::
+                       WeaponIdentityChanged;
+    }());
+
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        input.weaponIdentityCoherent = false;
+        const auto step = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            input,
+            true);
+        return !step.compatible() && !step.state.weaponBound &&
+               step.state.animationRequestResetRequired &&
+               step.reason ==
+                   NativeAnimationCompatibilityReason::
+                       WeaponIdentityChanged &&
+               !canApplyManualCycleHandAnimation(input);
+    }());
+
+    static_assert([=] {
+        auto droppedWeapon = compatibleWeapon;
+        droppedWeapon.weaponPresent = false;
+        const auto canceled = advanceNativeAnimationCompatibility(
+            boundAnimation.state,
+            droppedWeapon,
+            true);
+        const auto staleRequest = advanceNativeAnimationCompatibility(
+            canceled.state,
+            compatibleWeapon,
+            true);
+        const auto releasedRequest = advanceNativeAnimationCompatibility(
+            staleRequest.state,
+            compatibleWeapon,
+            false);
+        const auto freshRequest = advanceNativeAnimationCompatibility(
+            releasedRequest.state,
+            compatibleWeapon,
+            true);
+        return staleRequest.reason ==
+                   NativeAnimationCompatibilityReason::
+                       AnimationRequestResetRequired &&
+               staleRequest.state.animationRequestResetRequired &&
+               releasedRequest.compatible() &&
+               !releasedRequest.state.weaponBound &&
+               !releasedRequest.state.animationRequestResetRequired &&
+               freshRequest.compatible() &&
+               freshRequest.state.weaponBound;
+    }());
+
+    static_assert(
+        nativeAnimationCompatibilityReasonName(
+            NativeAnimationCompatibilityReason::PartCarry) ==
+        "part-carry");
 
     constexpr auto authoredSupportGripLatch =
         advanceManualCycleAuthoredSupportGripLatch(

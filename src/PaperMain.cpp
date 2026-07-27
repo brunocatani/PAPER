@@ -24,13 +24,51 @@ namespace
     std::uint64_t s_configRevision{ 0 };
     std::uint32_t s_lastAuthorityPublishFailureFlags{ UINT32_MAX };
     bool s_runtimeOperational{ false };
-    bool s_leftFiringSuppressionActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
+    rock::provider::RockProviderEquippedWeaponHandlingStateV1
+        s_handlingState{};
+    bool s_gripStateValid{ false };
+    bool s_handlingStateValid{ false };
+    native_animation_authority_policy::NativeAnimationCompatibilityState
+        s_animationCompatibilityState{};
 
-    struct GripStateObservation
+    struct CompatibilityLogSnapshot
     {
-        bool valid{ false };
-        bool firingHandIsLeft{ false };
+        std::uint64_t handlingOwnerToken{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t gripWeaponGenerationKey{ 0 };
+        std::uint32_t handlingAuthorityFlags{ 0 };
+        std::uint32_t handlingRuntimeFlags{ 0 };
+        std::uint32_t localAuthorityFlags{ 0 };
+        std::uint32_t consumerAuthorityFlags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t gripWeaponFormId{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t providerGeneration{ 0 };
+        native_animation_authority_policy::
+            NativeAnimationCompatibilityReason reason{
+                native_animation_authority_policy::
+                    NativeAnimationCompatibilityReason::None
+            };
+        bool handlingStateValid{ false };
+        bool gripStateValid{ false };
+        bool weaponIdentityCoherent{ false };
+
+        bool operator==(const CompatibilityLogSnapshot&) const = default;
+    };
+    CompatibilityLogSnapshot s_lastCompatibilityLogSnapshot{};
+    bool s_hasCompatibilityLogSnapshot{ false };
+
+    struct PaperAnimationAuthorityObservation
+    {
+        std::uint32_t localFlags{ 0 };
+        std::uint32_t consumerFlags{ 0 };
+
+        [[nodiscard]] std::uint32_t requestedFlags() const
+        {
+            return localFlags | consumerFlags;
+        }
     };
 
     [[nodiscard]] bool hasContextFlag(
@@ -43,6 +81,14 @@ namespace
     [[nodiscard]] bool hasGripFlag(
         const std::uint32_t flags,
         const rock::provider::RockProviderEquippedWeaponGripStateFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    [[nodiscard]] bool hasHandlingRuntimeFlag(
+        const std::uint32_t flags,
+        const rock::provider::
+            RockProviderEquippedWeaponHandlingRuntimeFlagV1 flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
@@ -79,23 +125,59 @@ namespace
         provider::dispatchEvent(api::PaperEventKindV1::ConfigReloaded);
     }
 
-    [[nodiscard]] GripStateObservation refreshGripState()
+    [[nodiscard]] native_animation_authority_policy::
+        NativeAnimationCompatibilityObservation
+    refreshWeaponState()
     {
+        s_handlingState = {};
+        s_handlingStateValid =
+            rockApiClient().queryEquippedWeaponHandlingState(
+                s_handlingState);
         s_gripState = {};
         const bool queried =
             rockApiClient().queryEquippedWeaponGripState(s_gripState);
-        const bool valid = queried && hasGripFlag(
+        s_gripStateValid = queried && hasGripFlag(
             s_gripState.flags,
             rock::provider::RockProviderEquippedWeaponGripStateFlagV1::Valid);
-        const bool firingHandIsLeft = hasGripFlag(
-            s_gripState.flags,
-            rock::provider::RockProviderEquippedWeaponGripStateFlagV1::
-                FiringHandLeft);
+        const bool gripFiringHandIsLeft =
+            s_gripStateValid && hasGripFlag(
+                s_gripState.flags,
+                rock::provider::
+                    RockProviderEquippedWeaponGripStateFlagV1::
+                        FiringHandLeft);
+        const bool handlingFiringHandIsLeft =
+            s_handlingStateValid &&
+            (s_handlingState.currentFiringHand ==
+                    rock::provider::RockProviderHand::Left ||
+                hasHandlingRuntimeFlag(
+                    s_handlingState.runtimeFlags,
+                    rock::provider::
+                        RockProviderEquippedWeaponHandlingRuntimeFlagV1::
+                            FiringHandLeft));
+        const bool partCarryActive =
+            s_handlingStateValid && hasHandlingRuntimeFlag(
+                s_handlingState.runtimeFlags,
+                rock::provider::
+                    RockProviderEquippedWeaponHandlingRuntimeFlagV1::
+                        PartCarryActive);
+        const bool weaponPresent =
+            s_handlingStateValid && hasHandlingRuntimeFlag(
+                s_handlingState.runtimeFlags,
+                rock::provider::
+                    RockProviderEquippedWeaponHandlingRuntimeFlagV1::
+                        WeaponPresent);
+        const bool weaponIdentityCoherent =
+            s_handlingStateValid &&
+            (!s_gripStateValid ||
+                (s_handlingState.weaponFormId ==
+                        s_gripState.weaponFormId &&
+                    s_handlingState.weaponGenerationKey ==
+                        s_gripState.weaponGenerationKey));
 
         native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
         snapshot.weaponGenerationKey =
-            valid ? s_gripState.weaponGenerationKey : 0;
-        if (valid && hasGripFlag(
+            s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
+        if (s_gripStateValid && hasGripFlag(
                 s_gripState.flags,
                 rock::provider::RockProviderEquippedWeaponGripStateFlagV1::RightHandInWeaponValid)) {
             snapshot.rightHandInWeapon =
@@ -105,7 +187,7 @@ namespace
 
         rock::provider::RockProviderWeaponPartGripStateV1 leftPartGrip{};
         const bool leftPartGripStateValid =
-            valid &&
+            s_gripStateValid &&
             s_gripState.weaponFormId != 0 &&
             s_gripState.weaponGenerationKey != 0 &&
             rockApiClient().queryWeaponPartGripState(
@@ -151,9 +233,25 @@ namespace
             snapshot.authoredLeftValid = true;
         }
         native_animation_authority::setManualCycleRockGripSnapshot(snapshot);
-        return GripStateObservation{
-            .valid = valid,
-            .firingHandIsLeft = firingHandIsLeft,
+        return native_animation_authority_policy::
+            NativeAnimationCompatibilityObservation{
+                .weaponGenerationKey =
+                    s_handlingStateValid ?
+                        s_handlingState.weaponGenerationKey :
+                        0,
+                .weaponFormId =
+                    s_handlingStateValid ?
+                        s_handlingState.weaponFormId :
+                        0,
+                .handlingStateValid = s_handlingStateValid,
+                .gripStateValid = s_gripStateValid,
+                .firingHandIsLeft =
+                    gripFiringHandIsLeft ||
+                    handlingFiringHandIsLeft,
+                .partCarryActive = partCarryActive,
+                .weaponPresent = weaponPresent,
+                .weaponIdentityCoherent =
+                    weaponIdentityCoherent,
         };
     }
 
@@ -173,46 +271,116 @@ namespace
         s_runtimeOperational = operational;
     }
 
-    [[nodiscard]] native_animation_authority_policy::
-        ManualCycleHandAnimationEligibility
-    makeHandAnimationEligibility(const GripStateObservation& observation)
+    void observeAnimationCompatibility(
+        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const char* observationPoint,
+        const native_animation_authority_policy::
+            NativeAnimationCompatibilityObservation& observation,
+        const native_animation_authority_policy::
+            NativeAnimationCompatibilityStep& step,
+        const PaperAnimationAuthorityObservation& authority)
     {
-        return native_animation_authority_policy::
-            ManualCycleHandAnimationEligibility{
-                .gripStateValid = observation.valid,
-                .firingHandIsLeft = observation.firingHandIsLeft,
-            };
-    }
-
-    void observeFiringHandCompatibility(
-        const GripStateObservation& observation)
-    {
-        const bool suppress =
-            !native_animation_authority_policy::
-                canApplyNativeAnimationForFiringHand(
-                    makeHandAnimationEligibility(observation));
-        if (suppress == s_leftFiringSuppressionActive) {
+        const CompatibilityLogSnapshot snapshot{
+            .handlingOwnerToken = s_handlingState.ownerToken,
+            .weaponGenerationKey = observation.weaponGenerationKey,
+            .gripWeaponGenerationKey =
+                s_gripStateValid ? s_gripState.weaponGenerationKey : 0,
+            .handlingAuthorityFlags = s_handlingState.authorityFlags,
+            .handlingRuntimeFlags = s_handlingState.runtimeFlags,
+            .localAuthorityFlags = authority.localFlags,
+            .consumerAuthorityFlags = authority.consumerFlags,
+            .weaponFormId = observation.weaponFormId,
+            .gripWeaponFormId =
+                s_gripStateValid ? s_gripState.weaponFormId : 0,
+            .worldGeneration = context.worldGeneration,
+            .skeletonGeneration = context.skeletonGeneration,
+            .providerGeneration = context.providerGeneration,
+            .reason = step.reason,
+            .handlingStateValid = observation.handlingStateValid,
+            .gripStateValid = observation.gripStateValid,
+            .weaponIdentityCoherent =
+                observation.weaponIdentityCoherent,
+        };
+        if (s_hasCompatibilityLogSnapshot &&
+            snapshot == s_lastCompatibilityLogSnapshot) {
             return;
         }
-        s_leftFiringSuppressionActive = suppress;
-        if (suppress) {
-            PAPER_LOG_INFO(
-                Animation,
-                "PAPER pose authority yielded: ROCK reports the physical left hand as the firing hand; native/ROCK presentation remains active");
-        } else {
-            PAPER_LOG_INFO(
-                Animation,
-                "PAPER pose authority resumed: no incompatible left-firing grip is active");
-        }
+        s_lastCompatibilityLogSnapshot = snapshot;
+        s_hasCompatibilityLogSnapshot = true;
+
+        const bool externalHandlingAuthorityActive =
+            observation.handlingStateValid &&
+            hasHandlingRuntimeFlag(
+                s_handlingState.runtimeFlags,
+                rock::provider::
+                    RockProviderEquippedWeaponHandlingRuntimeFlagV1::
+                        AuthorityActive);
+        PAPER_LOG_INFO(
+            Animation,
+            "Weapon-animation compatibility point={} result={} animationAuthorityActive={} handlingValid={} gripValid={} identityCoherent={} externalHandlingAuthority={} owner={:016X} authorityFlags=0x{:08X} runtimeFlags=0x{:08X} localFlags=0x{:08X} consumerFlags=0x{:08X} weapon={:08X}/{:016X} gripWeapon={:08X}/{:016X} world={} skeleton={} provider={}",
+            observationPoint,
+            native_animation_authority_policy::
+                nativeAnimationCompatibilityReasonName(step.reason),
+            authority.requestedFlags() != 0,
+            observation.handlingStateValid,
+            observation.gripStateValid,
+            observation.weaponIdentityCoherent,
+            externalHandlingAuthorityActive,
+            s_handlingState.ownerToken,
+            s_handlingState.authorityFlags,
+            s_handlingState.runtimeFlags,
+            authority.localFlags,
+            authority.consumerFlags,
+            observation.weaponFormId,
+            observation.weaponGenerationKey,
+            s_gripStateValid ? s_gripState.weaponFormId : 0,
+            s_gripStateValid ? s_gripState.weaponGenerationKey : 0,
+            context.worldGeneration,
+            context.skeletonGeneration,
+            context.providerGeneration);
+    }
+
+    [[nodiscard]] PaperAnimationAuthorityObservation
+    currentPaperAnimationAuthority()
+    {
+        return {
+            .localFlags =
+                native_animation_authority::currentLocalAuthorityFlags(),
+            .consumerFlags = provider::currentConsumerAuthorityFlags(),
+        };
+    }
+
+    [[nodiscard]] native_animation_authority_policy::
+        NativeAnimationCompatibilityStep
+    evaluateAnimationCompatibility(
+        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const char* observationPoint,
+        const native_animation_authority_policy::
+            NativeAnimationCompatibilityObservation& observation,
+        const PaperAnimationAuthorityObservation& authority)
+    {
+        const auto step = native_animation_authority_policy::
+            advanceNativeAnimationCompatibility(
+                s_animationCompatibilityState,
+                observation,
+                authority.requestedFlags() != 0);
+        s_animationCompatibilityState = step.state;
+        observeAnimationCompatibility(
+            context,
+            observationPoint,
+            observation,
+            step,
+            authority);
+        return step;
     }
 
     void applyManualCycleEligibility(
-        const GripStateObservation& observation)
+        const native_animation_authority_policy::
+            NativeAnimationCompatibilityObservation& observation)
     {
         native_animation_authority::setManualCycleHandAnimationEligible(
             native_animation_authority_policy::
-                canApplyManualCycleHandAnimation(
-                    makeHandAnimationEligibility(observation)));
+                canApplyManualCycleHandAnimation(observation));
     }
 
     void publishRockAuthorityFlags(const std::uint32_t requestedFlags)
@@ -312,12 +480,16 @@ namespace
         state.localAuthorityFlags = localFlags;
         state.consumerAuthorityFlags = consumerFlags;
         state.capturedTransformCount = native.capturedTransformCount;
-        state.weaponFormId = s_gripState.weaponFormId;
+        state.weaponFormId = s_handlingStateValid ?
+            s_handlingState.weaponFormId :
+            s_gripState.weaponFormId;
         state.captureSequence = native.captureSequence;
         state.reloadStartSequence = native.reloadStartSequence;
         state.reloadEndSequence = native.reloadEndSequence;
         state.frameIndex = context.frameIndex;
-        state.weaponGenerationKey = s_gripState.weaponGenerationKey;
+        state.weaponGenerationKey = s_handlingStateValid ?
+            s_handlingState.weaponGenerationKey :
+            s_gripState.weaponGenerationKey;
         state.worldGeneration = context.worldGeneration;
         state.skeletonGeneration = context.skeletonGeneration;
         state.rockProviderGeneration = context.providerGeneration;
@@ -373,38 +545,55 @@ namespace
             // just-ended local lease cannot keep itself alive through ROCK's
             // aggregate state.
             rockApiClient().clearNativeAnimationAuthority();
-            const auto gripObservation = refreshGripState();
-            observeFiringHandCompatibility(gripObservation);
-            const bool handCompatible =
-                native_animation_authority_policy::
-                    canApplyNativeAnimationForFiringHand(
-                        makeHandAnimationEligibility(gripObservation));
-            const bool runtimeOperational =
+            const auto weaponObservation = refreshWeaponState();
+            const auto preLifecycleCompatibility =
+                evaluateAnimationCompatibility(
+                    *context,
+                    "before-rock/pre-lifecycle",
+                    weaponObservation,
+                    currentPaperAnimationAuthority());
+            bool runtimeOperational =
                 operational && native_animation_authority::isHookInstalled() &&
-                handCompatible;
+                preLifecycleCompatibility.compatible();
             configureRuntime(runtimeOperational);
-            applyManualCycleEligibility(gripObservation);
+            applyManualCycleEligibility(weaponObservation);
             publishRockAuthorityFlags(runtimeOperational ?
                 provider::currentConsumerAuthorityFlags() :
                 0);
             native_animation_authority::beginRockFrame(context->deltaSeconds);
+            if (runtimeOperational) {
+                const auto postLifecycleCompatibility =
+                    evaluateAnimationCompatibility(
+                        *context,
+                        "before-rock/post-lifecycle",
+                        weaponObservation,
+                        currentPaperAnimationAuthority());
+                if (!postLifecycleCompatibility.compatible()) {
+                    configureRuntime(false);
+                    publishRockAuthorityFlags(0);
+                    runtimeOperational = false;
+                }
+            }
             publishRockAuthority(runtimeOperational);
-            (void)native_animation_authority::applyCapturedPose(
-                native_animation_authority::ApplyPhase::BeforeRock);
+            if (runtimeOperational) {
+                (void)native_animation_authority::applyCapturedPose(
+                    native_animation_authority::ApplyPhase::BeforeRock);
+            }
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::AfterRock: {
-            const auto gripObservation = refreshGripState();
-            observeFiringHandCompatibility(gripObservation);
-            const bool handCompatible =
-                native_animation_authority_policy::
-                    canApplyNativeAnimationForFiringHand(
-                        makeHandAnimationEligibility(gripObservation));
-            if (!handCompatible && s_runtimeOperational) {
+            const auto weaponObservation = refreshWeaponState();
+            const auto compatibility = evaluateAnimationCompatibility(
+                *context,
+                "after-rock",
+                weaponObservation,
+                currentPaperAnimationAuthority());
+            if ((!operational || !compatibility.compatible()) &&
+                s_runtimeOperational) {
                 configureRuntime(false);
                 publishRockAuthorityFlags(0);
             }
-            applyManualCycleEligibility(gripObservation);
+            applyManualCycleEligibility(weaponObservation);
             if (s_runtimeOperational) {
                 (void)native_animation_authority::applyCapturedPose(
                     native_animation_authority::ApplyPhase::AfterRock);
@@ -452,9 +641,14 @@ namespace
         native_animation_authority::resetTransientState();
         frik_visual_authority::setSkeletonReadyHint(false);
         s_gripState = {};
+        s_handlingState = {};
+        s_gripStateValid = false;
+        s_handlingStateValid = false;
+        s_animationCompatibilityState = {};
+        s_lastCompatibilityLogSnapshot = {};
+        s_hasCompatibilityLogSnapshot = false;
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
-        s_leftFiringSuppressionActive = false;
         provider::resetRuntime();
     }
 
