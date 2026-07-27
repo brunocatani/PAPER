@@ -87,16 +87,19 @@ int main()
         .gripStateValid = true,
         .firingHandIsLeft = false,
     };
+    static_assert(canApplyNativeAnimationForFiringHand(eligible));
     static_assert(canApplyManualCycleHandAnimation(eligible));
     static_assert([=] {
         auto input = eligible;
         input.gripStateValid = false;
-        return !canApplyManualCycleHandAnimation(input);
+        return canApplyNativeAnimationForFiringHand(input) &&
+               !canApplyManualCycleHandAnimation(input);
     }());
     static_assert([=] {
         auto input = eligible;
         input.firingHandIsLeft = true;
-        return !canApplyManualCycleHandAnimation(input);
+        return !canApplyNativeAnimationForFiringHand(input) &&
+               !canApplyManualCycleHandAnimation(input);
     }());
 
     constexpr auto authoredSupportGripLatch =

@@ -24,7 +24,14 @@ namespace
     std::uint64_t s_configRevision{ 0 };
     std::uint32_t s_lastAuthorityPublishFailureFlags{ UINT32_MAX };
     bool s_runtimeOperational{ false };
+    bool s_leftFiringSuppressionActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
+
+    struct GripStateObservation
+    {
+        bool valid{ false };
+        bool firingHandIsLeft{ false };
+    };
 
     [[nodiscard]] bool hasContextFlag(
         const std::uint32_t flags,
@@ -72,7 +79,7 @@ namespace
         provider::dispatchEvent(api::PaperEventKindV1::ConfigReloaded);
     }
 
-    void refreshGripState()
+    [[nodiscard]] GripStateObservation refreshGripState()
     {
         s_gripState = {};
         const bool queried =
@@ -80,16 +87,10 @@ namespace
         const bool valid = queried && hasGripFlag(
             s_gripState.flags,
             rock::provider::RockProviderEquippedWeaponGripStateFlagV1::Valid);
-        const bool manualCycleEligible =
-            native_animation_authority_policy::canApplyManualCycleHandAnimation(
-                native_animation_authority_policy::ManualCycleHandAnimationEligibility{
-                    .gripStateValid = valid,
-                    .firingHandIsLeft = hasGripFlag(
-                        s_gripState.flags,
-                        rock::provider::RockProviderEquippedWeaponGripStateFlagV1::FiringHandLeft),
-                });
-        native_animation_authority::setManualCycleHandAnimationEligible(
-            manualCycleEligible);
+        const bool firingHandIsLeft = hasGripFlag(
+            s_gripState.flags,
+            rock::provider::RockProviderEquippedWeaponGripStateFlagV1::
+                FiringHandLeft);
 
         native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
         snapshot.weaponGenerationKey =
@@ -150,6 +151,10 @@ namespace
             snapshot.authoredLeftValid = true;
         }
         native_animation_authority::setManualCycleRockGripSnapshot(snapshot);
+        return GripStateObservation{
+            .valid = valid,
+            .firingHandIsLeft = firingHandIsLeft,
+        };
     }
 
     void configureRuntime(const bool operational)
@@ -166,6 +171,48 @@ namespace
             g_config.nativeReloadAnimationAuthorityTestEnabled &&
             g_config.nativeReloadAnimationPartialAuthorityTestEnabled);
         s_runtimeOperational = operational;
+    }
+
+    [[nodiscard]] native_animation_authority_policy::
+        ManualCycleHandAnimationEligibility
+    makeHandAnimationEligibility(const GripStateObservation& observation)
+    {
+        return native_animation_authority_policy::
+            ManualCycleHandAnimationEligibility{
+                .gripStateValid = observation.valid,
+                .firingHandIsLeft = observation.firingHandIsLeft,
+            };
+    }
+
+    void observeFiringHandCompatibility(
+        const GripStateObservation& observation)
+    {
+        const bool suppress =
+            !native_animation_authority_policy::
+                canApplyNativeAnimationForFiringHand(
+                    makeHandAnimationEligibility(observation));
+        if (suppress == s_leftFiringSuppressionActive) {
+            return;
+        }
+        s_leftFiringSuppressionActive = suppress;
+        if (suppress) {
+            PAPER_LOG_INFO(
+                Animation,
+                "PAPER pose authority yielded: ROCK reports the physical left hand as the firing hand; native/ROCK presentation remains active");
+        } else {
+            PAPER_LOG_INFO(
+                Animation,
+                "PAPER pose authority resumed: no incompatible left-firing grip is active");
+        }
+    }
+
+    void applyManualCycleEligibility(
+        const GripStateObservation& observation)
+    {
+        native_animation_authority::setManualCycleHandAnimationEligible(
+            native_animation_authority_policy::
+                canApplyManualCycleHandAnimation(
+                    makeHandAnimationEligibility(observation)));
     }
 
     void publishRockAuthorityFlags(const std::uint32_t requestedFlags)
@@ -321,15 +368,22 @@ namespace
                 }
             }
 
-            const bool runtimeOperational =
-                operational && native_animation_authority::isHookInstalled();
-            configureRuntime(runtimeOperational);
             // Remove this provider's preceding aggregate before advancing the
             // local lifecycle. Re-publish only consumer requests first so a
             // just-ended local lease cannot keep itself alive through ROCK's
             // aggregate state.
             rockApiClient().clearNativeAnimationAuthority();
-            refreshGripState();
+            const auto gripObservation = refreshGripState();
+            observeFiringHandCompatibility(gripObservation);
+            const bool handCompatible =
+                native_animation_authority_policy::
+                    canApplyNativeAnimationForFiringHand(
+                        makeHandAnimationEligibility(gripObservation));
+            const bool runtimeOperational =
+                operational && native_animation_authority::isHookInstalled() &&
+                handCompatible;
+            configureRuntime(runtimeOperational);
+            applyManualCycleEligibility(gripObservation);
             publishRockAuthorityFlags(runtimeOperational ?
                 provider::currentConsumerAuthorityFlags() :
                 0);
@@ -339,12 +393,25 @@ namespace
                 native_animation_authority::ApplyPhase::BeforeRock);
             break;
         }
-        case rock::provider::RockProviderAnimationPhaseV1::AfterRock:
-            refreshGripState();
-            (void)native_animation_authority::applyCapturedPose(
-                native_animation_authority::ApplyPhase::AfterRock);
+        case rock::provider::RockProviderAnimationPhaseV1::AfterRock: {
+            const auto gripObservation = refreshGripState();
+            observeFiringHandCompatibility(gripObservation);
+            const bool handCompatible =
+                native_animation_authority_policy::
+                    canApplyNativeAnimationForFiringHand(
+                        makeHandAnimationEligibility(gripObservation));
+            if (!handCompatible && s_runtimeOperational) {
+                configureRuntime(false);
+                publishRockAuthorityFlags(0);
+            }
+            applyManualCycleEligibility(gripObservation);
+            if (s_runtimeOperational) {
+                (void)native_animation_authority::applyCapturedPose(
+                    native_animation_authority::ApplyPhase::AfterRock);
+            }
             debug_visualization::publish(*context, s_gripState);
             break;
+        }
         case rock::provider::RockProviderAnimationPhaseV1::Complete:
             native_animation_authority::completeRockFrame();
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
@@ -387,6 +454,7 @@ namespace
         s_gripState = {};
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
+        s_leftFiringSuppressionActive = false;
         provider::resetRuntime();
     }
 
@@ -408,6 +476,7 @@ namespace
         }
 
         if (message->type == F4SE::MessagingInterface::kPreLoadGame) {
+            s_gameLoaded.store(false, std::memory_order_release);
             resetSession();
             return;
         }
@@ -417,6 +486,7 @@ namespace
             resetSession();
             (void)g_config.reload();
             publishConfigState();
+            s_gameLoaded.store(true, std::memory_order_release);
             (void)connectRock();
         }
     }
@@ -444,15 +514,21 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(
         return false;
     }
 
-    const auto requiredRuntime = F4SE::RUNTIME_LATEST_VR;
-    if (f4se->RuntimeVersion() < requiredRuntime) {
+    const auto executableVersion = REL::Module::get().version();
+    if (executableVersion != F4SE::RUNTIME_VR_1_2_72) {
         PAPER_LOG_CRITICAL(
             Init,
-            "Unsupported F4SE runtime {} (need >= {})",
-            f4se->RuntimeVersion().string(),
-            requiredRuntime.string());
+            "Unsupported Fallout4VR executable version {} (need {})",
+            executableVersion.string(),
+            F4SE::RUNTIME_VR_1_2_72.string());
         return false;
     }
+    PAPER_LOG_INFO(
+        Init,
+        "FO4VR query compatibility passed F4SE={} loaderRuntime={} executable={}",
+        f4se->F4SEVersion().string(),
+        f4se->RuntimeVersion().string(),
+        executableVersion.string());
     return true;
 }
 

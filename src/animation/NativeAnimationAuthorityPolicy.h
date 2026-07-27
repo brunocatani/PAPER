@@ -171,11 +171,25 @@ namespace paper::native_animation_authority_policy
         bool firingHandIsLeft{ false };
     };
 
+    /*
+     * PAPER's captured graph topology is Bethesda's physical-right primary
+     * arm and physical-left support arm. A confirmed left firing hand must
+     * therefore yield all PAPER pose authority to native/ROCK presentation.
+     * An absent grip snapshot is not evidence of an incompatible hand and
+     * preserves reload lifecycle behavior outside an equipped-weapon frame.
+     */
+    [[nodiscard]] inline constexpr bool canApplyNativeAnimationForFiringHand(
+        const ManualCycleHandAnimationEligibility& eligibility)
+    {
+        return !eligibility.gripStateValid ||
+               !eligibility.firingHandIsLeft;
+    }
+
     [[nodiscard]] inline constexpr bool canApplyManualCycleHandAnimation(
         const ManualCycleHandAnimationEligibility& eligibility)
     {
         return eligibility.gripStateValid &&
-               !eligibility.firingHandIsLeft;
+               canApplyNativeAnimationForFiringHand(eligibility);
     }
 
     struct ManualCycleAuthoredSupportGripLatchState

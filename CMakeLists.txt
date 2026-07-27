@@ -115,6 +115,16 @@ target_link_options(${PROJECT_NAME} PRIVATE
 )
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
+find_program(PAPER_PWSH_EXECUTABLE NAMES pwsh REQUIRED)
+add_custom_target(PAPERSourceBoundary
+  COMMAND "${PAPER_PWSH_EXECUTABLE}" -NoProfile -File
+    "${ROOT_DIR}/tests/PaperSourceTests.ps1"
+    -Root "${ROOT_DIR}"
+  COMMENT "Validating PAPER source boundaries"
+  VERBATIM
+)
+add_dependencies(${PROJECT_NAME} PAPERSourceBoundary)
+
 option(POST_BUILD_COPY_PLUGIN "Copy PAPER and packaged data to a mod root." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots containing F4SE/Plugins.")
 if(POST_BUILD_COPY_PLUGIN)
@@ -165,10 +175,9 @@ if(BUILD_PAPER_TESTS)
   )
   add_test(NAME PAPERConfigFileTests COMMAND "$<TARGET_FILE:PAPERConfigFileTests>")
 
-  find_program(PWSH_EXECUTABLE NAMES pwsh REQUIRED)
   add_test(
     NAME PAPERSourceTests
-    COMMAND "${PWSH_EXECUTABLE}" -NoProfile -File
+    COMMAND "${PAPER_PWSH_EXECUTABLE}" -NoProfile -File
       "${ROOT_DIR}/tests/PaperSourceTests.ps1"
       -Root "${ROOT_DIR}"
   )
