@@ -2,6 +2,7 @@
 
 #include "api/RockApiClient.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
+#include "compat/TacticalReloadBridge.h"
 #include "native/NativeOffsets.h"
 #include "PaperLog.h"
 #include "support/TransformMath.h"
@@ -1139,6 +1140,7 @@ namespace paper::native_animation_authority
                 cancelLocalManualCycleTestLease();
                 s_playerReloadEventActive.store(true, std::memory_order_release);
                 s_playerReloadStartSequence.fetch_add(1, std::memory_order_acq_rel);
+                tactical_reload_bridge::notifyPlayerReloadStart();
                 armLocalReloadTestLeaseFromNativeStart();
                 return handled;
             }
@@ -1147,6 +1149,7 @@ namespace paper::native_animation_authority
             if (endToken && *stateToken == *endToken) {
                 s_playerReloadEndSequence.fetch_add(1, std::memory_order_acq_rel);
                 s_playerReloadEventActive.store(false, std::memory_order_release);
+                tactical_reload_bridge::notifyPlayerReloadEnd();
             }
             return handled;
         }

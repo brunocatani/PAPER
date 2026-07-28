@@ -6,6 +6,7 @@
 #include "api/PAPERProvider.h"
 #include "api/RockApiClient.h"
 #include "api/RockVisualAuthorityBridge.h"
+#include "compat/TacticalReloadBridge.h"
 #include "debug/NativeAnimationDebugVisualization.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
@@ -257,6 +258,7 @@ namespace
 
     void configureRuntime(const bool operational)
     {
+        tactical_reload_bridge::setRuntimeEnabled(operational);
         native_animation_authority::setRuntimeEnabled(operational);
         native_animation_authority::setLocalManualCycleTestEnabled(
             operational &&
@@ -533,10 +535,18 @@ namespace
 
             if (operational &&
                 !s_hookAttempted.exchange(true, std::memory_order_acq_rel)) {
-                if (!native_animation_authority::installEventHooks()) {
+                const bool lifecycleHooksReady =
+                    native_animation_authority::installEventHooks();
+                if (!lifecycleHooksReady) {
                     PAPER_LOG_CRITICAL(
                         Init,
                         "Native animation lifecycle hooks failed validation; Paper authority remains disabled");
+                } else if (
+                    tactical_reload_bridge::contractReady() &&
+                    !tactical_reload_bridge::installInputHook()) {
+                    PAPER_LOG_ERROR(
+                        Init,
+                        "Tactical Reload compatibility contract was found, but its validated ReadyWeapon bridge could not be installed");
                 }
             }
 
@@ -560,6 +570,7 @@ namespace
             publishRockAuthorityFlags(runtimeOperational ?
                 provider::currentConsumerAuthorityFlags() :
                 0);
+            tactical_reload_bridge::beginFrame(context->deltaSeconds);
             native_animation_authority::beginRockFrame(context->deltaSeconds);
             if (runtimeOperational) {
                 const auto postLifecycleCompatibility =
@@ -636,6 +647,7 @@ namespace
 
     void resetSession()
     {
+        tactical_reload_bridge::resetSession();
         debug_visualization::clear();
         rockApiClient().clearNativeAnimationAuthority();
         native_animation_authority::resetTransientState();
@@ -661,6 +673,7 @@ namespace
         if (message->type == F4SE::MessagingInterface::kGameLoaded) {
             (void)g_config.reload();
             publishConfigState();
+            tactical_reload_bridge::initializeSession();
             s_gameLoaded.store(true, std::memory_order_release);
             (void)connectRock();
             PAPER_LOG_INFO(
@@ -680,6 +693,7 @@ namespace
             resetSession();
             (void)g_config.reload();
             publishConfigState();
+            tactical_reload_bridge::initializeSession();
             s_gameLoaded.store(true, std::memory_order_release);
             (void)connectRock();
         }

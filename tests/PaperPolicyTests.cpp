@@ -1,10 +1,159 @@
 #include "animation/NativeAnimationAuthorityPolicy.h"
+#include "compat/TacticalReloadBridgePolicy.h"
 
 #include <cassert>
 
 int main()
 {
     using namespace paper::native_animation_authority_policy;
+    namespace tactical =
+        paper::tactical_reload_bridge_policy;
+
+    constexpr std::uint32_t tacticalActorStateStorage =
+        (tactical::kWeaponStateDrawn <<
+            tactical::kWeaponStateShift) |
+        (tactical::kGunStateReloading <<
+            tactical::kGunStateShift);
+    static_assert(
+        tactical::decodeWeaponState(tacticalActorStateStorage) ==
+        tactical::kWeaponStateDrawn);
+    static_assert(
+        tactical::decodeGunState(tacticalActorStateStorage) ==
+        tactical::kGunStateReloading);
+    static_assert(tactical::isWeaponReadyForManualReload(
+        tactical::kWeaponStateDrawn));
+    static_assert(!tactical::isWeaponReadyForManualReload(2));
+    static_assert(tactical::isReloading(
+        tactical::kGunStateReloading));
+    static_assert(tactical::isJustPressed(1.0f, 0.0f));
+    static_assert(!tactical::isJustPressed(1.0f, 0.01f));
+    static_assert(tactical::isReleased(0.0f, 0.0f));
+    static_assert(tactical::isReleased(0.0f, 0.1f));
+    static_assert(!tactical::isReleased(1.0f, 0.1f));
+
+    constexpr auto tacticalArmed =
+        tactical::armManualIntent({}, true, false);
+    static_assert(
+        tacticalArmed.state.phase ==
+        tactical::Phase::PressArmed);
+    static_assert(tacticalArmed.addKeyword);
+    static_assert(!tacticalArmed.removeKeyword);
+    static_assert(tacticalArmed.state.keywordAddedByPaper);
+    static_assert(
+        tacticalArmed.state.transactionOwnsKeywordCleanup);
+    static_assert(
+        tacticalArmed.state.transactionSequence == 1);
+
+    constexpr auto tacticalReleased =
+        tactical::releaseManualIntent(tacticalArmed.state);
+    static_assert(
+        tacticalReleased.state.phase ==
+        tactical::Phase::AwaitingReloadStart);
+    static_assert(!tacticalReleased.addKeyword);
+    static_assert(!tacticalReleased.removeKeyword);
+
+    constexpr auto tacticalStarted =
+        tactical::observeReloadStart(tacticalReleased.state);
+    static_assert(
+        tacticalStarted.state.phase ==
+        tactical::Phase::ReloadActive);
+    static_assert(tacticalStarted.removeKeyword);
+    static_assert(
+        !tacticalStarted.state.transactionOwnsKeywordCleanup);
+
+    constexpr auto tacticalEnded =
+        tactical::observeReloadEnd(tacticalStarted.state);
+    static_assert(
+        tacticalEnded.state.phase == tactical::Phase::Idle);
+    static_assert(!tacticalEnded.removeKeyword);
+
+    constexpr auto tacticalPapyrusDuplicate =
+        tactical::armManualIntent({}, true, true);
+    static_assert(!tacticalPapyrusDuplicate.addKeyword);
+    static_assert(
+        tacticalPapyrusDuplicate.state.keywordPresentAtArm);
+    static_assert(
+        !tacticalPapyrusDuplicate.state.keywordAddedByPaper);
+    static_assert(
+        tacticalPapyrusDuplicate.state.
+            transactionOwnsKeywordCleanup);
+    static_assert(
+        tactical::observeReloadStart(
+            tacticalPapyrusDuplicate.state).removeKeyword);
+
+    constexpr auto tacticalNotReady =
+        tactical::armManualIntent({}, false, false);
+    static_assert(
+        tacticalNotReady.state.phase == tactical::Phase::Idle);
+    static_assert(!tacticalNotReady.addKeyword);
+
+    constexpr auto tacticalAutomaticReload =
+        tactical::observeReloadStart({});
+    static_assert(
+        tacticalAutomaticReload.state.phase ==
+        tactical::Phase::ReloadActive);
+    static_assert(!tacticalAutomaticReload.removeKeyword);
+
+    constexpr auto tacticalStartTimeout = tactical::advance(
+        tactical::State{
+            .phase = tactical::Phase::AwaitingReloadStart,
+            .elapsedSeconds =
+                tactical::kReloadStartWatchdogSeconds - 0.1f,
+            .transactionSequence = 4,
+            .keywordAddedByPaper = true,
+            .transactionOwnsKeywordCleanup = true,
+        },
+        0.1f,
+        true);
+    static_assert(
+        tacticalStartTimeout.state.phase ==
+        tactical::Phase::Idle);
+    static_assert(tacticalStartTimeout.removeKeyword);
+    static_assert(
+        tacticalStartTimeout.reason ==
+        tactical::StepReason::ReloadStartExpired);
+
+    constexpr auto tacticalHoldTimeout = tactical::advance(
+        tactical::State{
+            .phase = tactical::Phase::PressArmed,
+            .elapsedSeconds =
+                tactical::kPressHoldWatchdogSeconds - 0.1f,
+            .transactionSequence = 5,
+            .keywordAddedByPaper = true,
+            .transactionOwnsKeywordCleanup = true,
+        },
+        0.1f,
+        true);
+    static_assert(tacticalHoldTimeout.removeKeyword);
+    static_assert(
+        tacticalHoldTimeout.reason ==
+        tactical::StepReason::PressHoldExpired);
+
+    constexpr auto tacticalReloadTimeout = tactical::advance(
+        tactical::State{
+            .phase = tactical::Phase::ReloadActive,
+            .elapsedSeconds =
+                tactical::kReloadActiveWatchdogSeconds - 0.1f,
+            .transactionSequence = 6,
+        },
+        0.1f,
+        true);
+    static_assert(!tacticalReloadTimeout.removeKeyword);
+    static_assert(
+        tacticalReloadTimeout.state.phase ==
+        tactical::Phase::Idle);
+    static_assert(
+        tacticalReloadTimeout.reason ==
+        tactical::StepReason::ReloadActiveExpired);
+
+    constexpr auto tacticalDisabled = tactical::advance(
+        tacticalArmed.state,
+        0.0f,
+        false);
+    static_assert(tacticalDisabled.removeKeyword);
+    static_assert(
+        tacticalDisabled.reason ==
+        tactical::StepReason::RuntimeDisabled);
 
     struct AffineTransform
     {
