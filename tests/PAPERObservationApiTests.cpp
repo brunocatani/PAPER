@@ -4,6 +4,7 @@
 #include "reload_observation/ReloadObservationPolicy.h"
 
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -75,6 +76,20 @@ int main()
     expect(
         clipSampleTime(2.0f, 3, 5) == 1.5f,
         "sample timestamps must span the complete clip duration");
+    expect(
+        canSampleAnotherPose(0, std::chrono::microseconds{ 5000 }),
+        "the exact sampler must always make at least one pose of progress");
+    expect(
+        canSampleAnotherPose(1, kSamplingFrameBudget -
+                std::chrono::microseconds{ 1 }),
+        "the exact sampler must continue while its frame budget remains");
+    expect(
+        !canSampleAnotherPose(1, kSamplingFrameBudget),
+        "the exact sampler must yield when its frame budget is exhausted");
+    expect(
+        !canSampleAnotherPose(
+            kMaximumSamplesPerFrame, std::chrono::microseconds{ 0 }),
+        "the exact sampler must retain a hard per-frame safety ceiling");
     expect(
         withoutSceneInstanceSuffix("WeaponMagazine:12") ==
             "WeaponMagazine",

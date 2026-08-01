@@ -1057,6 +1057,25 @@ namespace paper::provider
         }
     }
 
+    bool hasConsumerCapability(const PaperConsumerCapabilityV1 capability)
+    {
+        if (!onOwnerThread()) {
+            return false;
+        }
+        const auto capabilityMask =
+            static_cast<std::uint32_t>(capability) & kAllCapabilities;
+        if (capabilityMask == 0) {
+            return false;
+        }
+        for (const auto& consumer : s_consumers) {
+            if (consumer.ownerToken != 0 &&
+                (consumer.capabilities & capabilityMask) != 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     std::uint32_t currentConsumerAuthorityFlags()
     {
         if (!onOwnerThread()) {

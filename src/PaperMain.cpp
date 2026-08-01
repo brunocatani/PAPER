@@ -28,6 +28,8 @@ namespace
     std::uint64_t s_configRevision{ 0 };
     std::uint32_t s_lastAuthorityPublishFailureFlags{ UINT32_MAX };
     bool s_runtimeOperational{ false };
+    bool s_reloadObservationDemandActive{ false };
+    bool s_animationEvidenceDemandActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
     rock::provider::RockProviderEquippedWeaponHandlingStateV1
         s_handlingState{};
@@ -74,6 +76,36 @@ namespace
             return localFlags | consumerFlags;
         }
     };
+
+    struct EnrichmentDemand
+    {
+        bool reloadObservation{ false };
+        bool animationEvidence{ false };
+    };
+
+    [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
+    {
+        const bool animationEvidence = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+        const bool reloadObservation = animationEvidence ||
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::ReloadObservations) ||
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
+
+        if (s_animationEvidenceDemandActive && !animationEvidence) {
+            animation_evidence::reset();
+        }
+        if (s_reloadObservationDemandActive && !reloadObservation) {
+            reload_observation::reset();
+        }
+        s_reloadObservationDemandActive = reloadObservation;
+        s_animationEvidenceDemandActive = animationEvidence;
+        return EnrichmentDemand{
+            .reloadObservation = reloadObservation,
+            .animationEvidence = animationEvidence,
+        };
+    }
 
     [[nodiscard]] bool hasContextFlag(
         const std::uint32_t flags,
@@ -523,6 +555,7 @@ namespace
 
         const bool operational =
             g_config.enabled && rockEnabled && rockReady && skeletonReady;
+        const auto enrichmentDemand = refreshEnrichmentDemand();
         switch (context->phase) {
         case rock::provider::RockProviderAnimationPhaseV1::NativeGraphOutput: {
             const bool runtimeOperational =
@@ -531,9 +564,9 @@ namespace
             // yield at this same graph sample when Paper owns authority.
             publishRockAuthority(runtimeOperational);
             native_animation_authority::captureNativeGraphOutput();
-            rock::provider::RockProviderEquippedWeaponGripStateV1
-                gripState{};
-            if (rockApiClient().queryEquippedWeaponGripState(gripState) &&
+            rock::provider::RockProviderEquippedWeaponGripStateV1 gripState{};
+            if (enrichmentDemand.reloadObservation &&
+                rockApiClient().queryEquippedWeaponGripState(gripState) &&
                 hasGripFlag(
                     gripState.flags,
                     rock::provider::
@@ -572,14 +605,18 @@ namespace
             // aggregate state.
             rockApiClient().clearNativeAnimationAuthority();
             const auto weaponObservation = refreshWeaponState();
-            reload_observation::advanceFrame(
-                *context,
-                s_gripStateValid ? std::addressof(s_gripState) : nullptr,
-                provider::generation());
-            animation_evidence::advanceFrame(
-                *context,
-                s_gripStateValid ? std::addressof(s_gripState) : nullptr,
-                provider::generation());
+            if (enrichmentDemand.reloadObservation) {
+                reload_observation::advanceFrame(
+                    *context,
+                    s_gripStateValid ? std::addressof(s_gripState) : nullptr,
+                    provider::generation());
+            }
+            if (enrichmentDemand.animationEvidence) {
+                animation_evidence::advanceFrame(
+                    *context,
+                    s_gripStateValid ? std::addressof(s_gripState) : nullptr,
+                    provider::generation());
+            }
             const auto preLifecycleCompatibility =
                 evaluateAnimationCompatibility(
                     *context,
@@ -633,7 +670,7 @@ namespace
                 (void)native_animation_authority::applyCapturedPose(
                     native_animation_authority::ApplyPhase::AfterRock);
             }
-            if (s_gripStateValid) {
+            if (enrichmentDemand.reloadObservation && s_gripStateValid) {
                 reload_observation::capturePhase(
                     *context,
                     s_gripState,
@@ -645,10 +682,14 @@ namespace
         case rock::provider::RockProviderAnimationPhaseV1::Complete:
             native_animation_authority::completeRockFrame();
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
-            reload_observation::completeFrame(
-                *context,
-                provider::generation());
-            animation_evidence::completeFrame(*context);
+            if (enrichmentDemand.reloadObservation) {
+                reload_observation::completeFrame(
+                    *context,
+                    provider::generation());
+            }
+            if (enrichmentDemand.animationEvidence) {
+                animation_evidence::completeFrame(*context);
+            }
             provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
             provider::completeFrame();
             break;
@@ -695,6 +736,8 @@ namespace
         s_hasCompatibilityLogSnapshot = false;
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
+        s_reloadObservationDemandActive = false;
+        s_animationEvidenceDemandActive = false;
         provider::resetRuntime();
     }
 

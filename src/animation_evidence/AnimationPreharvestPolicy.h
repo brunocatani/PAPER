@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -15,6 +16,17 @@ namespace paper::animation_preharvest_policy
     inline constexpr float kSamplesPerSecond = 120.0f;
     inline constexpr std::uint32_t kMinimumClipSamples = 24;
     inline constexpr std::uint32_t kMaximumClipSamples = 720;
+    inline constexpr std::uint32_t kMaximumSamplesPerFrame = 24;
+    inline constexpr std::chrono::microseconds kSamplingFrameBudget{ 250 };
+
+    [[nodiscard]] constexpr bool canSampleAnotherPose(
+        const std::uint32_t samplesCompletedThisFrame,
+        const std::chrono::microseconds elapsed) noexcept
+    {
+        return samplesCompletedThisFrame == 0 ||
+               (samplesCompletedThisFrame < kMaximumSamplesPerFrame &&
+                   elapsed < kSamplingFrameBudget);
+    }
 
     struct FirstPersonSelection
     {

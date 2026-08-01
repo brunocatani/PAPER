@@ -770,7 +770,7 @@ namespace paper::clip_telemetry
          *    (hkbBehaviorGraphStringData::eventNames).
          * Offsets are destructor/walker-verified (see the constants above);
          * every hop is plausibility-gated and degrades into a logged skip,
-         * and every dumped clip emits exactly one INFO summary line with
+         * and every dumped clip emits exactly one DEBUG summary line with
          * raw structure counts. Runs on the activation path, deduped by
          * the processed-binding registry and hard-capped by
          * s_markerLogBudget per weapon generation.
@@ -793,7 +793,7 @@ namespace paper::clip_telemetry
             if (!plausiblePointer(animation)) {
                 if (s_markerLogBudget > 0) {
                     --s_markerLogBudget;
-                    PAPER_LOG_INFO(Weapon,
+                    PAPER_LOG_DEBUG(Weapon,
                         "ANIMATION-MARKER summary clip='{}': skipped, animation pointer implausible", clipName);
                 }
                 return;
@@ -802,7 +802,7 @@ namespace paper::clip_telemetry
             if (!std::isfinite(duration) || duration <= 0.0f || duration > kMaxClipDurationSeconds) {
                 if (s_markerLogBudget > 0) {
                     --s_markerLogBudget;
-                    PAPER_LOG_INFO(Weapon,
+                    PAPER_LOG_DEBUG(Weapon,
                         "ANIMATION-MARKER summary clip='{}': skipped, duration {:.3f} implausible", clipName, duration);
                 }
                 return;
@@ -865,7 +865,7 @@ namespace paper::clip_telemetry
                         }
                         if (s_markerLogBudget > 1) {
                             --s_markerLogBudget;
-                            PAPER_LOG_INFO(Weapon,
+                            PAPER_LOG_DEBUG(Weapon,
                                 "ANIMATION-MARKER [annotation] clip='{}' track='{}' t={:.3f}/{:.3f}s text='{}'",
                                 clipName,
                                 trackName,
@@ -915,7 +915,7 @@ namespace paper::clip_telemetry
                         }
                         if (s_markerLogBudget > 1) {
                             --s_markerLogBudget;
-                            PAPER_LOG_INFO(Weapon,
+                            PAPER_LOG_DEBUG(Weapon,
                                 "ANIMATION-MARKER [trigger] clip='{}' t={:.3f}/{:.3f}s eventId={} name='{}'",
                                 clipName,
                                 localTime,
@@ -940,7 +940,7 @@ namespace paper::clip_telemetry
              */
             if (s_markerLogBudget > 0) {
                 --s_markerLogBudget;
-                PAPER_LOG_INFO(Weapon,
+                PAPER_LOG_DEBUG(Weapon,
                     "ANIMATION-MARKER summary clip='{}' duration={:.2f}s annotationTracksRaw={} annotationsLogged={} triggersObject={} triggersRaw={} triggersLogged={} graphEventNames={}",
                     clipName,
                     duration,
@@ -1281,7 +1281,7 @@ namespace paper::clip_telemetry
                 };
                 const auto& rawStart = tracks[0].samples[0].translate;
                 const auto& rawEnd = tracks[0].samples[animation_evidence::kLiveClipSampleCount - 1].translate;
-                PAPER_LOG_INFO(Weapon,
+                PAPER_LOG_DEBUG(Weapon,
                     "WeaponClipTelemetry: captured clip evidence duration={:.2f} targets={} lead {}(parent={}) next [{}(parent={}) {}(parent={})] lead raw start=({:.2f},{:.2f},{:.2f}) end=({:.2f},{:.2f},{:.2f})",
                     duration,
                     targetCount,

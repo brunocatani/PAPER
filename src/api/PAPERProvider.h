@@ -16,6 +16,8 @@ namespace paper::provider
     void publishRuntime(const api::PaperRuntimeStateV1& state);
     void dispatchEvent(api::PaperEventKindV1 kind);
 
+    [[nodiscard]] bool hasConsumerCapability(
+        api::PaperConsumerCapabilityV1 capability);
     [[nodiscard]] std::uint32_t currentConsumerAuthorityFlags();
     [[nodiscard]] std::uint32_t generation();
     [[nodiscard]] bool isReady();

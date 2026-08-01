@@ -16,6 +16,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -114,7 +115,6 @@ namespace paper::exact_clip_preharvest
         constexpr std::size_t kMaxLoadedSubgraphs = 128;
         constexpr std::size_t kMaxClipBindingBuckets = 4096;
         constexpr std::size_t kMaxFixedStringShallowDepth = 8;
-        constexpr std::uint32_t kSamplesPerFrame = 24;
         constexpr std::uint32_t kWeaponAnimationRole = 1;
         constexpr std::int32_t kIoTaskPriority = 3;
         constexpr ULONGLONG kGraphLoadTimeoutMilliseconds = 30000;
@@ -1275,9 +1275,13 @@ namespace paper::exact_clip_preharvest
                 return false;
             }
 
-            const auto endSample = (std::min)(
-                clip.sampleCount, clip.nextSample + kSamplesPerFrame);
-            for (; clip.nextSample < endSample; ++clip.nextSample) {
+            const auto batchStarted = std::chrono::steady_clock::now();
+            std::uint32_t samplesCompletedThisFrame = 0;
+            while (clip.nextSample < clip.sampleCount &&
+                animation_preharvest_policy::canSampleAnotherPose(
+                    samplesCompletedThisFrame,
+                    std::chrono::duration_cast<std::chrono::microseconds>(
+                        std::chrono::steady_clock::now() - batchStarted))) {
                 const float timeSeconds =
                     animation_preharvest_policy::clipSampleTime(
                         clip.durationSeconds,
@@ -1346,6 +1350,8 @@ namespace paper::exact_clip_preharvest
                         weaponLocal.scale, weaponLocal.scale, weaponLocal.scale
                     };
                 }
+                ++clip.nextSample;
+                ++samplesCompletedThisFrame;
             }
             return true;
         }
@@ -1418,7 +1424,7 @@ namespace paper::exact_clip_preharvest
         void rejectCurrentClip(Runtime& state, const char* reason)
         {
             ++state.stats.clipsRejected;
-            PAPER_LOG_WARN(Animation,
+            PAPER_LOG_DEBUG(Animation,
                 "Authored animation preharvest skipped weapon={:08X} clip={}/{} '{}' reason={}",
                 state.job.weaponFormId,
                 state.job.animationPathIndex + 1,
