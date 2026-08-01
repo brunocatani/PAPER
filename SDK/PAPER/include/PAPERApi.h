@@ -31,7 +31,7 @@ namespace paper::api
     inline constexpr std::uint32_t PAPER_TRANSFORM_NAME_CAPACITY_V1 = 64;
     inline constexpr std::uint32_t PAPER_MAX_AUTHORITY_LEASE_FRAMES_V1 = 1200;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_CATALOG_NODES_V1 = 2048;
-    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_V1 = 8;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_V1 = 100;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 = 128;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_NODE_OBSERVATIONS_V1 =
         PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 * 2;

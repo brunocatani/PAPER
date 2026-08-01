@@ -82,6 +82,7 @@ namespace
     struct EnrichmentDemand
     {
         bool reloadObservation{ false };
+        bool reloadEvidenceGeometry{ false };
         bool animationTelemetry{ false };
         bool exactAnimationEvidence{ false };
     };
@@ -362,11 +363,13 @@ namespace
         const bool animationTelemetry = exactAnimationEvidence ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
+        const bool reloadEvidenceGeometry =
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
         const bool reloadObservation = animationTelemetry ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadObservations) ||
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
+            reloadEvidenceGeometry;
 
         if (s_animationTelemetryDemandActive && !animationTelemetry) {
             animation_evidence::reset();
@@ -378,6 +381,7 @@ namespace
         s_animationTelemetryDemandActive = animationTelemetry;
         return EnrichmentDemand{
             .reloadObservation = reloadObservation,
+            .reloadEvidenceGeometry = reloadEvidenceGeometry,
             .animationTelemetry = animationTelemetry,
             .exactAnimationEvidence = exactAnimationEvidence,
         };
@@ -894,7 +898,8 @@ namespace
                 reload_observation::advanceFrame(
                     *context,
                     s_gripStateValid ? std::addressof(s_gripState) : nullptr,
-                    provider::generation());
+                    provider::generation(),
+                    enrichmentDemand.reloadEvidenceGeometry);
                 s_reloadPerformance.observationAdvance.add(
                     elapsedPerformanceMicroseconds(observationStarted));
             }

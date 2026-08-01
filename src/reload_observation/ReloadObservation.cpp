@@ -286,6 +286,7 @@ namespace paper::reload_observation
                 targetIndexByNode{};
             std::uint32_t targetCount{ 0 };
             std::uint32_t omittedTargetCount{ 0 };
+            bool geometryRequested{ false };
             bool valid{ false };
         };
 
@@ -323,6 +324,7 @@ namespace paper::reload_observation
         PublishedFrame s_publishedFrame{};
         bool s_buildingCatalogActive{ false };
         bool s_rebuildRequested{ false };
+        bool s_geometryDemandActive{ false };
         std::uint32_t s_geometryEvidenceIndex{ 0 };
         std::uint64_t s_lastGeometryAdvanceFrame{
             (std::numeric_limits<std::uint64_t>::max)()
@@ -342,6 +344,7 @@ namespace paper::reload_observation
             s_buildingCatalog = {};
             s_buildingCatalogActive = false;
             s_rebuildRequested = false;
+            s_geometryDemandActive = false;
             s_geometryEvidenceIndex = 0;
             s_lastGeometryAdvanceFrame =
                 (std::numeric_limits<std::uint64_t>::max)();
@@ -387,10 +390,12 @@ namespace paper::reload_observation
                     evidence.value.providerPointCount) {
                     evidence.value.flags |= flag(
                         PaperReloadEvidenceFlagV1::GeometryComplete);
-                } else {
+                } else if (building.geometryRequested) {
                     geometryComplete = false;
                     evidence.value.flags |= flag(
                         PaperReloadEvidenceFlagV1::GeometryTruncated);
+                } else {
+                    geometryComplete = false;
                 }
                 evidenceCandidates.push_back({
                     .sourceNodeId = evidence.value.sourceNodeId,
@@ -467,7 +472,8 @@ namespace paper::reload_observation
                 RockProviderAnimationPhaseContextV1& context,
             const rock::provider::
                 RockProviderEquippedWeaponGripStateV1& gripState,
-            const std::uint32_t paperProviderGeneration)
+            const std::uint32_t paperProviderGeneration,
+            const bool collectEvidenceGeometry)
         {
             auto* root = weaponRoot(gripState);
             if (!root || !finiteTransform(root->world)) {
@@ -480,6 +486,7 @@ namespace paper::reload_observation
             clearPublishedFrame();
 
             auto& building = s_buildingCatalog;
+            building.geometryRequested = collectEvidenceGeometry;
             building.nodes.reserve(256);
             building.evidence.reserve(PAPER_MAX_RELOAD_EVIDENCE_V1);
             building.state.weaponFormId = gripState.weaponFormId;
@@ -783,13 +790,16 @@ namespace paper::reload_observation
                         PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 -
                             scheduledPointCount :
                         0u;
-                record.scheduledPointCount = std::min({
-                    source.pointCount,
-                    PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1,
-                    remainingPointCapacity,
-                });
+                record.scheduledPointCount = collectEvidenceGeometry ?
+                    std::min({
+                        source.pointCount,
+                        PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1,
+                        remainingPointCapacity,
+                    }) :
+                    0u;
                 scheduledPointCount += record.scheduledPointCount;
-                if (record.scheduledPointCount < source.pointCount) {
+                if (collectEvidenceGeometry &&
+                    record.scheduledPointCount < source.pointCount) {
                     record.value.flags |= flag(
                         PaperReloadEvidenceFlagV1::
                             GeometryTruncated);
@@ -1091,11 +1101,17 @@ namespace paper::reload_observation
             RockProviderAnimationPhaseContextV1& context,
         const rock::provider::
             RockProviderEquippedWeaponGripStateV1* gripState,
-        const std::uint32_t paperProviderGeneration)
+        const std::uint32_t paperProviderGeneration,
+        const bool collectEvidenceGeometry)
     {
         if (!gripState || !validWeaponGrip(*gripState)) {
             clearCatalogState();
             return;
+        }
+
+        if (s_geometryDemandActive != collectEvidenceGeometry) {
+            s_geometryDemandActive = collectEvidenceGeometry;
+            s_rebuildRequested = true;
         }
 
         const bool publishedMatches =
@@ -1126,7 +1142,8 @@ namespace paper::reload_observation
             if (!beginCatalog(
                     context,
                     *gripState,
-                    paperProviderGeneration)) {
+                    paperProviderGeneration,
+                    collectEvidenceGeometry)) {
                 clearCatalogState();
                 return;
             }

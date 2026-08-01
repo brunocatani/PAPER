@@ -14,7 +14,8 @@ namespace paper::reload_observation
     void advanceFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,
         const rock::provider::RockProviderEquippedWeaponGripStateV1* gripState,
-        std::uint32_t paperProviderGeneration);
+        std::uint32_t paperProviderGeneration,
+        bool collectEvidenceGeometry);
     void capturePhase(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,
         const rock::provider::RockProviderEquippedWeaponGripStateV1& gripState,

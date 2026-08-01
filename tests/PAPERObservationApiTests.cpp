@@ -32,6 +32,8 @@ int main()
 
     static_assert(PAPER_API_VERSION == 1);
     static_assert(PAPER_MOD_VERSION == 300);
+    static_assert(PAPER_MAX_RELOAD_EVIDENCE_V1 == 100);
+    static_assert(PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 == 25'200);
     static_assert(
         offsetof(PaperProviderApiV1, getReloadObservationLimitsV1) ==
         PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES);
