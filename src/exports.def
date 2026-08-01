@@ -3,3 +3,4 @@ EXPORTS
     F4SEPlugin_Query
     F4SEPlugin_Load
     PAPERAPI_GetProviderApi
+    PAPERAPI_GetProviderDescriptorV1

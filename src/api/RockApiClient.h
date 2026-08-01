@@ -34,6 +34,15 @@ namespace paper
             rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
         [[nodiscard]] bool queryEquippedWeaponClassification(
             rock::provider::RockProviderWeaponClassificationV1& outClassification) const;
+        [[nodiscard]] bool reloadObservationEvidenceReady() const;
+        [[nodiscard]] std::uint32_t weaponEvidenceDetailCount() const;
+        [[nodiscard]] std::uint32_t copyWeaponEvidenceDetails(
+            rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
+            std::uint32_t maxDetails) const;
+        [[nodiscard]] std::uint32_t copyWeaponEvidencePoints(
+            std::uint32_t bodyId,
+            rock::provider::RockProviderPoint3* outPoints,
+            std::uint32_t maxPoints) const;
         [[nodiscard]] bool setHandVisualAuthority(
             const rock::provider::RockProviderHandVisualAuthorityRequestV1& request) const;
         void clearHandVisualAuthority(rock::provider::RockProviderHand hand) const;
@@ -49,6 +58,7 @@ namespace paper
         std::uint64_t _ownerToken{ 0 };
         std::uint64_t _phaseCallbackToken{ 0 };
         std::uint32_t _publishedAuthorityFlags{ 0 };
+        bool _reloadObservationEvidenceReady{ false };
     };
 
     RockApiClient& rockApiClient();

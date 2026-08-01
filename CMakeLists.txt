@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.2)
 
 set(NAME "PAPER")
 set(FRIENDLY_NAME "PAPER")
-set(VERSION 0.1.0)
+set(VERSION 0.2.0)
 
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
@@ -149,6 +149,24 @@ if(BUILD_PAPER_TESTS)
   target_compile_features(PAPERPolicyTests PRIVATE cxx_std_23)
   target_include_directories(PAPERPolicyTests PRIVATE "${SOURCE_DIR}")
   add_test(NAME PAPERPolicyTests COMMAND "$<TARGET_FILE:PAPERPolicyTests>")
+
+  add_executable(PAPERObservationApiTests
+    "${ROOT_DIR}/tests/PAPERObservationApiTests.cpp"
+  )
+  target_compile_features(PAPERObservationApiTests PRIVATE cxx_std_23)
+  target_compile_options(PAPERObservationApiTests PRIVATE
+    /sdl
+    /utf-8
+    /permissive-
+    /Zc:__cplusplus
+    /Zc:preprocessor
+    /W4
+  )
+  target_include_directories(PAPERObservationApiTests PRIVATE "${SOURCE_DIR}")
+  add_test(
+    NAME PAPERObservationApiTests
+    COMMAND "$<TARGET_FILE:PAPERObservationApiTests>"
+  )
 
   add_executable(PAPERConfigFileTests
     "${ROOT_DIR}/tests/PaperConfigFileTests.cpp"

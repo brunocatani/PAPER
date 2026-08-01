@@ -10,9 +10,11 @@
 #include "debug/NativeAnimationDebugVisualization.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
+#include "reload_observation/ReloadObservation.h"
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
 
 namespace
@@ -528,6 +530,19 @@ namespace
             // yield at this same graph sample when Paper owns authority.
             publishRockAuthority(runtimeOperational);
             native_animation_authority::captureNativeGraphOutput();
+            rock::provider::RockProviderEquippedWeaponGripStateV1
+                gripState{};
+            if (rockApiClient().queryEquippedWeaponGripState(gripState) &&
+                hasGripFlag(
+                    gripState.flags,
+                    rock::provider::
+                        RockProviderEquippedWeaponGripStateFlagV1::Valid)) {
+                reload_observation::capturePhase(
+                    *context,
+                    gripState,
+                    api::PaperReloadObservationPhaseV1::
+                        NativeGraphOutput);
+            }
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::BeforeRock: {
@@ -556,6 +571,10 @@ namespace
             // aggregate state.
             rockApiClient().clearNativeAnimationAuthority();
             const auto weaponObservation = refreshWeaponState();
+            reload_observation::advanceFrame(
+                *context,
+                s_gripStateValid ? std::addressof(s_gripState) : nullptr,
+                provider::generation());
             const auto preLifecycleCompatibility =
                 evaluateAnimationCompatibility(
                     *context,
@@ -609,12 +628,21 @@ namespace
                 (void)native_animation_authority::applyCapturedPose(
                     native_animation_authority::ApplyPhase::AfterRock);
             }
+            if (s_gripStateValid) {
+                reload_observation::capturePhase(
+                    *context,
+                    s_gripState,
+                    api::PaperReloadObservationPhaseV1::PostRock);
+            }
             debug_visualization::publish(*context, s_gripState);
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::Complete:
             native_animation_authority::completeRockFrame();
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
+            reload_observation::completeFrame(
+                *context,
+                provider::generation());
             provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
             provider::completeFrame();
             break;

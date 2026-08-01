@@ -23,13 +23,27 @@
 namespace paper::api
 {
     inline constexpr std::uint32_t PAPER_API_VERSION = 1;
-    inline constexpr std::uint32_t PAPER_MOD_VERSION = 100;
+    inline constexpr std::uint32_t PAPER_MOD_VERSION = 200;
     inline constexpr std::uint32_t PAPER_MAX_CONSUMERS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CAPTURED_TRANSFORMS_V1 = 192;
     inline constexpr std::uint32_t PAPER_FINGER_TRANSFORM_COUNT_V1 = 15;
     inline constexpr std::uint32_t PAPER_TRANSFORM_NAME_CAPACITY_V1 = 64;
     inline constexpr std::uint32_t PAPER_MAX_AUTHORITY_LEASE_FRAMES_V1 = 1200;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_CATALOG_NODES_V1 = 2048;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_V1 = 8;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 = 128;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_NODE_OBSERVATIONS_V1 =
+        PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 * 2;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1 = 252;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 =
+        PAPER_MAX_RELOAD_EVIDENCE_V1 *
+        PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1;
+    inline constexpr std::uint32_t PAPER_RELOAD_NODE_NAME_CAPACITY_V1 = 64;
+    inline constexpr std::uint32_t PAPER_RELOAD_NODE_PATH_CAPACITY_V1 = 256;
+    inline constexpr std::uint32_t PAPER_FORM_PLUGIN_NAME_CAPACITY_V1 = 64;
+    inline constexpr std::uint32_t PAPER_FORM_EDITOR_ID_CAPACITY_V1 = 64;
+    inline constexpr std::uint32_t PAPER_FORM_DISPLAY_NAME_CAPACITY_V1 = 96;
 
     enum class PaperResultV1 : std::uint32_t
     {
@@ -44,6 +58,8 @@ namespace paper::api
         WrongThread = 8,
         OwnerConflict = 9,
         InvalidSize = 10,
+        StaleSnapshot = 11,
+        OutOfRange = 12,
     };
 
     enum class PaperConsumerCapabilityV1 : std::uint32_t
@@ -54,7 +70,94 @@ namespace paper::api
         NativeHandPose = 1u << 2,
         AnimationAuthority = 1u << 3,
         FrameCallbacks = 1u << 4,
-        All = (1u << 5) - 1u,
+        ReloadObservations = 1u << 5,
+        ReloadEvidenceGeometry = 1u << 6,
+        All = (1u << 7) - 1u,
+    };
+
+    enum class PaperProviderFeatureBitV1 : std::uint32_t
+    {
+        None = 0,
+        ReloadObservations = 1u << 0,
+        ReloadEvidenceGeometry = 1u << 1,
+    };
+
+    enum class PaperFormIdentityFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Resolved = 1u << 0,
+        PluginIdentityValid = 1u << 1,
+        EditorIdValid = 1u << 2,
+        DisplayNameValid = 1u << 3,
+        PluginNameTruncated = 1u << 4,
+        EditorIdTruncated = 1u << 5,
+        DisplayNameTruncated = 1u << 6,
+    };
+
+    enum class PaperWeaponClassificationFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Available = 1u << 0,
+        Valid = 1u << 1,
+    };
+
+    enum class PaperReloadCatalogStatusFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        NodeCatalogTruncated = 1u << 1,
+        EvidenceTruncated = 1u << 2,
+        GeometryComplete = 1u << 3,
+        GeometryIncomplete = 1u << 4,
+        ClassificationAvailable = 1u << 5,
+        ClassificationValid = 1u << 6,
+        EvidenceUnavailable = 1u << 7,
+    };
+
+    enum class PaperReloadNodeFlagV1 : std::uint32_t
+    {
+        None = 0,
+        IsNode = 1u << 0,
+        LocalTransformValid = 1u << 1,
+        WeaponLocalTransformValid = 1u << 2,
+        NameTruncated = 1u << 3,
+        PathTruncated = 1u << 4,
+    };
+
+    enum class PaperReloadEvidenceFlagV1 : std::uint32_t
+    {
+        None = 0,
+        SourceNodeResolved = 1u << 0,
+        InteractionNodeResolved = 1u << 1,
+        LocalBoundsValid = 1u << 2,
+        GeometryPresent = 1u << 3,
+        GeometryComplete = 1u << 4,
+        GeometryTruncated = 1u << 5,
+        SourceNameTruncated = 1u << 6,
+    };
+
+    enum class PaperReloadFrameStatusFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        CatalogValid = 1u << 1,
+        NativeGraphOutputCaptured = 1u << 2,
+        PostRockCaptured = 1u << 3,
+        ObservationsTruncated = 1u << 4,
+        TopologyMismatch = 1u << 5,
+    };
+
+    enum class PaperReloadNodeObservationFlagV1 : std::uint32_t
+    {
+        None = 0,
+        LocalTransformValid = 1u << 0,
+        WeaponLocalTransformValid = 1u << 1,
+    };
+
+    enum class PaperReloadObservationPhaseV1 : std::uint32_t
+    {
+        NativeGraphOutput = 1,
+        PostRock = 2,
     };
 
     enum class PaperNativeAnimationAuthorityFlagV1 : std::uint32_t
@@ -202,6 +305,184 @@ namespace paper::api
         std::uint32_t reserved[8]{};
     };
 
+    /*
+     * Reload observations are descriptive source data. PAPER does not infer
+     * part motion, attachment, convergence, or reload stages from these
+     * records. Scene transforms use Fallout game units. Weapon-local values
+     * are lossless coordinate conversions relative to the observed weapon
+     * root. Evidence bounds and points preserve ROCK's generated local
+     * geometry coordinates unchanged.
+     */
+    struct PaperPoint3V1
+    {
+        float x{ 0.0f };
+        float y{ 0.0f };
+        float z{ 0.0f };
+    };
+
+    struct PaperBounds3V1
+    {
+        PaperPoint3V1 min{};
+        PaperPoint3V1 max{};
+        std::uint32_t valid{ 0 };
+        std::uint32_t reserved{ 0 };
+    };
+
+    struct PaperFormIdentityV1
+    {
+        std::uint32_t size{ sizeof(PaperFormIdentityV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t runtimeFormId{ 0 };
+        std::uint32_t localFormId{ 0 };
+        std::uint32_t formType{ 0 };
+        char pluginName[PAPER_FORM_PLUGIN_NAME_CAPACITY_V1]{};
+        char editorId[PAPER_FORM_EDITOR_ID_CAPACITY_V1]{};
+        char displayName[PAPER_FORM_DISPLAY_NAME_CAPACITY_V1]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperWeaponClassificationV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponClassificationV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t formId{ 0 };
+        std::uint64_t keywordFlags{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t sizeClass{ 0 };
+        std::uint32_t source{ 0 };
+        float confidence{ 0.0f };
+        std::uint32_t provenanceFlags{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperReloadObservationLimitsV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadObservationLimitsV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t featureBits{ 0 };
+        std::uint32_t maxCatalogNodes{ 0 };
+        std::uint32_t maxEvidenceRecords{ 0 };
+        std::uint32_t maxObservationTargets{ 0 };
+        std::uint32_t maxNodeObservations{ 0 };
+        std::uint32_t maxEvidencePointsPerDetail{ 0 };
+        std::uint32_t maxEvidencePointsTotal{ 0 };
+        std::uint32_t nodeNameCapacity{ 0 };
+        std::uint32_t nodePathCapacity{ 0 };
+        std::uint32_t pluginNameCapacity{ 0 };
+        std::uint32_t editorIdCapacity{ 0 };
+        std::uint32_t displayNameCapacity{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct PaperReloadCatalogStateV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadCatalogStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t statusFlags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t capturedFrameIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
+        std::uint32_t discoveredNodeCount{ 0 };
+        std::uint32_t nodeCount{ 0 };
+        std::uint32_t omittedNodeCount{ 0 };
+        std::uint32_t reportedEvidenceCount{ 0 };
+        std::uint32_t evidenceCount{ 0 };
+        std::uint32_t copiedGeometryPointCount{ 0 };
+        PaperWeaponClassificationV1 classification{};
+        PaperFormIdentityV1 weapon{};
+        PaperTransformV1 weaponRootWorld{};
+        std::uint32_t reserved[5]{};
+    };
+
+    struct PaperReloadNodeCatalogEntryV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadNodeCatalogEntryV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t nodeId{ 0 };
+        std::int32_t parentNodeId{ -1 };
+        std::uint32_t childIndex{ 0 };
+        std::uint32_t sameNameSiblingOrdinal{ 0 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t childCount{ 0 };
+        char name[PAPER_RELOAD_NODE_NAME_CAPACITY_V1]{};
+        char rootRelativePath[PAPER_RELOAD_NODE_PATH_CAPACITY_V1]{};
+        PaperTransformV1 baselineLocal{};
+        PaperTransformV1 baselineWeaponLocal{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperReloadEvidenceV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadEvidenceV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t evidenceId{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::int32_t sourceNodeId{ -1 };
+        std::int32_t interactionNodeId{ -1 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uint32_t fallbackGripPose{ 0 };
+        std::uint32_t classificationSource{ 0 };
+        char sourceName[PAPER_TRANSFORM_NAME_CAPACITY_V1]{};
+        PaperBounds3V1 localBoundsGame{};
+        std::uint32_t providerPointCount{ 0 };
+        std::uint32_t copiedPointCount{ 0 };
+        PaperFormIdentityV1 omod{};
+        PaperFormIdentityV1 attachPoint{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperReloadFrameStateV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadFrameStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t statusFlags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        float deltaSeconds{ 0.0f };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
+        std::uint32_t observationTargetCount{ 0 };
+        std::uint32_t observationCount{ 0 };
+        std::uint32_t nativeGraphOutputCount{ 0 };
+        std::uint32_t postRockCount{ 0 };
+        std::uint32_t omittedObservationTargetCount{ 0 };
+        PaperTransformV1 weaponRootWorld{};
+        std::uint32_t reserved[5]{};
+    };
+
+    struct PaperReloadNodeObservationV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadNodeObservationV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t nodeId{ 0 };
+        PaperReloadObservationPhaseV1 phase{
+            PaperReloadObservationPhaseV1::NativeGraphOutput
+        };
+        std::uint32_t flags{ 0 };
+        std::uint32_t reserved0{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        PaperTransformV1 local{};
+        PaperTransformV1 weaponLocal{};
+        std::uint32_t reserved[4]{};
+    };
+
     using PaperEventCallbackV1 =
         void(PAPER_CALL*)(const PaperEventV1* eventData, void* userData);
 
@@ -253,10 +534,74 @@ namespace paper::api
         PaperResultV1(PAPER_CALL* unregisterEventCallbackV1)(
             std::uint64_t ownerToken,
             std::uint64_t callbackToken);
+        PaperResultV1(PAPER_CALL* getReloadObservationLimitsV1)(
+            std::uint64_t ownerToken,
+            PaperReloadObservationLimitsV1* outLimits);
+        PaperResultV1(PAPER_CALL* getReloadCatalogStateV1)(
+            std::uint64_t ownerToken,
+            PaperReloadCatalogStateV1* outState);
+        PaperResultV1(PAPER_CALL* copyReloadCatalogNodesV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t firstNode,
+            PaperReloadNodeCatalogEntryV1* outNodes,
+            std::uint32_t maxNodes,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadEvidenceV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t firstEvidence,
+            PaperReloadEvidenceV1* outEvidence,
+            std::uint32_t maxEvidence,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadEvidencePointsV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t evidenceId,
+            std::uint32_t firstPoint,
+            PaperPoint3V1* outPoints,
+            std::uint32_t maxPoints,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* getReloadFrameStateV1)(
+            std::uint64_t ownerToken,
+            PaperReloadFrameStateV1* outState);
+        PaperResultV1(PAPER_CALL* copyReloadNodeObservationsV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t snapshotSequence,
+            std::uint32_t firstObservation,
+            PaperReloadNodeObservationV1* outObservations,
+            std::uint32_t maxObservations,
+            std::uint32_t* outCopied);
     };
 
+    inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES =
+        static_cast<std::uint32_t>(
+            offsetof(PaperProviderApiV1, getReloadObservationLimitsV1));
     inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_TABLE_BYTES =
         static_cast<std::uint32_t>(sizeof(PaperProviderApiV1));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    copyReloadNodeObservationsV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::copyReloadNodeObservationsV1)));
+    inline constexpr std::uint32_t PAPER_PROVIDER_FEATURE_BITS_V1 =
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::ReloadObservations) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::ReloadEvidenceGeometry);
+
+    struct PaperProviderDescriptorV1
+    {
+        std::uint32_t size{ sizeof(PaperProviderDescriptorV1) };
+        std::uint32_t apiVersion{ PAPER_API_VERSION };
+        std::uint32_t tableBytes{ PAPER_PROVIDER_API_V1_TABLE_BYTES };
+        std::uint32_t featureBits{ PAPER_PROVIDER_FEATURE_BITS_V1 };
+        const PaperProviderApiV1* api{ nullptr };
+        std::uint32_t reserved[6]{};
+    };
 
     static_assert(sizeof(PaperTransformV1) == 52);
     static_assert(alignof(PaperTransformV1) == 4);
@@ -294,24 +639,83 @@ namespace paper::api
     static_assert(alignof(PaperEventV1) == 8);
     static_assert(std::is_standard_layout_v<PaperEventV1>);
     static_assert(std::is_trivially_copyable_v<PaperEventV1>);
-    static_assert(sizeof(PaperProviderApiV1) == 120);
+    static_assert(sizeof(PaperPoint3V1) == 12);
+    static_assert(sizeof(PaperBounds3V1) == 32);
+    static_assert(sizeof(PaperFormIdentityV1) == 264);
+    static_assert(sizeof(PaperWeaponClassificationV1) == 64);
+    static_assert(sizeof(PaperReloadObservationLimitsV1) == 88);
+    static_assert(sizeof(PaperReloadCatalogStateV1) == 480);
+    static_assert(sizeof(PaperReloadNodeCatalogEntryV1) == 472);
+    static_assert(sizeof(PaperReloadEvidenceV1) == 704);
+    static_assert(sizeof(PaperReloadFrameStateV1) == 160);
+    static_assert(sizeof(PaperReloadNodeObservationV1) == 152);
+    static_assert(std::is_standard_layout_v<PaperReloadCatalogStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadCatalogStateV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadNodeCatalogEntryV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadNodeCatalogEntryV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadEvidenceV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadEvidenceV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadFrameStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadFrameStateV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadNodeObservationV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadNodeObservationV1>);
+    static_assert(sizeof(PaperProviderApiV1) == 176);
     static_assert(alignof(PaperProviderApiV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderApiV1>);
     static_assert(std::is_trivially_copyable_v<PaperProviderApiV1>);
+    static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
+    static_assert(sizeof(PaperProviderDescriptorV1) == 48);
+    static_assert(alignof(PaperProviderDescriptorV1) == 8);
+    static_assert(std::is_standard_layout_v<PaperProviderDescriptorV1>);
+    static_assert(std::is_trivially_copyable_v<PaperProviderDescriptorV1>);
 
     class PaperApi
     {
     public:
         inline static const PaperProviderApiV1* inst = nullptr;
+        inline static std::uint32_t negotiatedTableBytes = 0;
+        inline static std::uint32_t negotiatedFeatureBits = 0;
 
         [[nodiscard]] static int initialize(
-            const std::uint32_t minVersion = PAPER_API_VERSION)
+            const std::uint32_t minVersion = PAPER_API_VERSION,
+            const std::uint32_t minTableBytes =
+                PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES)
         {
 #if defined(_WIN32)
             inst = nullptr;
+            negotiatedTableBytes = 0;
+            negotiatedFeatureBits = 0;
             const auto module = GetModuleHandleW(L"PAPER.dll");
             if (!module) {
                 return 1;
+            }
+            using GetProviderDescriptorFn =
+                const PaperProviderDescriptorV1*(PAPER_CALL*)();
+            const auto getDescriptor =
+                reinterpret_cast<GetProviderDescriptorFn>(
+                    GetProcAddress(
+                        module,
+                        "PAPERAPI_GetProviderDescriptorV1"));
+            if (getDescriptor) {
+                const auto* descriptor = getDescriptor();
+                if (!descriptor ||
+                    descriptor->size < sizeof(PaperProviderDescriptorV1) ||
+                    descriptor->apiVersion < minVersion ||
+                    descriptor->tableBytes < minTableBytes ||
+                    !descriptor->api) {
+                    return 5;
+                }
+                inst = descriptor->api;
+                if (!inst->getVersion || inst->getVersion() < minVersion) {
+                    inst = nullptr;
+                    return 4;
+                }
+                negotiatedTableBytes = descriptor->tableBytes;
+                negotiatedFeatureBits = descriptor->featureBits;
+                return 0;
+            }
+            if (minTableBytes > PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES) {
+                return 5;
             }
             using GetProviderApiFn =
                 const PaperProviderApiV1*(PAPER_CALL*)(std::uint32_t);
@@ -328,9 +732,11 @@ namespace paper::api
                 inst = nullptr;
                 return 4;
             }
+            negotiatedTableBytes = PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES;
             return 0;
 #else
             (void)minVersion;
+            (void)minTableBytes;
             return 1;
 #endif
         }
@@ -340,3 +746,7 @@ namespace paper::api
 extern "C" PAPER_API
     const paper::api::PaperProviderApiV1* PAPER_CALL
     PAPERAPI_GetProviderApi(std::uint32_t requestedVersion);
+
+extern "C" PAPER_API
+    const paper::api::PaperProviderDescriptorV1* PAPER_CALL
+    PAPERAPI_GetProviderDescriptorV1();

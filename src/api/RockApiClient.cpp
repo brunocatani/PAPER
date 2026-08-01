@@ -73,6 +73,25 @@ namespace paper
             return false;
         }
 
+        rock::provider::RockProviderLimitsExtV1 extendedLimits{};
+        const bool extendedLimitsReady =
+            rock::provider::queryProviderLimitsExtV1(extendedLimits);
+        _reloadObservationEvidenceReady =
+            rock::provider::hasFeatureBitV1(
+                limits.featureBits,
+                rock::provider::RockProviderFeatureBitV1::WeaponEvidence) &&
+            extendedLimitsReady &&
+            extendedLimits.maxWeaponEvidenceDetails > 0 &&
+            extendedLimits.maxWeaponEvidencePointsPerDetail > 0 &&
+            _api->getWeaponEvidenceDetailCountV1 &&
+            _api->copyWeaponEvidenceDetailsV1 &&
+            _api->copyWeaponEvidenceDetailPointsV1;
+        if (!_reloadObservationEvidenceReady) {
+            PAPER_LOG_WARN(
+                Api,
+                "ROCK V1 weapon evidence is unavailable; PAPER will publish scene observations without evidence records or geometry");
+        }
+
         rock::provider::RockProviderConsumerRegistrationV1 registration{};
         std::memcpy(
             registration.modName,
@@ -124,6 +143,7 @@ namespace paper
         (void)_api->unregisterConsumerV1(_ownerToken);
         _ownerToken = 0;
         _api = nullptr;
+        _reloadObservationEvidenceReady = false;
     }
 
     bool RockApiClient::ready() const
@@ -237,6 +257,46 @@ namespace paper
         outClassification = {};
         return ready() &&
                _api->queryEquippedWeaponClassificationV1(&outClassification);
+    }
+
+    bool RockApiClient::reloadObservationEvidenceReady() const
+    {
+        return ready() && _reloadObservationEvidenceReady;
+    }
+
+    std::uint32_t RockApiClient::weaponEvidenceDetailCount() const
+    {
+        return reloadObservationEvidenceReady() ?
+            _api->getWeaponEvidenceDetailCountV1() :
+            0;
+    }
+
+    std::uint32_t RockApiClient::copyWeaponEvidenceDetails(
+        rock::provider::RockProviderWeaponEvidenceDetailV1* outDetails,
+        const std::uint32_t maxDetails) const
+    {
+        if (!reloadObservationEvidenceReady() ||
+            !outDetails ||
+            maxDetails == 0) {
+            return 0;
+        }
+        return _api->copyWeaponEvidenceDetailsV1(outDetails, maxDetails);
+    }
+
+    std::uint32_t RockApiClient::copyWeaponEvidencePoints(
+        const std::uint32_t bodyId,
+        rock::provider::RockProviderPoint3* outPoints,
+        const std::uint32_t maxPoints) const
+    {
+        if (!reloadObservationEvidenceReady() ||
+            !outPoints ||
+            maxPoints == 0) {
+            return 0;
+        }
+        return _api->copyWeaponEvidenceDetailPointsV1(
+            bodyId,
+            outPoints,
+            maxPoints);
     }
 
     bool RockApiClient::setHandVisualAuthority(

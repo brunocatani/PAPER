@@ -4,6 +4,7 @@
 #include "animation/NativeAnimationAuthority.h"
 #include "api/ApiTransform.h"
 #include "PaperLog.h"
+#include "reload_observation/ReloadObservation.h"
 
 #include <Windows.h>
 
@@ -522,6 +523,184 @@ namespace paper::provider
             return PaperResultV1::NotFound;
         }
 
+        [[nodiscard]] PaperResultV1 validateReloadConsumer(
+            const std::uint64_t ownerToken,
+            const PaperConsumerCapabilityV1 capability)
+        {
+            if (!isReady()) {
+                return PaperResultV1::NotReady;
+            }
+            if (!onOwnerThread()) {
+                return PaperResultV1::WrongThread;
+            }
+            const auto* consumer = findConsumerConst(ownerToken);
+            if (!consumer) {
+                return PaperResultV1::UnknownOwner;
+            }
+            return hasCapability(*consumer, capability) ?
+                PaperResultV1::Ok :
+                PaperResultV1::PermissionDenied;
+        }
+
+        template <class State>
+        [[nodiscard]] PaperResultV1 validateReloadOutput(
+            const std::uint64_t ownerToken,
+            const PaperConsumerCapabilityV1 capability,
+            const State* output)
+        {
+            if (!output) {
+                return PaperResultV1::InvalidArgument;
+            }
+            if (output->size < sizeof(State)) {
+                return PaperResultV1::InvalidSize;
+            }
+            if (output->version != PAPER_API_VERSION) {
+                return PaperResultV1::UnsupportedVersion;
+            }
+            return validateReloadConsumer(ownerToken, capability);
+        }
+
+        PaperResultV1 PAPER_CALL getReloadObservationLimitsV1(
+            const std::uint64_t ownerToken,
+            PaperReloadObservationLimitsV1* outLimits)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadObservations,
+                outLimits);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::getLimits(*outLimits) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL getReloadCatalogStateV1(
+            const std::uint64_t ownerToken,
+            PaperReloadCatalogStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadObservations,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::getCatalogState(*outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadCatalogNodesV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t firstNode,
+            PaperReloadNodeCatalogEntryV1* outNodes,
+            const std::uint32_t maxNodes,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadObservations);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::copyCatalogNodes(
+                    catalogSequence,
+                    firstNode,
+                    outNodes,
+                    maxNodes,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadEvidenceV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t firstEvidence,
+            PaperReloadEvidenceV1* outEvidence,
+            const std::uint32_t maxEvidence,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadObservations);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::copyEvidence(
+                    catalogSequence,
+                    firstEvidence,
+                    outEvidence,
+                    maxEvidence,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadEvidencePointsV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t evidenceId,
+            const std::uint32_t firstPoint,
+            PaperPoint3V1* outPoints,
+            const std::uint32_t maxPoints,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::copyEvidencePoints(
+                    catalogSequence,
+                    evidenceId,
+                    firstPoint,
+                    outPoints,
+                    maxPoints,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL getReloadFrameStateV1(
+            const std::uint64_t ownerToken,
+            PaperReloadFrameStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadObservations,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::getFrameState(*outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadNodeObservationsV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t snapshotSequence,
+            const std::uint32_t firstObservation,
+            PaperReloadNodeObservationV1* outObservations,
+            const std::uint32_t maxObservations,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadObservations);
+            return validation == PaperResultV1::Ok ?
+                reload_observation::copyNodeObservations(
+                    snapshotSequence,
+                    firstObservation,
+                    outObservations,
+                    maxObservations,
+                    *outCopied) :
+                validation;
+        }
+
         const PaperProviderApiV1 s_api{
             &getVersion,
             &getModVersion,
@@ -538,6 +717,17 @@ namespace paper::provider
             &clearAnimationAuthorityV1,
             &registerEventCallbackV1,
             &unregisterEventCallbackV1,
+            &getReloadObservationLimitsV1,
+            &getReloadCatalogStateV1,
+            &copyReloadCatalogNodesV1,
+            &copyReloadEvidenceV1,
+            &copyReloadEvidencePointsV1,
+            &getReloadFrameStateV1,
+            &copyReloadNodeObservationsV1,
+        };
+
+        const PaperProviderDescriptorV1 s_descriptor{
+            .api = std::addressof(s_api),
         };
     }
 
@@ -550,6 +740,7 @@ namespace paper::provider
         if (++s_providerGeneration == 0) {
             s_providerGeneration = 1;
         }
+        reload_observation::reset();
         s_ready.store(true, std::memory_order_release);
     }
 
@@ -559,6 +750,7 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
+        reload_observation::reset();
         s_ownerThread = 0;
     }
 
@@ -602,6 +794,7 @@ namespace paper::provider
         }
         PaperRuntimeStateV1 state{};
         state.paperProviderGeneration = s_providerGeneration;
+        reload_observation::reset();
         publishRuntime(state);
         dispatchEvent(PaperEventKindV1::RuntimeReset);
     }
@@ -678,6 +871,11 @@ namespace paper::provider
     {
         return std::addressof(s_api);
     }
+
+    const PaperProviderDescriptorV1* apiDescriptor()
+    {
+        return std::addressof(s_descriptor);
+    }
 }
 
 extern "C" PAPER_API
@@ -688,4 +886,11 @@ extern "C" PAPER_API
         return nullptr;
     }
     return paper::provider::apiTable();
+}
+
+extern "C" PAPER_API
+    const paper::api::PaperProviderDescriptorV1* PAPER_CALL
+    PAPERAPI_GetProviderDescriptorV1()
+{
+    return paper::provider::apiDescriptor();
 }
