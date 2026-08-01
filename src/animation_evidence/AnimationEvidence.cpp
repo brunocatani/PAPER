@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -158,12 +159,34 @@ namespace paper::animation_evidence
             bool passiveWalkCompleted{ false };
             bool passiveWalkGaveUp{ false };
             bool passiveRewalkActive{ false };
+            FrameDiagnostics frameDiagnostics{};
         };
 
         [[nodiscard]] Runtime& runtime()
         {
             static Runtime* instance = new Runtime();
             return *instance;
+        }
+
+        using DiagnosticsClock = std::chrono::steady_clock;
+
+        [[nodiscard]] std::uint64_t elapsedMicroseconds(
+            const DiagnosticsClock::time_point started)
+        {
+            return static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    DiagnosticsClock::now() - started)
+                    .count());
+        }
+
+        void finishFrameDiagnostics(
+            Runtime& state,
+            const DiagnosticsClock::time_point frameStarted)
+        {
+            state.frameDiagnostics.totalMicroseconds =
+                elapsedMicroseconds(frameStarted);
+            state.frameDiagnostics.exact =
+                exact_clip_preharvest::snapshotDiagnostics();
         }
 
         void markMutation(Runtime& state)
@@ -1192,7 +1215,9 @@ namespace paper::animation_evidence
 
     void reset()
     {
-        clearCatalog(runtime());
+        auto& state = runtime();
+        clearCatalog(state);
+        state.frameDiagnostics = {};
     }
 
     void advanceFrame(
@@ -1201,11 +1226,17 @@ namespace paper::animation_evidence
         const std::uint32_t paperProviderGeneration)
     {
         auto& state = runtime();
+        state.frameDiagnostics = {};
+        const auto frameStarted = DiagnosticsClock::now();
+        auto stageStarted = frameStarted;
         auto* root = currentWeaponRoot(gripState);
         if (!root || !gripState) {
             if (state.valid) {
                 clearCatalog(state);
             }
+            state.frameDiagnostics.catalogSetupMicroseconds =
+                elapsedMicroseconds(stageStarted);
+            finishFrameDiagnostics(state, frameStarted);
             return;
         }
 
@@ -1225,6 +1256,9 @@ namespace paper::animation_evidence
                         gripState->weaponGenerationKey)) {
                 clearCatalog(state);
             }
+            state.frameDiagnostics.catalogSetupMicroseconds =
+                elapsedMicroseconds(stageStarted);
+            finishFrameDiagnostics(state, frameStarted);
             return;
         }
 
@@ -1250,20 +1284,41 @@ namespace paper::animation_evidence
                 context);
         }
 
+        state.frameDiagnostics.catalogSetupMicroseconds =
+            elapsedMicroseconds(stageStarted);
+        stageStarted = DiagnosticsClock::now();
         drainPassive(state);
+        state.frameDiagnostics.passiveDrainMicroseconds +=
+            elapsedMicroseconds(stageStarted);
+        stageStarted = DiagnosticsClock::now();
         const auto names = collectWeaponNames(root);
+        state.frameDiagnostics.nameCollectionMicroseconds =
+            elapsedMicroseconds(stageStarted);
         if (names.truncated) {
             state.catalog.statusFlags |= flag(
                 PaperReloadAnimationCatalogFlagV1::
                     SceneNameCapacityTruncated);
         }
         if (names.count > 0) {
+            stageStarted = DiagnosticsClock::now();
             updatePassive(state, root, names);
+            state.frameDiagnostics.passiveUpdateMicroseconds =
+                elapsedMicroseconds(stageStarted);
+            stageStarted = DiagnosticsClock::now();
             updateExact(state, names);
+            state.frameDiagnostics.exactUpdateMicroseconds =
+                elapsedMicroseconds(stageStarted);
         }
+        stageStarted = DiagnosticsClock::now();
         drainPassive(state);
+        state.frameDiagnostics.passiveDrainMicroseconds +=
+            elapsedMicroseconds(stageStarted);
+        stageStarted = DiagnosticsClock::now();
         refreshPassiveStats(state);
+        state.frameDiagnostics.passiveStatsMicroseconds =
+            elapsedMicroseconds(stageStarted);
         state.catalog.updatedFrameIndex = context.frameIndex;
+        finishFrameDiagnostics(state, frameStarted);
     }
 
     void completeFrame(
@@ -1277,6 +1332,11 @@ namespace paper::animation_evidence
         refreshPassiveStats(state);
         updateLiveState(state, context.frameIndex);
         state.catalog.updatedFrameIndex = context.frameIndex;
+    }
+
+    FrameDiagnostics snapshotFrameDiagnostics()
+    {
+        return runtime().frameDiagnostics;
     }
 
     PaperResultV1 getLimits(PaperReloadAnimationLimitsV1& outLimits)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "animation_evidence/ExactClipPreharvest.h"
 #include "api/PAPERApi.h"
 #include "api/ROCKProviderApi.h"
 
@@ -7,6 +8,18 @@
 
 namespace paper::animation_evidence
 {
+    struct FrameDiagnostics
+    {
+        std::uint64_t totalMicroseconds{ 0 };
+        std::uint64_t catalogSetupMicroseconds{ 0 };
+        std::uint64_t passiveDrainMicroseconds{ 0 };
+        std::uint64_t nameCollectionMicroseconds{ 0 };
+        std::uint64_t passiveUpdateMicroseconds{ 0 };
+        std::uint64_t exactUpdateMicroseconds{ 0 };
+        std::uint64_t passiveStatsMicroseconds{ 0 };
+        exact_clip_preharvest::RuntimeDiagnostics exact{};
+    };
+
     void reset();
 
     void advanceFrame(
@@ -15,6 +28,7 @@ namespace paper::animation_evidence
         std::uint32_t paperProviderGeneration);
     void completeFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context);
+    [[nodiscard]] FrameDiagnostics snapshotFrameDiagnostics();
 
     [[nodiscard]] api::PaperResultV1 getLimits(
         api::PaperReloadAnimationLimitsV1& outLimits);

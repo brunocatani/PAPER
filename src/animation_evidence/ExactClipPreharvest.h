@@ -63,5 +63,21 @@ namespace paper::exact_clip_preharvest
         bool usedLoadedGraphPathFallback{ false };
     };
 
+    struct RuntimeDiagnostics
+    {
+        State state{ State::Idle };
+        std::uint32_t animationPathIndex{ 0 };
+        std::uint32_t animationPathCount{ 0 };
+        std::uint32_t nextSample{ 0 };
+        std::uint32_t sampleCount{ 0 };
+        std::uint32_t samplesCompletedLastStep{ 0 };
+        std::uint32_t samplingMicrosecondsLastStep{ 0 };
+        bool samplingBudgetYielded{ false };
+        bool sampleLimitYielded{ false };
+        bool backgroundGraphActive{ false };
+        bool clipResourceActive{ false };
+    };
+
     [[nodiscard]] Stats snapshotStats() noexcept;
+    [[nodiscard]] RuntimeDiagnostics snapshotDiagnostics() noexcept;
 }

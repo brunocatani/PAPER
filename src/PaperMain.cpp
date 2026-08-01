@@ -14,6 +14,8 @@
 #include "reload_observation/ReloadObservation.h"
 
 #include <atomic>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -82,6 +84,269 @@ namespace
         bool reloadObservation{ false };
         bool animationEvidence{ false };
     };
+
+    using PerformanceClock = std::chrono::steady_clock;
+
+    struct TimingCounter
+    {
+        std::uint64_t totalMicroseconds{ 0 };
+        std::uint64_t maximumMicroseconds{ 0 };
+        std::uint64_t calls{ 0 };
+
+        void add(const std::uint64_t microseconds)
+        {
+            totalMicroseconds += microseconds;
+            if (microseconds > maximumMicroseconds) {
+                maximumMicroseconds = microseconds;
+            }
+            ++calls;
+        }
+    };
+
+    /*
+     * This timing-only trace remains dormant on normal frames and reports at
+     * most once per second during enrichment or a slow frame. Comparing the
+     * engine frame interval with measured PAPER callbacks distinguishes work
+     * inside this plugin from engine work that occurs while PAPER retains the
+     * off-screen graph manager; the stage split then identifies the local
+     * owner without changing capture fidelity or scheduling.
+     */
+    struct ReloadPerformanceWindow
+    {
+        PerformanceClock::time_point started{};
+        std::uint64_t currentFrameIndex{ 0 };
+        std::uint64_t currentFrameMicroseconds{ 0 };
+        bool currentFrameActive{ false };
+        std::uint64_t frameCount{ 0 };
+        double gameDeltaMillisecondsTotal{ 0.0 };
+        double gameDeltaMillisecondsMaximum{ 0.0 };
+        TimingCounter paperFrame{};
+        TimingCounter nativeGraphPhase{};
+        TimingCounter beforeRockPhase{};
+        TimingCounter afterRockPhase{};
+        TimingCounter completePhase{};
+        TimingCounter observationCapture{};
+        TimingCounter observationAdvance{};
+        TimingCounter observationComplete{};
+        TimingCounter animationAdvance{};
+        TimingCounter animationComplete{};
+        TimingCounter consumerDispatch{};
+        TimingCounter catalogSetup{};
+        TimingCounter passiveDrain{};
+        TimingCounter nameCollection{};
+        TimingCounter passiveUpdate{};
+        TimingCounter exactUpdate{};
+        TimingCounter passiveStats{};
+        exact_clip_preharvest::RuntimeDiagnostics exact{};
+        std::uint64_t exactSamplesCompleted{ 0 };
+        std::uint64_t exactSamplingMicroseconds{ 0 };
+        std::uint64_t exactBudgetYieldCount{ 0 };
+        std::uint64_t exactSampleLimitYieldCount{ 0 };
+        std::uint32_t callbackThreadId{ 0 };
+        bool mixedCallbackThreads{ false };
+        bool observationDemandSeen{ false };
+        bool animationDemandSeen{ false };
+    };
+
+    ReloadPerformanceWindow s_reloadPerformance{};
+
+    [[nodiscard]] std::uint64_t elapsedPerformanceMicroseconds(
+        const PerformanceClock::time_point started)
+    {
+        return static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                PerformanceClock::now() - started)
+                .count());
+    }
+
+    [[nodiscard]] std::uint64_t averageMicroseconds(
+        const TimingCounter& counter)
+    {
+        return counter.calls > 0 ?
+            counter.totalMicroseconds / counter.calls :
+            0;
+    }
+
+    void beginPerformancePhase(const std::uint64_t frameIndex)
+    {
+        const auto now = PerformanceClock::now();
+        if (s_reloadPerformance.started.time_since_epoch().count() == 0) {
+            s_reloadPerformance.started = now;
+        }
+        if (!s_reloadPerformance.currentFrameActive ||
+            s_reloadPerformance.currentFrameIndex != frameIndex) {
+            s_reloadPerformance.currentFrameIndex = frameIndex;
+            s_reloadPerformance.currentFrameMicroseconds = 0;
+            s_reloadPerformance.currentFrameActive = true;
+        }
+        const auto callbackThreadId = GetCurrentThreadId();
+        if (s_reloadPerformance.callbackThreadId == 0) {
+            s_reloadPerformance.callbackThreadId = callbackThreadId;
+        } else if (s_reloadPerformance.callbackThreadId != callbackThreadId) {
+            s_reloadPerformance.mixedCallbackThreads = true;
+        }
+    }
+
+    void recordPhasePerformance(
+        const rock::provider::RockProviderAnimationPhaseV1 phase,
+        const std::uint64_t microseconds)
+    {
+        s_reloadPerformance.currentFrameMicroseconds += microseconds;
+        switch (phase) {
+        case rock::provider::RockProviderAnimationPhaseV1::NativeGraphOutput:
+            s_reloadPerformance.nativeGraphPhase.add(microseconds);
+            break;
+        case rock::provider::RockProviderAnimationPhaseV1::BeforeRock:
+            s_reloadPerformance.beforeRockPhase.add(microseconds);
+            break;
+        case rock::provider::RockProviderAnimationPhaseV1::AfterRock:
+            s_reloadPerformance.afterRockPhase.add(microseconds);
+            break;
+        case rock::provider::RockProviderAnimationPhaseV1::Complete:
+            s_reloadPerformance.completePhase.add(microseconds);
+            break;
+        default:
+            break;
+        }
+    }
+
+    void recordAnimationDiagnostics(
+        const animation_evidence::FrameDiagnostics& diagnostics)
+    {
+        s_reloadPerformance.catalogSetup.add(
+            diagnostics.catalogSetupMicroseconds);
+        s_reloadPerformance.passiveDrain.add(
+            diagnostics.passiveDrainMicroseconds);
+        s_reloadPerformance.nameCollection.add(
+            diagnostics.nameCollectionMicroseconds);
+        s_reloadPerformance.passiveUpdate.add(
+            diagnostics.passiveUpdateMicroseconds);
+        s_reloadPerformance.exactUpdate.add(
+            diagnostics.exactUpdateMicroseconds);
+        s_reloadPerformance.passiveStats.add(
+            diagnostics.passiveStatsMicroseconds);
+        s_reloadPerformance.exact = diagnostics.exact;
+        s_reloadPerformance.exactSamplesCompleted +=
+            diagnostics.exact.samplesCompletedLastStep;
+        s_reloadPerformance.exactSamplingMicroseconds +=
+            diagnostics.exact.samplingMicrosecondsLastStep;
+        if (diagnostics.exact.samplingBudgetYielded) {
+            ++s_reloadPerformance.exactBudgetYieldCount;
+        }
+        if (diagnostics.exact.sampleLimitYielded) {
+            ++s_reloadPerformance.exactSampleLimitYieldCount;
+        }
+    }
+
+    void completePerformanceFrame(
+        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const EnrichmentDemand demand)
+    {
+        auto& performance = s_reloadPerformance;
+        performance.paperFrame.add(performance.currentFrameMicroseconds);
+        performance.currentFrameMicroseconds = 0;
+        performance.currentFrameActive = false;
+        ++performance.frameCount;
+        const double deltaMilliseconds =
+            std::isfinite(context.deltaSeconds) && context.deltaSeconds > 0.0f ?
+                static_cast<double>(context.deltaSeconds) * 1000.0 :
+                0.0;
+        performance.gameDeltaMillisecondsTotal += deltaMilliseconds;
+        if (deltaMilliseconds > performance.gameDeltaMillisecondsMaximum) {
+            performance.gameDeltaMillisecondsMaximum = deltaMilliseconds;
+        }
+        performance.observationDemandSeen =
+            performance.observationDemandSeen || demand.reloadObservation;
+        performance.animationDemandSeen =
+            performance.animationDemandSeen || demand.animationEvidence;
+
+        const auto now = PerformanceClock::now();
+        const auto wallMilliseconds =
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - performance.started)
+                .count();
+        if (wallMilliseconds < 1000) {
+            return;
+        }
+
+        const double averageGameMilliseconds = performance.frameCount > 0 ?
+            performance.gameDeltaMillisecondsTotal /
+                static_cast<double>(performance.frameCount) :
+            0.0;
+        const double observedHz = wallMilliseconds > 0 ?
+            static_cast<double>(performance.frameCount) * 1000.0 /
+                static_cast<double>(wallMilliseconds) :
+            0.0;
+        const bool shouldReport =
+            performance.observationDemandSeen ||
+            performance.animationDemandSeen ||
+            performance.gameDeltaMillisecondsMaximum >= 20.0 ||
+            performance.paperFrame.maximumMicroseconds >= 1000;
+        if (shouldReport) {
+            PAPER_LOG_WARN(Performance,
+                "RELOAD-PERF frames={} wallMs={} hz={:.1f} thread={} mixedThreads={} gameMs(avg/max)={:.2f}/{:.2f} paperMs(avg/max)={:.3f}/{:.3f} demand(obs/anim)={}/{} phaseUs(avg/max)=[native {}/{} before {}/{} after {}/{} complete {}/{}]",
+                performance.frameCount,
+                wallMilliseconds,
+                observedHz,
+                performance.callbackThreadId,
+                performance.mixedCallbackThreads,
+                averageGameMilliseconds,
+                performance.gameDeltaMillisecondsMaximum,
+                static_cast<double>(averageMicroseconds(
+                    performance.paperFrame)) / 1000.0,
+                static_cast<double>(
+                    performance.paperFrame.maximumMicroseconds) / 1000.0,
+                performance.observationDemandSeen,
+                performance.animationDemandSeen,
+                averageMicroseconds(performance.nativeGraphPhase),
+                performance.nativeGraphPhase.maximumMicroseconds,
+                averageMicroseconds(performance.beforeRockPhase),
+                performance.beforeRockPhase.maximumMicroseconds,
+                averageMicroseconds(performance.afterRockPhase),
+                performance.afterRockPhase.maximumMicroseconds,
+                averageMicroseconds(performance.completePhase),
+                performance.completePhase.maximumMicroseconds);
+            PAPER_LOG_WARN(Performance,
+                "RELOAD-PERF detail observationUs(capture/advance/complete avg/max)=[{}/{} {}/{} {}/{}] animationUs(advance/complete/dispatch avg/max)=[{}/{} {}/{} {}/{}] animationStageUs(setup/names/drain/passive/exact/stats avg/max)=[{}/{} {}/{} {}/{} {}/{} {}/{} {}/{}] exact(state={} background={} resource={} path={}/{} sample={}/{} sampled={} sampleUs={} budgetYields={} limitYields={})",
+                averageMicroseconds(performance.observationCapture),
+                performance.observationCapture.maximumMicroseconds,
+                averageMicroseconds(performance.observationAdvance),
+                performance.observationAdvance.maximumMicroseconds,
+                averageMicroseconds(performance.observationComplete),
+                performance.observationComplete.maximumMicroseconds,
+                averageMicroseconds(performance.animationAdvance),
+                performance.animationAdvance.maximumMicroseconds,
+                averageMicroseconds(performance.animationComplete),
+                performance.animationComplete.maximumMicroseconds,
+                averageMicroseconds(performance.consumerDispatch),
+                performance.consumerDispatch.maximumMicroseconds,
+                averageMicroseconds(performance.catalogSetup),
+                performance.catalogSetup.maximumMicroseconds,
+                averageMicroseconds(performance.nameCollection),
+                performance.nameCollection.maximumMicroseconds,
+                averageMicroseconds(performance.passiveDrain),
+                performance.passiveDrain.maximumMicroseconds,
+                averageMicroseconds(performance.passiveUpdate),
+                performance.passiveUpdate.maximumMicroseconds,
+                averageMicroseconds(performance.exactUpdate),
+                performance.exactUpdate.maximumMicroseconds,
+                averageMicroseconds(performance.passiveStats),
+                performance.passiveStats.maximumMicroseconds,
+                static_cast<unsigned>(performance.exact.state),
+                performance.exact.backgroundGraphActive,
+                performance.exact.clipResourceActive,
+                performance.exact.animationPathIndex,
+                performance.exact.animationPathCount,
+                performance.exact.nextSample,
+                performance.exact.sampleCount,
+                performance.exactSamplesCompleted,
+                performance.exactSamplingMicroseconds,
+                performance.exactBudgetYieldCount,
+                performance.exactSampleLimitYieldCount);
+        }
+        performance = {};
+        performance.started = now;
+    }
 
     [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
     {
@@ -541,6 +806,8 @@ namespace
         if (!context || !s_gameLoaded.load(std::memory_order_acquire)) {
             return;
         }
+        beginPerformancePhase(context->frameIndex);
+        const auto phaseStarted = PerformanceClock::now();
 
         const bool rockEnabled = hasContextFlag(
             context->flags,
@@ -565,18 +832,24 @@ namespace
             publishRockAuthority(runtimeOperational);
             native_animation_authority::captureNativeGraphOutput();
             rock::provider::RockProviderEquippedWeaponGripStateV1 gripState{};
-            if (enrichmentDemand.reloadObservation &&
-                rockApiClient().queryEquippedWeaponGripState(gripState) &&
-                hasGripFlag(
-                    gripState.flags,
-                    rock::provider::
-                        RockProviderEquippedWeaponGripStateFlagV1::Valid)) {
-                reload_observation::capturePhase(
-                    *context,
-                    gripState,
-                    api::PaperReloadObservationPhaseV1::
-                        NativeGraphOutput);
+            if (enrichmentDemand.reloadObservation) {
+                const auto observationStarted = PerformanceClock::now();
+                if (rockApiClient().queryEquippedWeaponGripState(gripState) &&
+                    hasGripFlag(
+                        gripState.flags,
+                        rock::provider::
+                            RockProviderEquippedWeaponGripStateFlagV1::Valid)) {
+                    reload_observation::capturePhase(
+                        *context,
+                        gripState,
+                        api::PaperReloadObservationPhaseV1::
+                            NativeGraphOutput);
+                }
+                s_reloadPerformance.observationCapture.add(
+                    elapsedPerformanceMicroseconds(observationStarted));
             }
+            recordPhasePerformance(context->phase,
+                elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::BeforeRock: {
@@ -606,16 +879,24 @@ namespace
             rockApiClient().clearNativeAnimationAuthority();
             const auto weaponObservation = refreshWeaponState();
             if (enrichmentDemand.reloadObservation) {
+                const auto observationStarted = PerformanceClock::now();
                 reload_observation::advanceFrame(
                     *context,
                     s_gripStateValid ? std::addressof(s_gripState) : nullptr,
                     provider::generation());
+                s_reloadPerformance.observationAdvance.add(
+                    elapsedPerformanceMicroseconds(observationStarted));
             }
             if (enrichmentDemand.animationEvidence) {
+                const auto animationStarted = PerformanceClock::now();
                 animation_evidence::advanceFrame(
                     *context,
                     s_gripStateValid ? std::addressof(s_gripState) : nullptr,
                     provider::generation());
+                s_reloadPerformance.animationAdvance.add(
+                    elapsedPerformanceMicroseconds(animationStarted));
+                recordAnimationDiagnostics(
+                    animation_evidence::snapshotFrameDiagnostics());
             }
             const auto preLifecycleCompatibility =
                 evaluateAnimationCompatibility(
@@ -651,6 +932,8 @@ namespace
                 (void)native_animation_authority::applyCapturedPose(
                     native_animation_authority::ApplyPhase::BeforeRock);
             }
+            recordPhasePerformance(context->phase,
+                elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::AfterRock: {
@@ -671,28 +954,46 @@ namespace
                     native_animation_authority::ApplyPhase::AfterRock);
             }
             if (enrichmentDemand.reloadObservation && s_gripStateValid) {
+                const auto observationStarted = PerformanceClock::now();
                 reload_observation::capturePhase(
                     *context,
                     s_gripState,
                     api::PaperReloadObservationPhaseV1::PostRock);
+                s_reloadPerformance.observationCapture.add(
+                    elapsedPerformanceMicroseconds(observationStarted));
             }
             debug_visualization::publish(*context, s_gripState);
+            recordPhasePerformance(context->phase,
+                elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
-        case rock::provider::RockProviderAnimationPhaseV1::Complete:
+        case rock::provider::RockProviderAnimationPhaseV1::Complete: {
             native_animation_authority::completeRockFrame();
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
             if (enrichmentDemand.reloadObservation) {
+                const auto observationStarted = PerformanceClock::now();
                 reload_observation::completeFrame(
                     *context,
                     provider::generation());
+                s_reloadPerformance.observationComplete.add(
+                    elapsedPerformanceMicroseconds(observationStarted));
             }
             if (enrichmentDemand.animationEvidence) {
+                const auto animationStarted = PerformanceClock::now();
                 animation_evidence::completeFrame(*context);
+                s_reloadPerformance.animationComplete.add(
+                    elapsedPerformanceMicroseconds(animationStarted));
             }
+            const auto dispatchStarted = PerformanceClock::now();
             provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
+            s_reloadPerformance.consumerDispatch.add(
+                elapsedPerformanceMicroseconds(dispatchStarted));
             provider::completeFrame();
+            recordPhasePerformance(context->phase,
+                elapsedPerformanceMicroseconds(phaseStarted));
+            completePerformanceFrame(*context, enrichmentDemand);
             break;
+        }
         default:
             break;
         }
@@ -738,6 +1039,7 @@ namespace
         s_runtimeOperational = false;
         s_reloadObservationDemandActive = false;
         s_animationEvidenceDemandActive = false;
+        s_reloadPerformance = {};
         provider::resetRuntime();
     }
 

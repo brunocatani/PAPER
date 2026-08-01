@@ -233,6 +233,7 @@ namespace paper::exact_clip_preharvest
             Job job{};
             ClipWork clip{};
             Stats stats{};
+            RuntimeDiagnostics diagnostics{};
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
             std::array<RE::NiTransform, kMaxBonesAndTracks> sampledLocals{};
             std::atomic<DWORD> ownerThreadId{ 0 };
@@ -513,6 +514,7 @@ namespace paper::exact_clip_preharvest
             clearJob(state.job);
             clearClipWork(state.clip);
             state.stats = {};
+            state.diagnostics = {};
         }
 
         void finishTerminal(Runtime& state, const State terminalState, const char* reason)
@@ -1353,6 +1355,23 @@ namespace paper::exact_clip_preharvest
                 ++clip.nextSample;
                 ++samplesCompletedThisFrame;
             }
+            const auto samplingElapsed =
+                std::chrono::duration_cast<std::chrono::microseconds>(
+                    std::chrono::steady_clock::now() - batchStarted);
+            state.diagnostics.samplesCompletedLastStep =
+                samplesCompletedThisFrame;
+            state.diagnostics.samplingMicrosecondsLastStep =
+                static_cast<std::uint32_t>((std::min)(
+                    samplingElapsed.count(),
+                    static_cast<std::int64_t>(UINT32_MAX)));
+            state.diagnostics.samplingBudgetYielded =
+                clip.nextSample < clip.sampleCount &&
+                samplingElapsed >=
+                    animation_preharvest_policy::kSamplingFrameBudget;
+            state.diagnostics.sampleLimitYielded =
+                clip.nextSample < clip.sampleCount &&
+                samplesCompletedThisFrame >=
+                    animation_preharvest_policy::kMaximumSamplesPerFrame;
             return true;
         }
 
@@ -2035,6 +2054,10 @@ namespace paper::exact_clip_preharvest
         void* sinkUserData) noexcept
     {
         auto& state = runtime();
+        state.diagnostics.samplesCompletedLastStep = 0;
+        state.diagnostics.samplingMicrosecondsLastStep = 0;
+        state.diagnostics.samplingBudgetYielded = false;
+        state.diagnostics.sampleLimitYielded = false;
         if (!claimOrValidateThread(state)) {
             return StepResult{ .state = State::Failed };
         }
@@ -2098,5 +2121,21 @@ namespace paper::exact_clip_preharvest
     Stats snapshotStats() noexcept
     {
         return runtime().stats;
+    }
+
+    RuntimeDiagnostics snapshotDiagnostics() noexcept
+    {
+        const auto& state = runtime();
+        auto diagnostics = state.diagnostics;
+        diagnostics.state = state.job.phase;
+        diagnostics.animationPathIndex = state.job.animationPathIndex;
+        diagnostics.animationPathCount = state.job.animationPathCount;
+        diagnostics.nextSample = state.clip.nextSample;
+        diagnostics.sampleCount = state.clip.sampleCount;
+        diagnostics.backgroundGraphActive =
+            state.job.graphHolderConstructed;
+        diagnostics.clipResourceActive =
+            state.job.clipResource.entry != nullptr;
+        return diagnostics;
     }
 }
