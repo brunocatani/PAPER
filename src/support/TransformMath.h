@@ -138,4 +138,108 @@ namespace paper::transform_math
         result.translate = worldPointToLocal(transform, decltype(transform.translate){});
         return result;
     }
+
+    template <class Transform>
+    inline Transform relativeTransform(
+        const Transform& referenceModel,
+        const Transform& childModel)
+    {
+        return composeTransforms(
+            invertTransform(referenceModel),
+            childModel);
+    }
+
+    template <class Matrix>
+    inline Matrix havokQuaternionToNiRows(const float quaternion[4])
+    {
+        Matrix matrix = identityRotation<Matrix>();
+        float x = quaternion[0];
+        float y = quaternion[1];
+        float z = quaternion[2];
+        float w = quaternion[3];
+        const float length = std::sqrt(x * x + y * y + z * z + w * w);
+        if (length <= 0.000001f) {
+            return matrix;
+        }
+        const float inverseLength = 1.0f / length;
+        x *= inverseLength;
+        y *= inverseLength;
+        z *= inverseLength;
+        w *= inverseLength;
+
+        matrix.entry[0][0] = 1.0f - 2.0f * (y * y + z * z);
+        matrix.entry[0][1] = 2.0f * (x * y - w * z);
+        matrix.entry[0][2] = 2.0f * (x * z + w * y);
+        matrix.entry[1][0] = 2.0f * (x * y + w * z);
+        matrix.entry[1][1] = 1.0f - 2.0f * (x * x + z * z);
+        matrix.entry[1][2] = 2.0f * (y * z - w * x);
+        matrix.entry[2][0] = 2.0f * (x * z - w * y);
+        matrix.entry[2][1] = 2.0f * (y * z + w * x);
+        matrix.entry[2][2] = 1.0f - 2.0f * (x * x + y * y);
+        return matrix;
+    }
+
+    template <class Matrix>
+    inline void niRowsToHavokQuaternion(
+        const Matrix& matrix,
+        float outQuaternion[4])
+    {
+        const float trace =
+            matrix.entry[0][0] + matrix.entry[1][1] + matrix.entry[2][2];
+        float x = 0.0f;
+        float y = 0.0f;
+        float z = 0.0f;
+        float w = 1.0f;
+
+        if (trace > 0.0f) {
+            const float root = std::sqrt(trace + 1.0f);
+            const float inverse = 0.5f / root;
+            w = root * 0.5f;
+            x = (matrix.entry[2][1] - matrix.entry[1][2]) * inverse;
+            y = (matrix.entry[0][2] - matrix.entry[2][0]) * inverse;
+            z = (matrix.entry[1][0] - matrix.entry[0][1]) * inverse;
+        } else if (
+            matrix.entry[0][0] > matrix.entry[1][1] &&
+            matrix.entry[0][0] > matrix.entry[2][2]) {
+            const float root = std::sqrt(
+                matrix.entry[0][0] - matrix.entry[1][1] -
+                matrix.entry[2][2] + 1.0f);
+            const float inverse = 0.5f / root;
+            x = root * 0.5f;
+            y = (matrix.entry[1][0] + matrix.entry[0][1]) * inverse;
+            z = (matrix.entry[0][2] + matrix.entry[2][0]) * inverse;
+            w = (matrix.entry[2][1] - matrix.entry[1][2]) * inverse;
+        } else if (matrix.entry[1][1] > matrix.entry[2][2]) {
+            const float root = std::sqrt(
+                matrix.entry[1][1] - matrix.entry[2][2] -
+                matrix.entry[0][0] + 1.0f);
+            const float inverse = 0.5f / root;
+            x = (matrix.entry[1][0] + matrix.entry[0][1]) * inverse;
+            y = root * 0.5f;
+            z = (matrix.entry[2][1] + matrix.entry[1][2]) * inverse;
+            w = (matrix.entry[0][2] - matrix.entry[2][0]) * inverse;
+        } else {
+            const float root = std::sqrt(
+                matrix.entry[2][2] - matrix.entry[0][0] -
+                matrix.entry[1][1] + 1.0f);
+            const float inverse = 0.5f / root;
+            x = (matrix.entry[0][2] + matrix.entry[2][0]) * inverse;
+            y = (matrix.entry[2][1] + matrix.entry[1][2]) * inverse;
+            z = root * 0.5f;
+            w = (matrix.entry[1][0] - matrix.entry[0][1]) * inverse;
+        }
+
+        const float length = std::sqrt(x * x + y * y + z * z + w * w);
+        if (length > 0.0f) {
+            const float inverseLength = 1.0f / length;
+            x *= inverseLength;
+            y *= inverseLength;
+            z *= inverseLength;
+            w *= inverseLength;
+        }
+        outQuaternion[0] = x;
+        outQuaternion[1] = y;
+        outQuaternion[2] = z;
+        outQuaternion[3] = w;
+    }
 }

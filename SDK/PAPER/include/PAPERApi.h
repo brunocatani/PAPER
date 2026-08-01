@@ -23,7 +23,7 @@
 namespace paper::api
 {
     inline constexpr std::uint32_t PAPER_API_VERSION = 1;
-    inline constexpr std::uint32_t PAPER_MOD_VERSION = 200;
+    inline constexpr std::uint32_t PAPER_MOD_VERSION = 300;
     inline constexpr std::uint32_t PAPER_MAX_CONSUMERS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CAPTURED_TRANSFORMS_V1 = 192;
@@ -44,6 +44,22 @@ namespace paper::api
     inline constexpr std::uint32_t PAPER_FORM_PLUGIN_NAME_CAPACITY_V1 = 64;
     inline constexpr std::uint32_t PAPER_FORM_EDITOR_ID_CAPACITY_V1 = 64;
     inline constexpr std::uint32_t PAPER_FORM_DISPLAY_NAME_CAPACITY_V1 = 96;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_ANIMATION_CLIPS_V1 = 640;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_LIVE_ANIMATION_CLIPS_V1 = 128;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EXACT_ANIMATION_CLIPS_V1 = 512;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_LIVE_TRACKS_PER_CLIP_V1 = 64;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1 = 128;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_LIVE_SAMPLES_PER_TRACK_V1 = 64;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1 = 720;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_SKELETON_BONES_V1 = 768;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_CLIP_ANNOTATIONS_V1 = 128;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_CLIP_TRIGGERS_V1 = 128;
+    inline constexpr std::uint32_t PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1 = 64;
+    inline constexpr std::uint32_t PAPER_RELOAD_ANIMATION_PATH_CAPACITY_V1 = 260;
+    inline constexpr std::uint32_t PAPER_RELOAD_MARKER_TEXT_CAPACITY_V1 = 96;
+    inline constexpr std::uint32_t PAPER_RELOAD_RESOLVE_POINT_CAPACITY_V1 = 32;
+    inline constexpr std::uint64_t PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 =
+        128ull * 1024ull * 1024ull;
 
     enum class PaperResultV1 : std::uint32_t
     {
@@ -72,7 +88,8 @@ namespace paper::api
         FrameCallbacks = 1u << 4,
         ReloadObservations = 1u << 5,
         ReloadEvidenceGeometry = 1u << 6,
-        All = (1u << 7) - 1u,
+        ReloadAnimationEvidence = 1u << 7,
+        All = (1u << 8) - 1u,
     };
 
     enum class PaperProviderFeatureBitV1 : std::uint32_t
@@ -80,6 +97,84 @@ namespace paper::api
         None = 0,
         ReloadObservations = 1u << 0,
         ReloadEvidenceGeometry = 1u << 1,
+        ReloadAnimationEvidence = 1u << 2,
+    };
+
+    enum class PaperReloadAnimationAcquisitionV1 : std::uint32_t
+    {
+        LoadedGraphBinding = 1,
+        LiveClipActivation = 2,
+        ExactWeaponPreharvest = 3,
+    };
+
+    enum class PaperReloadAnimationTrackSpaceV1 : std::uint32_t
+    {
+        RigBoneLocal = 1,
+        WeaponRootLocal = 2,
+    };
+
+    enum class PaperReloadAnimationPreharvestStateV1 : std::uint32_t
+    {
+        Idle = 0,
+        LoadingBaseGraphs = 1,
+        LoadingWeaponSubgraph = 2,
+        LoadingClip = 3,
+        SamplingClip = 4,
+        Completed = 5,
+        Failed = 6,
+    };
+
+    enum class PaperReloadAnimationCatalogFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        PassiveCaptureActive = 1u << 1,
+        PassiveWalkCompleted = 1u << 2,
+        ExactPreharvestCompleted = 1u << 3,
+        ExactPreharvestFailed = 1u << 4,
+        ClipCapacityTruncated = 1u << 5,
+        SampleStorageTruncated = 1u << 6,
+        SkeletonAvailable = 1u << 7,
+        PassiveCaptureDropped = 1u << 8,
+        SceneNameCapacityTruncated = 1u << 9,
+        PassiveWalkUnavailable = 1u << 10,
+        PassiveHooksInstalled = 1u << 11,
+        ExactLoadedGraphPathFallback = 1u << 12,
+        PassiveHookInstallFailed = 1u << 13,
+    };
+
+    enum class PaperReloadAnimationClipFlagV1 : std::uint32_t
+    {
+        None = 0,
+        TracksTruncated = 1u << 0,
+        SamplesTruncated = 1u << 1,
+        AnnotationsTruncated = 1u << 2,
+        TriggersTruncated = 1u << 3,
+        AnimationNameTruncated = 1u << 4,
+        AnimationPathTruncated = 1u << 5,
+        HasActivityId = 1u << 6,
+        HasAnnotations = 1u << 7,
+        HasTriggers = 1u << 8,
+        HasTargetTracks = 1u << 9,
+    };
+
+    enum class PaperReloadAnimationTrackFlagV1 : std::uint32_t
+    {
+        None = 0,
+        BoneNameValid = 1u << 0,
+        BoneNameTruncated = 1u << 1,
+        BoneIndexValid = 1u << 2,
+        ParentBoneIndexValid = 1u << 3,
+        TransformTrackIndexValid = 1u << 4,
+        ReferenceTransformValid = 1u << 5,
+        SamplesAvailable = 1u << 6,
+    };
+
+    enum class PaperReloadAnimationLiveFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Active = 1u << 0,
+        AnimationNameValid = 1u << 1,
     };
 
     enum class PaperFormIdentityFlagV1 : std::uint32_t
@@ -483,6 +578,216 @@ namespace paper::api
         std::uint32_t reserved[4]{};
     };
 
+    /*
+     * Reload animation evidence is raw authored/runtime data. PAPER does not
+     * classify clips, infer moving parts, choose reload stages, or correlate
+     * marker text with scene-node motion. Consumers receive provenance,
+     * hierarchy, timing, and transforms exactly as captured.
+     *
+     * PaperReloadQsTransformV1 stores translation xyz, quaternion xyzw, and
+     * independent xyz scale. Exact samples are weapon-root-local; passive
+     * live-binding samples are rig-bone-local.
+     */
+    struct PaperReloadQsTransformV1
+    {
+        float translate[3]{};
+        float rotate[4]{ 0.0f, 0.0f, 0.0f, 1.0f };
+        float scale[3]{ 1.0f, 1.0f, 1.0f };
+    };
+
+    struct PaperReloadAnimationLimitsV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationLimitsV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t featureBits{ 0 };
+        std::uint32_t maxClips{ 0 };
+        std::uint32_t maxLiveClips{ 0 };
+        std::uint32_t maxExactClips{ 0 };
+        std::uint32_t maxLiveTracksPerClip{ 0 };
+        std::uint32_t maxExactTracksPerClip{ 0 };
+        std::uint32_t maxLiveSamplesPerTrack{ 0 };
+        std::uint32_t maxExactSamplesPerTrack{ 0 };
+        std::uint32_t maxSkeletonBones{ 0 };
+        std::uint32_t maxAnnotationsPerClip{ 0 };
+        std::uint32_t maxTriggersPerClip{ 0 };
+        std::uint32_t animationNameCapacity{ 0 };
+        std::uint32_t animationPathCapacity{ 0 };
+        std::uint32_t markerTextCapacity{ 0 };
+        std::uint32_t resolvePointCapacity{ 0 };
+        std::uint64_t sampleStorageBudgetBytes{ 0 };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperReloadAnimationCatalogStateV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationCatalogStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t statusFlags{ 0 };
+        PaperReloadAnimationPreharvestStateV1 exactPreharvestState{
+            PaperReloadAnimationPreharvestStateV1::Idle
+        };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t reloadCatalogSequence{ 0 };
+        std::uint64_t catalogRevision{ 0 };
+        std::uint64_t updatedFrameIndex{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t clipCount{ 0 };
+        std::uint32_t liveClipCount{ 0 };
+        std::uint32_t exactClipCount{ 0 };
+        std::uint32_t omittedClipCount{ 0 };
+        std::uint32_t skeletonBoneCount{ 0 };
+        std::uint32_t exactAnimationFileCount{ 0 };
+        std::uint32_t exactClipsSampled{ 0 };
+        std::uint32_t exactClipsRejected{ 0 };
+        std::uint32_t exactTargetTruncationCount{ 0 };
+        std::uint32_t passiveWalkAttempts{ 0 };
+        std::uint32_t passiveCandidateManagerCount{ 0 };
+        std::uint32_t passiveBindingManagerAvailable{ 0 };
+        char passiveLastResolvePoint[
+            PAPER_RELOAD_RESOLVE_POINT_CAPACITY_V1]{};
+        std::uint64_t storedSampleBytes{ 0 };
+        std::uint64_t sampleStorageBudgetBytes{ 0 };
+        std::uint64_t passiveCaptureDropCount{ 0 };
+        // Passive hook/walk counters are process-cumulative diagnostics;
+        // weapon/catalog identity above defines the records in this catalog.
+        std::uint64_t passiveBindingsSeen{ 0 };
+        std::uint64_t passiveBindingsCaptured{ 0 };
+        std::uint64_t passiveBindingsWithoutTargets{ 0 };
+        std::uint64_t passiveSkippedNonSpline{ 0 };
+        std::uint64_t passiveWalksCompleted{ 0 };
+        std::uint64_t passiveRejectedAnimationPointer{ 0 };
+        std::uint64_t passiveRejectedClipParameters{ 0 };
+        std::uint64_t passiveRejectedTrackMap{ 0 };
+        std::uint64_t passiveRejectedBoneCount{ 0 };
+        std::uint64_t passiveRejectedSampler{ 0 };
+        std::uint64_t passiveRejectedSplineData{ 0 };
+        std::uint64_t passiveHookCalls{ 0 };
+        std::uint64_t passiveHookMatches{ 0 };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperReloadAnimationLiveStateV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationLiveStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t concurrentActivityCount{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t activityId{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint32_t reserved0{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        char animationName[PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1]{};
+        float durationSeconds{ 0.0f };
+        float cropStartSeconds{ 0.0f };
+        float croppedDurationSeconds{ 0.0f };
+        float localTimeSeconds{ 0.0f };
+        float fraction{ 0.0f };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperReloadAnimationClipV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationClipV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t clipId{ 0 };
+        PaperReloadAnimationAcquisitionV1 acquisition{
+            PaperReloadAnimationAcquisitionV1::LoadedGraphBinding
+        };
+        PaperReloadAnimationTrackSpaceV1 trackSpace{
+            PaperReloadAnimationTrackSpaceV1::RigBoneLocal
+        };
+        std::uint32_t flags{ 0 };
+        std::uint64_t activityId{ 0 };
+        char animationName[PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1]{};
+        char animationPath[PAPER_RELOAD_ANIMATION_PATH_CAPACITY_V1]{};
+        float durationSeconds{ 0.0f };
+        std::int32_t animationType{ -1 };
+        std::uint32_t rawTransformTrackCount{ 0 };
+        std::int32_t rawFloatTrackCount{ -1 };
+        std::uint32_t sampleCount{ 0 };
+        std::uint32_t trackCount{ 0 };
+        std::int32_t rawAnnotationTrackCount{ -1 };
+        std::int32_t rawTriggerCount{ -1 };
+        std::int32_t graphEventNameCount{ -1 };
+        std::uint32_t annotationCount{ 0 };
+        std::uint32_t triggerCount{ 0 };
+        std::uint32_t reserved[5]{};
+    };
+
+    struct PaperReloadAnimationTrackV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationTrackV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t clipId{ 0 };
+        std::uint32_t trackId{ 0 };
+        std::uint32_t flags{ 0 };
+        std::int32_t boneIndex{ -1 };
+        std::int32_t parentBoneIndex{ -1 };
+        std::int32_t transformTrackIndex{ -1 };
+        std::uint32_t chainDepth{ 0 };
+        std::uint32_t sampleCount{ 0 };
+        char boneName[PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1]{};
+        PaperReloadQsTransformV1 referenceLocal{};
+        std::uint32_t reserved[5]{};
+    };
+
+    struct PaperReloadAnimationSampleV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationSampleV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t clipId{ 0 };
+        std::uint32_t trackId{ 0 };
+        std::uint32_t sampleIndex{ 0 };
+        float timeSeconds{ 0.0f };
+        PaperReloadQsTransformV1 transform{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperReloadAnimationAnnotationV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationAnnotationV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t clipId{ 0 };
+        std::uint32_t annotationId{ 0 };
+        float timeSeconds{ 0.0f };
+        char trackName[PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1]{};
+        char text[PAPER_RELOAD_MARKER_TEXT_CAPACITY_V1]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperReloadAnimationTriggerV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationTriggerV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t clipId{ 0 };
+        std::uint32_t triggerId{ 0 };
+        float localTimeSeconds{ 0.0f };
+        std::int32_t eventId{ -1 };
+        char eventName[PAPER_RELOAD_MARKER_TEXT_CAPACITY_V1]{};
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperReloadAnimationSkeletonBoneV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadAnimationSkeletonBoneV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::int32_t boneIndex{ -1 };
+        std::int32_t parentBoneIndex{ -1 };
+        std::int32_t transformTrackIndex{ -1 };
+        char boneName[PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1]{};
+        PaperReloadQsTransformV1 referenceLocal{};
+        std::uint32_t reserved[5]{};
+    };
+
+
     using PaperEventCallbackV1 =
         void(PAPER_CALL*)(const PaperEventV1* eventData, void* userData);
 
@@ -572,6 +877,62 @@ namespace paper::api
             PaperReloadNodeObservationV1* outObservations,
             std::uint32_t maxObservations,
             std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* getReloadAnimationLimitsV1)(
+            std::uint64_t ownerToken,
+            PaperReloadAnimationLimitsV1* outLimits);
+        PaperResultV1(PAPER_CALL* getReloadAnimationCatalogStateV1)(
+            std::uint64_t ownerToken,
+            PaperReloadAnimationCatalogStateV1* outState);
+        PaperResultV1(PAPER_CALL* getReloadAnimationLiveStateV1)(
+            std::uint64_t ownerToken,
+            PaperReloadAnimationLiveStateV1* outState);
+        PaperResultV1(PAPER_CALL* copyReloadAnimationClipsV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t firstClip,
+            PaperReloadAnimationClipV1* outClips,
+            std::uint32_t maxClips,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadAnimationTracksV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t clipId,
+            std::uint32_t firstTrack,
+            PaperReloadAnimationTrackV1* outTracks,
+            std::uint32_t maxTracks,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadAnimationSamplesV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t clipId,
+            std::uint32_t trackId,
+            std::uint32_t firstSample,
+            PaperReloadAnimationSampleV1* outSamples,
+            std::uint32_t maxSamples,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadAnimationAnnotationsV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t clipId,
+            std::uint32_t firstAnnotation,
+            PaperReloadAnimationAnnotationV1* outAnnotations,
+            std::uint32_t maxAnnotations,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadAnimationTriggersV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t clipId,
+            std::uint32_t firstTrigger,
+            PaperReloadAnimationTriggerV1* outTriggers,
+            std::uint32_t maxTriggers,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyReloadAnimationSkeletonV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t firstBone,
+            PaperReloadAnimationSkeletonBoneV1* outBones,
+            std::uint32_t maxBones,
+            std::uint32_t* outCopied);
     };
 
     inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES =
@@ -587,11 +948,21 @@ namespace paper::api
                     copyReloadNodeObservationsV1) +
                 sizeof(decltype(
                     PaperProviderApiV1::copyReloadNodeObservationsV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    copyReloadAnimationSkeletonV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::copyReloadAnimationSkeletonV1)));
     inline constexpr std::uint32_t PAPER_PROVIDER_FEATURE_BITS_V1 =
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadObservations) |
         static_cast<std::uint32_t>(
-            PaperProviderFeatureBitV1::ReloadEvidenceGeometry);
+            PaperProviderFeatureBitV1::ReloadEvidenceGeometry) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::ReloadAnimationEvidence);
 
     struct PaperProviderDescriptorV1
     {
@@ -649,6 +1020,15 @@ namespace paper::api
     static_assert(sizeof(PaperReloadEvidenceV1) == 704);
     static_assert(sizeof(PaperReloadFrameStateV1) == 160);
     static_assert(sizeof(PaperReloadNodeObservationV1) == 152);
+    static_assert(sizeof(PaperReloadQsTransformV1) == 40);
+    static_assert(std::is_standard_layout_v<PaperReloadAnimationCatalogStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadAnimationCatalogStateV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadAnimationClipV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadAnimationClipV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadAnimationTrackV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadAnimationTrackV1>);
+    static_assert(std::is_standard_layout_v<PaperReloadAnimationSampleV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadAnimationSampleV1>);
     static_assert(std::is_standard_layout_v<PaperReloadCatalogStateV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadCatalogStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadNodeCatalogEntryV1>);
@@ -659,11 +1039,13 @@ namespace paper::api
     static_assert(std::is_trivially_copyable_v<PaperReloadFrameStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadNodeObservationV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadNodeObservationV1>);
-    static_assert(sizeof(PaperProviderApiV1) == 176);
+    static_assert(sizeof(PaperProviderApiV1) == 248);
     static_assert(alignof(PaperProviderApiV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderApiV1>);
     static_assert(std::is_trivially_copyable_v<PaperProviderApiV1>);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
+    static_assert(PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES == 176);
+    static_assert(PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES == 248);
     static_assert(sizeof(PaperProviderDescriptorV1) == 48);
     static_assert(alignof(PaperProviderDescriptorV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderDescriptorV1>);
@@ -741,6 +1123,26 @@ namespace paper::api
 #endif
         }
     };
+
+    [[nodiscard]] inline bool supportsReloadAnimationEvidenceV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::
+                           ReloadAnimationEvidence)) != 0 &&
+               PaperApi::inst->getReloadAnimationLimitsV1 &&
+               PaperApi::inst->getReloadAnimationCatalogStateV1 &&
+               PaperApi::inst->getReloadAnimationLiveStateV1 &&
+               PaperApi::inst->copyReloadAnimationClipsV1 &&
+               PaperApi::inst->copyReloadAnimationTracksV1 &&
+               PaperApi::inst->copyReloadAnimationSamplesV1 &&
+               PaperApi::inst->copyReloadAnimationAnnotationsV1 &&
+               PaperApi::inst->copyReloadAnimationTriggersV1 &&
+               PaperApi::inst->copyReloadAnimationSkeletonV1;
+    }
 }
 
 extern "C" PAPER_API

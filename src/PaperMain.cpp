@@ -2,6 +2,7 @@
 
 #include "animation/NativeAnimationAuthority.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
+#include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
 #include "api/PAPERProvider.h"
 #include "api/RockApiClient.h"
@@ -575,6 +576,10 @@ namespace
                 *context,
                 s_gripStateValid ? std::addressof(s_gripState) : nullptr,
                 provider::generation());
+            animation_evidence::advanceFrame(
+                *context,
+                s_gripStateValid ? std::addressof(s_gripState) : nullptr,
+                provider::generation());
             const auto preLifecycleCompatibility =
                 evaluateAnimationCompatibility(
                     *context,
@@ -643,6 +648,7 @@ namespace
             reload_observation::completeFrame(
                 *context,
                 provider::generation());
+            animation_evidence::completeFrame(*context);
             provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
             provider::completeFrame();
             break;

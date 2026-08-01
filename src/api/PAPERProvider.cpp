@@ -2,6 +2,7 @@
 #include "api/PAPERProvider.h"
 
 #include "animation/NativeAnimationAuthority.h"
+#include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservation.h"
@@ -701,6 +702,205 @@ namespace paper::provider
                 validation;
         }
 
+        PaperResultV1 PAPER_CALL getReloadAnimationLimitsV1(
+            const std::uint64_t ownerToken,
+            PaperReloadAnimationLimitsV1* outLimits)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence,
+                outLimits);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::getLimits(*outLimits) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL getReloadAnimationCatalogStateV1(
+            const std::uint64_t ownerToken,
+            PaperReloadAnimationCatalogStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::getCatalogState(*outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL getReloadAnimationLiveStateV1(
+            const std::uint64_t ownerToken,
+            PaperReloadAnimationLiveStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::getLiveState(*outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadAnimationClipsV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t firstClip,
+            PaperReloadAnimationClipV1* outClips,
+            const std::uint32_t maxClips,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::copyClips(
+                    catalogSequence,
+                    firstClip,
+                    outClips,
+                    maxClips,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadAnimationTracksV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t clipId,
+            const std::uint32_t firstTrack,
+            PaperReloadAnimationTrackV1* outTracks,
+            const std::uint32_t maxTracks,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::copyTracks(
+                    catalogSequence,
+                    clipId,
+                    firstTrack,
+                    outTracks,
+                    maxTracks,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadAnimationSamplesV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t clipId,
+            const std::uint32_t trackId,
+            const std::uint32_t firstSample,
+            PaperReloadAnimationSampleV1* outSamples,
+            const std::uint32_t maxSamples,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::copySamples(
+                    catalogSequence,
+                    clipId,
+                    trackId,
+                    firstSample,
+                    outSamples,
+                    maxSamples,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadAnimationAnnotationsV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t clipId,
+            const std::uint32_t firstAnnotation,
+            PaperReloadAnimationAnnotationV1* outAnnotations,
+            const std::uint32_t maxAnnotations,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::copyAnnotations(
+                    catalogSequence,
+                    clipId,
+                    firstAnnotation,
+                    outAnnotations,
+                    maxAnnotations,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadAnimationTriggersV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t clipId,
+            const std::uint32_t firstTrigger,
+            PaperReloadAnimationTriggerV1* outTriggers,
+            const std::uint32_t maxTriggers,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::copyTriggers(
+                    catalogSequence,
+                    clipId,
+                    firstTrigger,
+                    outTriggers,
+                    maxTriggers,
+                    *outCopied) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadAnimationSkeletonV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t firstBone,
+            PaperReloadAnimationSkeletonBoneV1* outBones,
+            const std::uint32_t maxBones,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+            return validation == PaperResultV1::Ok ?
+                animation_evidence::copySkeleton(
+                    catalogSequence,
+                    firstBone,
+                    outBones,
+                    maxBones,
+                    *outCopied) :
+                validation;
+        }
+
         const PaperProviderApiV1 s_api{
             &getVersion,
             &getModVersion,
@@ -724,6 +924,15 @@ namespace paper::provider
             &copyReloadEvidencePointsV1,
             &getReloadFrameStateV1,
             &copyReloadNodeObservationsV1,
+            &getReloadAnimationLimitsV1,
+            &getReloadAnimationCatalogStateV1,
+            &getReloadAnimationLiveStateV1,
+            &copyReloadAnimationClipsV1,
+            &copyReloadAnimationTracksV1,
+            &copyReloadAnimationSamplesV1,
+            &copyReloadAnimationAnnotationsV1,
+            &copyReloadAnimationTriggersV1,
+            &copyReloadAnimationSkeletonV1,
         };
 
         const PaperProviderDescriptorV1 s_descriptor{
@@ -741,6 +950,7 @@ namespace paper::provider
             s_providerGeneration = 1;
         }
         reload_observation::reset();
+        animation_evidence::reset();
         s_ready.store(true, std::memory_order_release);
     }
 
@@ -751,6 +961,7 @@ namespace paper::provider
         s_callbacks = {};
         s_currentFrame = 0;
         reload_observation::reset();
+        animation_evidence::reset();
         s_ownerThread = 0;
     }
 
@@ -795,6 +1006,7 @@ namespace paper::provider
         PaperRuntimeStateV1 state{};
         state.paperProviderGeneration = s_providerGeneration;
         reload_observation::reset();
+        animation_evidence::reset();
         publishRuntime(state);
         dispatchEvent(PaperEventKindV1::RuntimeReset);
     }

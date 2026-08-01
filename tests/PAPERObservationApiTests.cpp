@@ -1,4 +1,6 @@
 #include "api/PAPERApi.h"
+#include "animation_evidence/AnimationPreharvestPolicy.h"
+#include "animation_evidence/AnimationEvidencePolicy.h"
 #include "reload_observation/ReloadObservationPolicy.h"
 
 #include <array>
@@ -23,17 +25,25 @@ namespace
 int main()
 {
     using namespace paper::api;
+    using namespace paper::animation_preharvest_policy;
+    using namespace paper::animation_evidence_policy;
     using namespace paper::reload_observation_policy;
 
     static_assert(PAPER_API_VERSION == 1);
-    static_assert(PAPER_MOD_VERSION == 200);
+    static_assert(PAPER_MOD_VERSION == 300);
     static_assert(
         offsetof(PaperProviderApiV1, getReloadObservationLimitsV1) ==
         PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
-    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 176);
+    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 248);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES ==
+        176);
+    static_assert(
+        offsetof(PaperProviderApiV1, getReloadAnimationLimitsV1) ==
+        PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES);
+    static_assert(
+        PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES ==
         sizeof(PaperProviderApiV1));
     static_assert(
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
@@ -43,6 +53,53 @@ int main()
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
             static_cast<std::uint32_t>(
                 PaperProviderFeatureBitV1::ReloadEvidenceGeometry)) != 0);
+    static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::ReloadAnimationEvidence)) != 0);
+    static_assert(
+        (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
+            static_cast<std::uint32_t>(
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence)) != 0);
+    static_assert(sizeof(PaperReloadQsTransformV1) == 40);
+    static_assert(
+        PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 ==
+        128ull * 1024ull * 1024ull);
+
+    expect(
+        clipSampleCount(0.01f) == 24,
+        "short clips must retain the exact sampler minimum");
+    expect(
+        clipSampleCount(10.0f) == 720,
+        "long clips must expose the exact sampler cap");
+    expect(
+        clipSampleTime(2.0f, 3, 5) == 1.5f,
+        "sample timestamps must span the complete clip duration");
+    expect(
+        withoutSceneInstanceSuffix("WeaponMagazine:12") ==
+            "WeaponMagazine",
+        "scene instance suffixes must not alter raw rig-name matching");
+    expect(
+        boneNameMatchesSceneNode("weaponmagazine", "WeaponMagazine:2"),
+        "rig and scene-node matching must remain case-insensitive");
+
+    const std::array<std::int16_t, 4> parents{ -1, 0, 1, 2 };
+    std::array<std::int16_t, 4> chain{};
+    const auto chainCount = buildBoneChainBelowAncestor(
+        3,
+        1,
+        parents,
+        chain);
+    expect(
+        chainCount == 2 && chain[0] == 2 && chain[1] == 3,
+        "exact hierarchy reconstruction must exclude the weapon ancestor");
+    expect(
+        boundedSampleCopyCount(10, 5 * sizeof(PaperReloadQsTransformV1),
+            sizeof(PaperReloadQsTransformV1)) == 5,
+        "sample storage must truncate at the explicit byte budget");
+    expect(
+        sampleTime(2.0f, 3, 5) == 1.5f,
+        "published samples must retain authored full-clip timestamps");
 
     const std::array<EvidenceNodeCandidate, 3> evidence{
         EvidenceNodeCandidate{ 3, 4 },
