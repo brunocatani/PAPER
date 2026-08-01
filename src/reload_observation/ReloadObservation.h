@@ -7,6 +7,29 @@
 
 namespace paper::reload_observation
 {
+    enum class EvidenceMotionSourceFlag : std::uint32_t
+    {
+        None = 0,
+        BaselineValid = 1u << 0,
+        CurrentValid = 1u << 1,
+        SourceNodeSelected = 1u << 2,
+        InteractionNodeFallback = 1u << 3,
+    };
+
+    struct EvidenceMotionSource
+    {
+        std::uint32_t evidenceId{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::int32_t sourceNodeId{ -1 };
+        std::int32_t interactionNodeId{ -1 };
+        std::int32_t selectedNodeId{ -1 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t actionRole{ 0 };
+        api::PaperTransformV1 baselineWeaponLocal{};
+        api::PaperTransformV1 currentWeaponLocal{};
+    };
+
     void reset();
 
     // Game-thread ROCK phase ownership. The grip state's scene pointer is a
@@ -54,5 +77,12 @@ namespace paper::reload_observation
         std::uint32_t firstObservation,
         api::PaperReloadNodeObservationV1* outObservations,
         std::uint32_t maxObservations,
+        std::uint32_t& outCopied);
+    // Internal value-only bridge for derived providers. It selects the source
+    // scene node when available and falls back to the interaction root without
+    // changing the public raw observation records.
+    [[nodiscard]] api::PaperResultV1 copyEvidenceMotionSources(
+        EvidenceMotionSource* outSources,
+        std::uint32_t maxSources,
         std::uint32_t& outCopied);
 }

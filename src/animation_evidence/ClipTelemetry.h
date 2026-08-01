@@ -104,6 +104,7 @@ namespace paper::clip_telemetry
         bool active{ false };
         std::uint32_t concurrentActivityCount{ 0 };
         std::uint64_t activityId{ 0 };
+        std::uint64_t activationOrder{ 0 };
         std::uint32_t weaponFormId{ 0 };
         std::uint64_t weaponGenerationKey{ 0 };
         std::array<char, animation_evidence::kBoneNameCapacity> animationName{};
@@ -114,6 +115,9 @@ namespace paper::clip_telemetry
         float fraction{ 0.0f };
     };
     [[nodiscard]] ActivityState activityState();
+    [[nodiscard]] std::uint32_t copyActivityStates(
+        ActivityState* outStates,
+        std::uint32_t maxStates);
 
     struct Stats
     {

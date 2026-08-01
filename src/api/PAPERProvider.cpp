@@ -6,6 +6,7 @@
 #include "api/ApiTransform.h"
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservation.h"
+#include "reload_stages/ReloadStages.h"
 
 #include <Windows.h>
 
@@ -933,6 +934,46 @@ namespace paper::provider
                 validation;
         }
 
+        PaperResultV1 PAPER_CALL getReloadStageStateV1(
+            const std::uint64_t ownerToken,
+            PaperReloadStageStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::
+                    ReloadStageIdentification,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                reload_stages::getState(*outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyReloadStagePartsV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t snapshotSequence,
+            const std::uint32_t firstPart,
+            PaperReloadStagePartV1* outParts,
+            const std::uint32_t maxParts,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::
+                    ReloadStageIdentification);
+            return validation == PaperResultV1::Ok ?
+                reload_stages::copyParts(
+                    snapshotSequence,
+                    firstPart,
+                    outParts,
+                    maxParts,
+                    *outCopied) :
+                validation;
+        }
+
         const PaperProviderApiV1 s_api{
             &getVersion,
             &getModVersion,
@@ -965,6 +1006,8 @@ namespace paper::provider
             &copyReloadAnimationAnnotationsV1,
             &copyReloadAnimationTriggersV1,
             &copyReloadAnimationSkeletonV1,
+            &getReloadStageStateV1,
+            &copyReloadStagePartsV1,
         };
 
         const PaperProviderDescriptorV1 s_descriptor{
@@ -983,6 +1026,7 @@ namespace paper::provider
         }
         reload_observation::reset();
         animation_evidence::reset();
+        reload_stages::reset();
         s_ready.store(true, std::memory_order_release);
     }
 
@@ -994,6 +1038,7 @@ namespace paper::provider
         s_currentFrame = 0;
         reload_observation::reset();
         animation_evidence::reset();
+        reload_stages::reset();
         s_ownerThread = 0;
     }
 
@@ -1039,6 +1084,7 @@ namespace paper::provider
         state.paperProviderGeneration = s_providerGeneration;
         reload_observation::reset();
         animation_evidence::reset();
+        reload_stages::reset();
         publishRuntime(state);
         dispatchEvent(PaperEventKindV1::RuntimeReset);
     }

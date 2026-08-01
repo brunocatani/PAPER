@@ -2110,6 +2110,7 @@ namespace paper::clip_telemetry
         }
         state.active = true;
         state.activityId = selected->activityId;
+        state.activationOrder = selected->activationOrder;
         state.weaponFormId = selected->weaponFormId;
         state.weaponGenerationKey = selected->weaponGenerationKey;
         state.animationName = selected->name;
@@ -2119,6 +2120,44 @@ namespace paper::clip_telemetry
         state.localTimeSeconds = selected->localTime.load(std::memory_order_relaxed);
         state.fraction = selected->fraction.load(std::memory_order_relaxed);
         return state;
+    }
+
+    std::uint32_t copyActivityStates(
+        ActivityState* outStates,
+        const std::uint32_t maxStates)
+    {
+        if (!outStates || maxStates == 0) {
+            return 0;
+        }
+        std::scoped_lock lock(s_hookMutex);
+        std::uint32_t count = 0;
+        for (auto& slot : s_richActiveClips) {
+            if (count >= maxStates ||
+                slot.clip.load(std::memory_order_acquire) == 0) {
+                continue;
+            }
+            auto& state = outStates[count++];
+            state = {};
+            state.active = true;
+            state.activityId = slot.activityId;
+            state.activationOrder = slot.activationOrder;
+            state.weaponFormId = slot.weaponFormId;
+            state.weaponGenerationKey = slot.weaponGenerationKey;
+            state.animationName = slot.name;
+            state.durationSeconds = slot.duration;
+            state.cropStartSeconds =
+                slot.cropStart.load(std::memory_order_relaxed);
+            state.croppedDurationSeconds =
+                slot.croppedDuration.load(std::memory_order_relaxed);
+            state.localTimeSeconds =
+                slot.localTime.load(std::memory_order_relaxed);
+            state.fraction =
+                slot.fraction.load(std::memory_order_relaxed);
+        }
+        for (std::uint32_t index = 0; index < count; ++index) {
+            outStates[index].concurrentActivityCount = count;
+        }
+        return count;
     }
 
     std::uint32_t drainCaptures(CapturePacket* outPackets, std::uint32_t maxPackets)

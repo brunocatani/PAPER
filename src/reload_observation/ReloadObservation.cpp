@@ -1415,4 +1415,99 @@ namespace paper::reload_observation
         outCopied = count;
         return PaperResultV1::Ok;
     }
+
+    PaperResultV1 copyEvidenceMotionSources(
+        EvidenceMotionSource* outSources,
+        const std::uint32_t maxSources,
+        std::uint32_t& outCopied)
+    {
+        outCopied = 0;
+        if (!s_catalog.valid || !s_publishedFrame.valid) {
+            return PaperResultV1::NotReady;
+        }
+        if (maxSources == 0) {
+            return PaperResultV1::Ok;
+        }
+        if (!outSources) {
+            return PaperResultV1::InvalidArgument;
+        }
+
+        const auto observationForNode = [](const std::int32_t nodeId)
+            -> const PaperReloadNodeObservationV1* {
+            if (nodeId < 0) {
+                return nullptr;
+            }
+            for (std::uint32_t index = 0;
+                 index < s_publishedFrame.state.observationCount;
+                 ++index) {
+                const auto& observation =
+                    s_publishedFrame.observations[index];
+                if (observation.nodeId ==
+                        static_cast<std::uint32_t>(nodeId) &&
+                    observation.phase ==
+                        PaperReloadObservationPhaseV1::
+                            NativeGraphOutput) {
+                    return std::addressof(observation);
+                }
+            }
+            return nullptr;
+        };
+
+        const auto count = (std::min)(
+            maxSources,
+            static_cast<std::uint32_t>(s_catalog.evidence.size()));
+        for (std::uint32_t index = 0; index < count; ++index) {
+            const auto& evidence = s_catalog.evidence[index].value;
+            EvidenceMotionSource source{};
+            source.evidenceId = evidence.evidenceId;
+            source.bodyId = evidence.bodyId;
+            source.sourceNodeId = evidence.sourceNodeId;
+            source.interactionNodeId = evidence.interactionNodeId;
+            source.partKind = evidence.partKind;
+            source.actionRole = evidence.actionRole;
+
+            const PaperReloadNodeObservationV1* observation = nullptr;
+            if (evidence.sourceNodeId >= 0) {
+                source.selectedNodeId = evidence.sourceNodeId;
+                source.flags |= static_cast<std::uint32_t>(
+                    EvidenceMotionSourceFlag::SourceNodeSelected);
+                observation = observationForNode(evidence.sourceNodeId);
+            }
+            if (!observation && evidence.interactionNodeId >= 0) {
+                source.selectedNodeId = evidence.interactionNodeId;
+                source.flags &= ~static_cast<std::uint32_t>(
+                    EvidenceMotionSourceFlag::SourceNodeSelected);
+                source.flags |= static_cast<std::uint32_t>(
+                    EvidenceMotionSourceFlag::InteractionNodeFallback);
+                observation = observationForNode(
+                    evidence.interactionNodeId);
+            }
+
+            if (source.selectedNodeId >= 0 &&
+                static_cast<std::size_t>(source.selectedNodeId) <
+                    s_catalog.nodes.size()) {
+                const auto& node = s_catalog.nodes[
+                    static_cast<std::size_t>(source.selectedNodeId)].value;
+                if ((node.flags & flag(
+                        PaperReloadNodeFlagV1::
+                            WeaponLocalTransformValid)) != 0) {
+                    source.baselineWeaponLocal =
+                        node.baselineWeaponLocal;
+                    source.flags |= static_cast<std::uint32_t>(
+                        EvidenceMotionSourceFlag::BaselineValid);
+                }
+            }
+            if (observation &&
+                (observation->flags & flag(
+                    PaperReloadNodeObservationFlagV1::
+                        WeaponLocalTransformValid)) != 0) {
+                source.currentWeaponLocal = observation->weaponLocal;
+                source.flags |= static_cast<std::uint32_t>(
+                    EvidenceMotionSourceFlag::CurrentValid);
+            }
+            outSources[index] = source;
+        }
+        outCopied = count;
+        return PaperResultV1::Ok;
+    }
 }

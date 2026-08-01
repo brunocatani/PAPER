@@ -2,6 +2,7 @@
 #include "animation_evidence/AnimationPreharvestPolicy.h"
 #include "animation_evidence/AnimationEvidencePolicy.h"
 #include "reload_observation/ReloadObservationPolicy.h"
+#include "reload_stages/ReloadStagePolicy.h"
 
 #include <array>
 #include <chrono>
@@ -38,7 +39,7 @@ int main()
         offsetof(PaperProviderApiV1, getReloadObservationLimitsV1) ==
         PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
-    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 248);
+    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 264);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES ==
         176);
@@ -47,6 +48,9 @@ int main()
         PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES ==
+        248);
+    static_assert(
+        PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES ==
         sizeof(PaperProviderApiV1));
     static_assert(
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
@@ -65,6 +69,10 @@ int main()
             static_cast<std::uint32_t>(
                 PaperProviderFeatureBitV1::ReloadAnimationTelemetry)) != 0);
     static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::ReloadStageIdentification)) != 0);
+    static_assert(
         (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
             static_cast<std::uint32_t>(
                 PaperConsumerCapabilityV1::ReloadAnimationEvidence)) != 0);
@@ -80,6 +88,10 @@ int main()
         (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
             static_cast<std::uint32_t>(
                 PaperConsumerCapabilityV1::ReloadAnimationTelemetry)) != 0);
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::ReloadStageIdentification) ==
+        (1u << 9));
     static_assert(sizeof(PaperReloadQsTransformV1) == 40);
     static_assert(
         PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 ==
@@ -206,6 +218,106 @@ int main()
     expect(
         invalid.count == 0 && invalid.candidateCount == 0,
         "out-of-range evidence IDs must be ignored");
+
+    PaperTransformV1 baseline{};
+    for (std::size_t axis = 0; axis < 3; ++axis) {
+        baseline.rotate[axis][axis] = 1.0f;
+    }
+    baseline.scale = 1.0f;
+    auto current = baseline;
+    auto transformDelta =
+        paper::reload_stage_policy::calculateTransformDelta(
+            baseline,
+            current);
+    expect(
+        paper::reload_stage_policy::isAtRest(transformDelta),
+        "an unchanged weapon-local part transform must be seated at rest");
+    current.translate[0] =
+        paper::reload_stage_policy::
+            kRestTranslationToleranceGameUnits * 2.0f;
+    transformDelta =
+        paper::reload_stage_policy::calculateTransformDelta(
+            baseline,
+            current);
+    expect(
+        !paper::reload_stage_policy::isAtRest(transformDelta),
+        "a part beyond the public translation tolerance must be displaced");
+
+    using paper::reload_stage_policy::ActivityIdentity;
+    using paper::reload_stage_policy::FireCorrelationState;
+    std::array<ActivityIdentity, 1> activities{
+        ActivityIdentity{ 10 },
+    };
+    auto fireStep =
+        paper::reload_stage_policy::advanceFireCorrelation(
+            FireCorrelationState{},
+            100,
+            4,
+            0,
+            activities);
+    expect(
+        !fireStep.active,
+        "the first weapon-bound sample must not replay a stale fire event");
+
+    activities[0].activationOrder = 11;
+    fireStep = paper::reload_stage_policy::advanceFireCorrelation(
+        fireStep.state,
+        100,
+        5,
+        11,
+        activities);
+    expect(
+        fireStep.active && fireStep.newFireEvent &&
+            fireStep.activeCorrelatedCount == 1 &&
+            fireStep.correlation ==
+                PaperReloadFireCorrelationV1::ActivityBound,
+        "a fresh handled fire event must bind its exact active clip identity");
+
+    const std::array<ActivityIdentity, 0> noActivities{};
+    fireStep = paper::reload_stage_policy::advanceFireCorrelation(
+        fireStep.state,
+        100,
+        5,
+        11,
+        noActivities);
+    expect(
+        fireStep.active &&
+            fireStep.correlation ==
+                PaperReloadFireCorrelationV1::PendingActivity,
+        "fire must retain its bounded activity-admission window after the event clip ends");
+    for (std::uint32_t frame = 0;
+         frame < paper::reload_stage_policy::
+             kFireActivityAdmissionFrames;
+         ++frame) {
+        fireStep = paper::reload_stage_policy::advanceFireCorrelation(
+            fireStep.state,
+            100,
+            5,
+            11,
+            noActivities);
+    }
+    expect(
+        !fireStep.active,
+        "event-only fire correlation must end when its bounded admission window expires");
+
+    auto eventOnly =
+        paper::reload_stage_policy::advanceFireCorrelation(
+            FireCorrelationState{},
+            200,
+            9,
+            0,
+            noActivities);
+    eventOnly = paper::reload_stage_policy::advanceFireCorrelation(
+        eventOnly.state,
+        200,
+        10,
+        0,
+        noActivities);
+    expect(
+        eventOnly.active && eventOnly.newFireEvent &&
+            eventOnly.correlation ==
+                PaperReloadFireCorrelationV1::EventOnly,
+        "a handled fire event must be visible before a clip identity is admitted");
 
     if (s_failures == 0) {
         std::cout << "PAPERObservationApiTests passed.\n";

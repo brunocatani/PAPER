@@ -12,6 +12,7 @@
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservation.h"
+#include "reload_stages/ReloadStages.h"
 
 #include <atomic>
 #include <chrono>
@@ -32,6 +33,7 @@ namespace
     bool s_runtimeOperational{ false };
     bool s_reloadObservationDemandActive{ false };
     bool s_animationTelemetryDemandActive{ false };
+    bool s_reloadStageDemandActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
     rock::provider::RockProviderEquippedWeaponHandlingStateV1
         s_handlingState{};
@@ -85,6 +87,7 @@ namespace
         bool reloadEvidenceGeometry{ false };
         bool animationTelemetry{ false };
         bool exactAnimationEvidence{ false };
+        bool reloadStages{ false };
     };
 
     using PerformanceClock = std::chrono::steady_clock;
@@ -358,15 +361,20 @@ namespace
 
     [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
     {
+        const bool reloadStages = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::
+                ReloadStageIdentification);
         const bool exactAnimationEvidence = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
-        const bool animationTelemetry = exactAnimationEvidence ||
+        const bool animationTelemetry = reloadStages ||
+            exactAnimationEvidence ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
         const bool reloadEvidenceGeometry =
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
-        const bool reloadObservation = animationTelemetry ||
+        const bool reloadObservation = reloadStages ||
+            animationTelemetry ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadObservations) ||
             reloadEvidenceGeometry;
@@ -377,13 +385,18 @@ namespace
         if (s_reloadObservationDemandActive && !reloadObservation) {
             reload_observation::reset();
         }
+        if (s_reloadStageDemandActive && !reloadStages) {
+            reload_stages::reset();
+        }
         s_reloadObservationDemandActive = reloadObservation;
         s_animationTelemetryDemandActive = animationTelemetry;
+        s_reloadStageDemandActive = reloadStages;
         return EnrichmentDemand{
             .reloadObservation = reloadObservation,
             .reloadEvidenceGeometry = reloadEvidenceGeometry,
             .animationTelemetry = animationTelemetry,
             .exactAnimationEvidence = exactAnimationEvidence,
+            .reloadStages = reloadStages,
         };
     }
 
@@ -1001,6 +1014,9 @@ namespace
                 s_reloadPerformance.animationComplete.add(
                     elapsedPerformanceMicroseconds(animationStarted));
             }
+            if (enrichmentDemand.reloadStages) {
+                reload_stages::completeFrame(*context);
+            }
             const auto dispatchStarted = PerformanceClock::now();
             provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
             s_reloadPerformance.consumerDispatch.add(
@@ -1056,6 +1072,7 @@ namespace
         s_runtimeOperational = false;
         s_reloadObservationDemandActive = false;
         s_animationTelemetryDemandActive = false;
+        s_reloadStageDemandActive = false;
         s_reloadPerformance = {};
         provider::resetRuntime();
     }

@@ -35,6 +35,8 @@ namespace paper::api
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 = 128;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_NODE_OBSERVATIONS_V1 =
         PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 * 2;
+    inline constexpr std::uint32_t PAPER_MAX_RELOAD_STAGE_PARTS_V1 =
+        PAPER_MAX_RELOAD_EVIDENCE_V1;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1 = 252;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 =
         PAPER_MAX_RELOAD_EVIDENCE_V1 *
@@ -94,7 +96,8 @@ namespace paper::api
         // Passive graph bindings, live activity, tracks, and raw markers only.
         // Negotiating this bit must never start exact clip preharvest.
         ReloadAnimationTelemetry = 1u << 8,
-        All = (1u << 9) - 1u,
+        ReloadStageIdentification = 1u << 9,
+        All = (1u << 10) - 1u,
     };
 
     enum class PaperProviderFeatureBitV1 : std::uint32_t
@@ -104,6 +107,7 @@ namespace paper::api
         ReloadEvidenceGeometry = 1u << 1,
         ReloadAnimationEvidence = 1u << 2,
         ReloadAnimationTelemetry = 1u << 3,
+        ReloadStageIdentification = 1u << 4,
     };
 
     enum class PaperReloadAnimationAcquisitionV1 : std::uint32_t
@@ -259,6 +263,60 @@ namespace paper::api
     {
         NativeGraphOutput = 1,
         PostRock = 2,
+    };
+
+    enum class PaperReloadStageFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Rest = 1u << 0,
+        Fire = 1u << 1,
+        SlideBack = 1u << 2,
+        MagazineIn = 1u << 3,
+        MagazineOut = 1u << 4,
+    };
+
+    enum class PaperReloadStageStatusFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        Pistol = 1u << 1,
+        ClassificationAvailable = 1u << 2,
+        ClassificationValid = 1u << 3,
+        NativeGraphOutputAvailable = 1u << 4,
+        WeaponFireHookReady = 1u << 5,
+        FireEventObserved = 1u << 6,
+        FireCorrelationPending = 1u << 7,
+        FireActivityCorrelated = 1u << 8,
+        MagazineObserved = 1u << 9,
+        SlideObserved = 1u << 10,
+        PartDataIncomplete = 1u << 11,
+        PartCapacityTruncated = 1u << 12,
+    };
+
+    enum class PaperReloadStagePartFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        BaselineValid = 1u << 1,
+        CurrentValid = 1u << 2,
+        SourceNodeSelected = 1u << 3,
+        InteractionNodeFallback = 1u << 4,
+        ContributesToAggregate = 1u << 5,
+        AtRest = 1u << 6,
+        Displaced = 1u << 7,
+        Magazine = 1u << 8,
+        Slide = 1u << 9,
+        MagazineIn = 1u << 10,
+        MagazineOut = 1u << 11,
+        SlideBack = 1u << 12,
+    };
+
+    enum class PaperReloadFireCorrelationV1 : std::uint32_t
+    {
+        None = 0,
+        EventOnly = 1,
+        PendingActivity = 2,
+        ActivityBound = 3,
     };
 
     enum class PaperNativeAnimationAuthorityFlagV1 : std::uint32_t
@@ -793,6 +851,71 @@ namespace paper::api
         std::uint32_t reserved[5]{};
     };
 
+    /*
+     * Provisional pistol stage identification is derived separately from the
+     * raw observation and animation records above. Flags are independent and
+     * may coexist. Per-part records retain the baseline/current transforms and
+     * exact deltas that caused each aggregate decision.
+     */
+    struct PaperReloadStageStateV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadStageStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t statusFlags{ 0 };
+        std::uint32_t stageFlags{ 0 };
+        PaperReloadFireCorrelationV1 fireCorrelation{
+            PaperReloadFireCorrelationV1::None
+        };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t fireSequence{ 0 };
+        std::uint64_t fireActivityOrderAtEvent{ 0 };
+        std::uint64_t lastObservedActivityOrder{ 0 };
+        std::uint32_t partCount{ 0 };
+        std::uint32_t aggregatePartCount{ 0 };
+        std::uint32_t atRestPartCount{ 0 };
+        std::uint32_t displacedPartCount{ 0 };
+        std::uint32_t magazinePartCount{ 0 };
+        std::uint32_t magazineInCount{ 0 };
+        std::uint32_t magazineOutCount{ 0 };
+        std::uint32_t slidePartCount{ 0 };
+        std::uint32_t slideBackCount{ 0 };
+        std::uint32_t activeAnimationActivityCount{ 0 };
+        std::uint32_t correlatedFireActivityCount{ 0 };
+        std::uint32_t fireAdmissionFramesRemaining{ 0 };
+        float restTranslationToleranceGameUnits{ 0.0f };
+        float restRotationToleranceDegrees{ 0.0f };
+        float restScaleTolerance{ 0.0f };
+        float maximumTranslationDeltaGameUnits{ 0.0f };
+        float maximumRotationDeltaDegrees{ 0.0f };
+        float maximumScaleDelta{ 0.0f };
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperReloadStagePartV1
+    {
+        std::uint32_t size{ sizeof(PaperReloadStagePartV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t evidenceId{ 0 };
+        std::uint32_t bodyId{ 0x7FFF'FFFF };
+        std::int32_t sourceNodeId{ -1 };
+        std::int32_t interactionNodeId{ -1 };
+        std::int32_t selectedNodeId{ -1 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        PaperTransformV1 baselineWeaponLocal{};
+        PaperTransformV1 currentWeaponLocal{};
+        float translationDeltaGameUnits{ 0.0f };
+        float rotationDeltaDegrees{ 0.0f };
+        float scaleDelta{ 0.0f };
+        std::uint32_t reserved[4]{};
+    };
+
 
     using PaperEventCallbackV1 =
         void(PAPER_CALL*)(const PaperEventV1* eventData, void* userData);
@@ -939,6 +1062,16 @@ namespace paper::api
             PaperReloadAnimationSkeletonBoneV1* outBones,
             std::uint32_t maxBones,
             std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* getReloadStageStateV1)(
+            std::uint64_t ownerToken,
+            PaperReloadStageStateV1* outState);
+        PaperResultV1(PAPER_CALL* copyReloadStagePartsV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t snapshotSequence,
+            std::uint32_t firstPart,
+            PaperReloadStagePartV1* outParts,
+            std::uint32_t maxParts,
+            std::uint32_t* outCopied);
     };
 
     inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES =
@@ -962,6 +1095,9 @@ namespace paper::api
                     copyReloadAnimationSkeletonV1) +
                 sizeof(decltype(
                     PaperProviderApiV1::copyReloadAnimationSkeletonV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES =
+            static_cast<std::uint32_t>(sizeof(PaperProviderApiV1));
     inline constexpr std::uint32_t PAPER_PROVIDER_FEATURE_BITS_V1 =
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadObservations) |
@@ -970,7 +1106,9 @@ namespace paper::api
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadAnimationEvidence) |
         static_cast<std::uint32_t>(
-            PaperProviderFeatureBitV1::ReloadAnimationTelemetry);
+            PaperProviderFeatureBitV1::ReloadAnimationTelemetry) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::ReloadStageIdentification);
 
     struct PaperProviderDescriptorV1
     {
@@ -1028,6 +1166,12 @@ namespace paper::api
     static_assert(sizeof(PaperReloadEvidenceV1) == 704);
     static_assert(sizeof(PaperReloadFrameStateV1) == 160);
     static_assert(sizeof(PaperReloadNodeObservationV1) == 152);
+    static_assert(sizeof(PaperReloadStageStateV1) == 176);
+    static_assert(std::is_standard_layout_v<PaperReloadStageStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadStageStateV1>);
+    static_assert(sizeof(PaperReloadStagePartV1) == 184);
+    static_assert(std::is_standard_layout_v<PaperReloadStagePartV1>);
+    static_assert(std::is_trivially_copyable_v<PaperReloadStagePartV1>);
     static_assert(sizeof(PaperReloadQsTransformV1) == 40);
     static_assert(std::is_standard_layout_v<PaperReloadAnimationCatalogStateV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadAnimationCatalogStateV1>);
@@ -1047,13 +1191,14 @@ namespace paper::api
     static_assert(std::is_trivially_copyable_v<PaperReloadFrameStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadNodeObservationV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadNodeObservationV1>);
-    static_assert(sizeof(PaperProviderApiV1) == 248);
+    static_assert(sizeof(PaperProviderApiV1) == 264);
     static_assert(alignof(PaperProviderApiV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderApiV1>);
     static_assert(std::is_trivially_copyable_v<PaperProviderApiV1>);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES == 176);
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES == 248);
+    static_assert(PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES == 264);
     static_assert(sizeof(PaperProviderDescriptorV1) == 48);
     static_assert(alignof(PaperProviderDescriptorV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderDescriptorV1>);
@@ -1170,6 +1315,19 @@ namespace paper::api
                PaperApi::inst->copyReloadAnimationAnnotationsV1 &&
                PaperApi::inst->copyReloadAnimationTriggersV1 &&
                PaperApi::inst->copyReloadAnimationSkeletonV1;
+    }
+
+    [[nodiscard]] inline bool supportsReloadStageIdentificationV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::
+                           ReloadStageIdentification)) != 0 &&
+               PaperApi::inst->getReloadStageStateV1 &&
+               PaperApi::inst->copyReloadStagePartsV1;
     }
 }
 
