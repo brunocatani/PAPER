@@ -31,7 +31,7 @@ namespace
     std::uint32_t s_lastAuthorityPublishFailureFlags{ UINT32_MAX };
     bool s_runtimeOperational{ false };
     bool s_reloadObservationDemandActive{ false };
-    bool s_animationEvidenceDemandActive{ false };
+    bool s_animationTelemetryDemandActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
     rock::provider::RockProviderEquippedWeaponHandlingStateV1
         s_handlingState{};
@@ -82,7 +82,8 @@ namespace
     struct EnrichmentDemand
     {
         bool reloadObservation{ false };
-        bool animationEvidence{ false };
+        bool animationTelemetry{ false };
+        bool exactAnimationEvidence{ false };
     };
 
     using PerformanceClock = std::chrono::steady_clock;
@@ -146,6 +147,7 @@ namespace
         bool mixedCallbackThreads{ false };
         bool observationDemandSeen{ false };
         bool animationDemandSeen{ false };
+        bool exactAnimationDemandSeen{ false };
     };
 
     ReloadPerformanceWindow s_reloadPerformance{};
@@ -258,7 +260,10 @@ namespace
         performance.observationDemandSeen =
             performance.observationDemandSeen || demand.reloadObservation;
         performance.animationDemandSeen =
-            performance.animationDemandSeen || demand.animationEvidence;
+            performance.animationDemandSeen || demand.animationTelemetry;
+        performance.exactAnimationDemandSeen =
+            performance.exactAnimationDemandSeen ||
+            demand.exactAnimationEvidence;
 
         const auto now = PerformanceClock::now();
         const auto wallMilliseconds =
@@ -280,11 +285,12 @@ namespace
         const bool shouldReport =
             performance.observationDemandSeen ||
             performance.animationDemandSeen ||
+            performance.exactAnimationDemandSeen ||
             performance.gameDeltaMillisecondsMaximum >= 20.0 ||
             performance.paperFrame.maximumMicroseconds >= 1000;
         if (shouldReport) {
             PAPER_LOG_WARN(Performance,
-                "RELOAD-PERF frames={} wallMs={} hz={:.1f} thread={} mixedThreads={} gameMs(avg/max)={:.2f}/{:.2f} paperMs(avg/max)={:.3f}/{:.3f} demand(obs/anim)={}/{} phaseUs(avg/max)=[native {}/{} before {}/{} after {}/{} complete {}/{}]",
+                "RELOAD-PERF frames={} wallMs={} hz={:.1f} thread={} mixedThreads={} gameMs(avg/max)={:.2f}/{:.2f} paperMs(avg/max)={:.3f}/{:.3f} demand(obs/anim/exact)={}/{}/{} phaseUs(avg/max)=[native {}/{} before {}/{} after {}/{} complete {}/{}]",
                 performance.frameCount,
                 wallMilliseconds,
                 observedHz,
@@ -298,6 +304,7 @@ namespace
                     performance.paperFrame.maximumMicroseconds) / 1000.0,
                 performance.observationDemandSeen,
                 performance.animationDemandSeen,
+                performance.exactAnimationDemandSeen,
                 averageMicroseconds(performance.nativeGraphPhase),
                 performance.nativeGraphPhase.maximumMicroseconds,
                 averageMicroseconds(performance.beforeRockPhase),
@@ -350,25 +357,29 @@ namespace
 
     [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
     {
-        const bool animationEvidence = provider::hasConsumerCapability(
+        const bool exactAnimationEvidence = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
-        const bool reloadObservation = animationEvidence ||
+        const bool animationTelemetry = exactAnimationEvidence ||
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
+        const bool reloadObservation = animationTelemetry ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadObservations) ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
 
-        if (s_animationEvidenceDemandActive && !animationEvidence) {
+        if (s_animationTelemetryDemandActive && !animationTelemetry) {
             animation_evidence::reset();
         }
         if (s_reloadObservationDemandActive && !reloadObservation) {
             reload_observation::reset();
         }
         s_reloadObservationDemandActive = reloadObservation;
-        s_animationEvidenceDemandActive = animationEvidence;
+        s_animationTelemetryDemandActive = animationTelemetry;
         return EnrichmentDemand{
             .reloadObservation = reloadObservation,
-            .animationEvidence = animationEvidence,
+            .animationTelemetry = animationTelemetry,
+            .exactAnimationEvidence = exactAnimationEvidence,
         };
     }
 
@@ -887,12 +898,13 @@ namespace
                 s_reloadPerformance.observationAdvance.add(
                     elapsedPerformanceMicroseconds(observationStarted));
             }
-            if (enrichmentDemand.animationEvidence) {
+            if (enrichmentDemand.animationTelemetry) {
                 const auto animationStarted = PerformanceClock::now();
                 animation_evidence::advanceFrame(
                     *context,
                     s_gripStateValid ? std::addressof(s_gripState) : nullptr,
-                    provider::generation());
+                    provider::generation(),
+                    enrichmentDemand.exactAnimationEvidence);
                 s_reloadPerformance.animationAdvance.add(
                     elapsedPerformanceMicroseconds(animationStarted));
                 recordAnimationDiagnostics(
@@ -978,7 +990,7 @@ namespace
                 s_reloadPerformance.observationComplete.add(
                     elapsedPerformanceMicroseconds(observationStarted));
             }
-            if (enrichmentDemand.animationEvidence) {
+            if (enrichmentDemand.animationTelemetry) {
                 const auto animationStarted = PerformanceClock::now();
                 animation_evidence::completeFrame(*context);
                 s_reloadPerformance.animationComplete.add(
@@ -1038,7 +1050,7 @@ namespace
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
         s_reloadObservationDemandActive = false;
-        s_animationEvidenceDemandActive = false;
+        s_animationTelemetryDemandActive = false;
         s_reloadPerformance = {};
         provider::resetRuntime();
     }

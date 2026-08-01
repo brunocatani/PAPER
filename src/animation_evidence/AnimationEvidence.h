@@ -25,7 +25,8 @@ namespace paper::animation_evidence
     void advanceFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,
         const rock::provider::RockProviderEquippedWeaponGripStateV1* gripState,
-        std::uint32_t paperProviderGeneration);
+        std::uint32_t paperProviderGeneration,
+        bool exactPreharvestDemand);
     void completeFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context);
     [[nodiscard]] FrameDiagnostics snapshotFrameDiagnostics();

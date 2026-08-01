@@ -88,8 +88,13 @@ namespace paper::api
         FrameCallbacks = 1u << 4,
         ReloadObservations = 1u << 5,
         ReloadEvidenceGeometry = 1u << 6,
+        // Full animation evidence retains the exact off-screen weapon-clip
+        // preharvest contract in addition to passive/live telemetry.
         ReloadAnimationEvidence = 1u << 7,
-        All = (1u << 8) - 1u,
+        // Passive graph bindings, live activity, tracks, and raw markers only.
+        // Negotiating this bit must never start exact clip preharvest.
+        ReloadAnimationTelemetry = 1u << 8,
+        All = (1u << 9) - 1u,
     };
 
     enum class PaperProviderFeatureBitV1 : std::uint32_t
@@ -98,6 +103,7 @@ namespace paper::api
         ReloadObservations = 1u << 0,
         ReloadEvidenceGeometry = 1u << 1,
         ReloadAnimationEvidence = 1u << 2,
+        ReloadAnimationTelemetry = 1u << 3,
     };
 
     enum class PaperReloadAnimationAcquisitionV1 : std::uint32_t
@@ -962,7 +968,9 @@ namespace paper::api
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadEvidenceGeometry) |
         static_cast<std::uint32_t>(
-            PaperProviderFeatureBitV1::ReloadAnimationEvidence);
+            PaperProviderFeatureBitV1::ReloadAnimationEvidence) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::ReloadAnimationTelemetry);
 
     struct PaperProviderDescriptorV1
     {
@@ -1133,6 +1141,26 @@ namespace paper::api
                    static_cast<std::uint32_t>(
                        PaperProviderFeatureBitV1::
                            ReloadAnimationEvidence)) != 0 &&
+               PaperApi::inst->getReloadAnimationLimitsV1 &&
+               PaperApi::inst->getReloadAnimationCatalogStateV1 &&
+               PaperApi::inst->getReloadAnimationLiveStateV1 &&
+               PaperApi::inst->copyReloadAnimationClipsV1 &&
+               PaperApi::inst->copyReloadAnimationTracksV1 &&
+               PaperApi::inst->copyReloadAnimationSamplesV1 &&
+               PaperApi::inst->copyReloadAnimationAnnotationsV1 &&
+               PaperApi::inst->copyReloadAnimationTriggersV1 &&
+               PaperApi::inst->copyReloadAnimationSkeletonV1;
+    }
+
+    [[nodiscard]] inline bool supportsReloadAnimationTelemetryV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::
+                           ReloadAnimationTelemetry)) != 0 &&
                PaperApi::inst->getReloadAnimationLimitsV1 &&
                PaperApi::inst->getReloadAnimationCatalogStateV1 &&
                PaperApi::inst->getReloadAnimationLiveStateV1 &&

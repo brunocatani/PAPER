@@ -43,6 +43,11 @@ namespace paper::provider
 
         constexpr std::uint32_t kAllCapabilities =
             static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All);
+        constexpr std::uint32_t kReloadAnimationReadCapabilities =
+            static_cast<std::uint32_t>(
+                PaperConsumerCapabilityV1::ReloadAnimationEvidence) |
+            static_cast<std::uint32_t>(
+                PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
         constexpr std::uint32_t kAllAuthorityFlags =
             static_cast<std::uint32_t>(
                 PaperNativeAnimationAuthorityFlagV1::ReloadPose);
@@ -524,9 +529,9 @@ namespace paper::provider
             return PaperResultV1::NotFound;
         }
 
-        [[nodiscard]] PaperResultV1 validateReloadConsumer(
+        [[nodiscard]] PaperResultV1 validateReloadConsumerAny(
             const std::uint64_t ownerToken,
-            const PaperConsumerCapabilityV1 capability)
+            const std::uint32_t capabilityMask)
         {
             if (!isReady()) {
                 return PaperResultV1::NotReady;
@@ -538,9 +543,18 @@ namespace paper::provider
             if (!consumer) {
                 return PaperResultV1::UnknownOwner;
             }
-            return hasCapability(*consumer, capability) ?
+            return (consumer->capabilities & capabilityMask) != 0 ?
                 PaperResultV1::Ok :
                 PaperResultV1::PermissionDenied;
+        }
+
+        [[nodiscard]] PaperResultV1 validateReloadConsumer(
+            const std::uint64_t ownerToken,
+            const PaperConsumerCapabilityV1 capability)
+        {
+            return validateReloadConsumerAny(
+                ownerToken,
+                static_cast<std::uint32_t>(capability));
         }
 
         template <class State>
@@ -559,6 +573,24 @@ namespace paper::provider
                 return PaperResultV1::UnsupportedVersion;
             }
             return validateReloadConsumer(ownerToken, capability);
+        }
+
+        template <class State>
+        [[nodiscard]] PaperResultV1 validateReloadOutputAny(
+            const std::uint64_t ownerToken,
+            const std::uint32_t capabilityMask,
+            const State* output)
+        {
+            if (!output) {
+                return PaperResultV1::InvalidArgument;
+            }
+            if (output->size < sizeof(State)) {
+                return PaperResultV1::InvalidSize;
+            }
+            if (output->version != PAPER_API_VERSION) {
+                return PaperResultV1::UnsupportedVersion;
+            }
+            return validateReloadConsumerAny(ownerToken, capabilityMask);
         }
 
         PaperResultV1 PAPER_CALL getReloadObservationLimitsV1(
@@ -706,9 +738,9 @@ namespace paper::provider
             const std::uint64_t ownerToken,
             PaperReloadAnimationLimitsV1* outLimits)
         {
-            const auto validation = validateReloadOutput(
+            const auto validation = validateReloadOutputAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence,
+                kReloadAnimationReadCapabilities,
                 outLimits);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::getLimits(*outLimits) :
@@ -719,9 +751,9 @@ namespace paper::provider
             const std::uint64_t ownerToken,
             PaperReloadAnimationCatalogStateV1* outState)
         {
-            const auto validation = validateReloadOutput(
+            const auto validation = validateReloadOutputAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence,
+                kReloadAnimationReadCapabilities,
                 outState);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::getCatalogState(*outState) :
@@ -732,9 +764,9 @@ namespace paper::provider
             const std::uint64_t ownerToken,
             PaperReloadAnimationLiveStateV1* outState)
         {
-            const auto validation = validateReloadOutput(
+            const auto validation = validateReloadOutputAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence,
+                kReloadAnimationReadCapabilities,
                 outState);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::getLiveState(*outState) :
@@ -753,9 +785,9 @@ namespace paper::provider
                 return PaperResultV1::InvalidArgument;
             }
             *outCopied = 0;
-            const auto validation = validateReloadConsumer(
+            const auto validation = validateReloadConsumerAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                kReloadAnimationReadCapabilities);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::copyClips(
                     catalogSequence,
@@ -779,9 +811,9 @@ namespace paper::provider
                 return PaperResultV1::InvalidArgument;
             }
             *outCopied = 0;
-            const auto validation = validateReloadConsumer(
+            const auto validation = validateReloadConsumerAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                kReloadAnimationReadCapabilities);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::copyTracks(
                     catalogSequence,
@@ -807,9 +839,9 @@ namespace paper::provider
                 return PaperResultV1::InvalidArgument;
             }
             *outCopied = 0;
-            const auto validation = validateReloadConsumer(
+            const auto validation = validateReloadConsumerAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                kReloadAnimationReadCapabilities);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::copySamples(
                     catalogSequence,
@@ -835,9 +867,9 @@ namespace paper::provider
                 return PaperResultV1::InvalidArgument;
             }
             *outCopied = 0;
-            const auto validation = validateReloadConsumer(
+            const auto validation = validateReloadConsumerAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                kReloadAnimationReadCapabilities);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::copyAnnotations(
                     catalogSequence,
@@ -862,9 +894,9 @@ namespace paper::provider
                 return PaperResultV1::InvalidArgument;
             }
             *outCopied = 0;
-            const auto validation = validateReloadConsumer(
+            const auto validation = validateReloadConsumerAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                kReloadAnimationReadCapabilities);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::copyTriggers(
                     catalogSequence,
@@ -888,9 +920,9 @@ namespace paper::provider
                 return PaperResultV1::InvalidArgument;
             }
             *outCopied = 0;
-            const auto validation = validateReloadConsumer(
+            const auto validation = validateReloadConsumerAny(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                kReloadAnimationReadCapabilities);
             return validation == PaperResultV1::Ok ?
                 animation_evidence::copySkeleton(
                     catalogSequence,

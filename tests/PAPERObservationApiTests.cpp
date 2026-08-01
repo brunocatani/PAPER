@@ -59,9 +59,25 @@ int main()
             static_cast<std::uint32_t>(
                 PaperProviderFeatureBitV1::ReloadAnimationEvidence)) != 0);
     static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::ReloadAnimationTelemetry)) != 0);
+    static_assert(
         (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
             static_cast<std::uint32_t>(
                 PaperConsumerCapabilityV1::ReloadAnimationEvidence)) != 0);
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::ReloadAnimationEvidence) ==
+        (1u << 7));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::ReloadAnimationTelemetry) ==
+        (1u << 8));
+    static_assert(
+        (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
+            static_cast<std::uint32_t>(
+                PaperConsumerCapabilityV1::ReloadAnimationTelemetry)) != 0);
     static_assert(sizeof(PaperReloadQsTransformV1) == 40);
     static_assert(
         PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 ==

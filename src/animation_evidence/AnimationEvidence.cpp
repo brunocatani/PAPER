@@ -159,6 +159,7 @@ namespace paper::animation_evidence
             bool passiveWalkCompleted{ false };
             bool passiveWalkGaveUp{ false };
             bool passiveRewalkActive{ false };
+            bool exactPreharvestDemandActive{ false };
             FrameDiagnostics frameDiagnostics{};
         };
 
@@ -209,6 +210,7 @@ namespace paper::animation_evidence
             state.passiveWalkCompleted = false;
             state.passiveWalkGaveUp = false;
             state.passiveRewalkActive = false;
+            state.exactPreharvestDemandActive = false;
             clip_telemetry::setCaptureEnabled(false);
             clip_telemetry::clearTargets();
             clip_telemetry::resetWalk();
@@ -899,6 +901,24 @@ namespace paper::animation_evidence
             candidates[count++] = manager;
         }
 
+        [[nodiscard]] bool passiveUpdateDue(Runtime& state)
+        {
+            if (state.passiveWalkGaveUp) {
+                return false;
+            }
+            if (state.passiveWalkCompleted &&
+                !state.passiveRewalkActive) {
+                if (++state.passiveRewalkCooldown <
+                    kPassiveRewalkIntervalFrames) {
+                    return false;
+                }
+                state.passiveRewalkCooldown = 0;
+                state.passiveRewalkActive = true;
+                clip_telemetry::restartWalkPass();
+            }
+            return true;
+        }
+
         void updatePassive(
             Runtime& state,
             RE::NiNode* weaponRoot,
@@ -907,16 +927,6 @@ namespace paper::animation_evidence
             if (!weaponRoot || names.count == 0 ||
                 state.passiveWalkGaveUp) {
                 return;
-            }
-            if (state.passiveWalkCompleted &&
-                !state.passiveRewalkActive) {
-                if (++state.passiveRewalkCooldown <
-                    kPassiveRewalkIntervalFrames) {
-                    return;
-                }
-                state.passiveRewalkCooldown = 0;
-                state.passiveRewalkActive = true;
-                clip_telemetry::restartWalkPass();
             }
 
             auto* player = RE::PlayerCharacter::GetSingleton();
@@ -1223,7 +1233,8 @@ namespace paper::animation_evidence
     void advanceFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,
         const rock::provider::RockProviderEquippedWeaponGripStateV1* gripState,
-        const std::uint32_t paperProviderGeneration)
+        const std::uint32_t paperProviderGeneration,
+        const bool exactPreharvestDemand)
     {
         auto& state = runtime();
         state.frameDiagnostics = {};
@@ -1262,6 +1273,15 @@ namespace paper::animation_evidence
             return;
         }
 
+        if (state.valid && state.exactPreharvestDemandActive &&
+            !exactPreharvestDemand) {
+            // Exact acquisition owns an off-screen graph and clip resource while
+            // in flight. Restart the passive catalog when that demand disappears
+            // so ownership is released immediately and a later exact request
+            // cannot append a second copy of partially harvested clips.
+            clearCatalog(state);
+        }
+
         if (!state.valid ||
             state.catalog.weaponFormId != gripState->weaponFormId ||
             state.catalog.weaponGenerationKey !=
@@ -1283,6 +1303,7 @@ namespace paper::animation_evidence
                 observationCatalog.catalogSequence,
                 context);
         }
+        state.exactPreharvestDemandActive = exactPreharvestDemand;
 
         state.frameDiagnostics.catalogSetupMicroseconds =
             elapsedMicroseconds(stageStarted);
@@ -1290,24 +1311,31 @@ namespace paper::animation_evidence
         drainPassive(state);
         state.frameDiagnostics.passiveDrainMicroseconds +=
             elapsedMicroseconds(stageStarted);
-        stageStarted = DiagnosticsClock::now();
-        const auto names = collectWeaponNames(root);
-        state.frameDiagnostics.nameCollectionMicroseconds =
-            elapsedMicroseconds(stageStarted);
-        if (names.truncated) {
-            state.catalog.statusFlags |= flag(
-                PaperReloadAnimationCatalogFlagV1::
-                    SceneNameCapacityTruncated);
-        }
-        if (names.count > 0) {
+        const bool passiveDue = passiveUpdateDue(state);
+        if (passiveDue || exactPreharvestDemand) {
             stageStarted = DiagnosticsClock::now();
-            updatePassive(state, root, names);
-            state.frameDiagnostics.passiveUpdateMicroseconds =
+            const auto names = collectWeaponNames(root);
+            state.frameDiagnostics.nameCollectionMicroseconds =
                 elapsedMicroseconds(stageStarted);
-            stageStarted = DiagnosticsClock::now();
-            updateExact(state, names);
-            state.frameDiagnostics.exactUpdateMicroseconds =
-                elapsedMicroseconds(stageStarted);
+            if (names.truncated) {
+                state.catalog.statusFlags |= flag(
+                    PaperReloadAnimationCatalogFlagV1::
+                        SceneNameCapacityTruncated);
+            }
+            if (names.count > 0) {
+                if (passiveDue) {
+                    stageStarted = DiagnosticsClock::now();
+                    updatePassive(state, root, names);
+                    state.frameDiagnostics.passiveUpdateMicroseconds =
+                        elapsedMicroseconds(stageStarted);
+                }
+                if (exactPreharvestDemand) {
+                    stageStarted = DiagnosticsClock::now();
+                    updateExact(state, names);
+                    state.frameDiagnostics.exactUpdateMicroseconds =
+                        elapsedMicroseconds(stageStarted);
+                }
+            }
         }
         stageStarted = DiagnosticsClock::now();
         drainPassive(state);
@@ -1342,8 +1370,9 @@ namespace paper::animation_evidence
     PaperResultV1 getLimits(PaperReloadAnimationLimitsV1& outLimits)
     {
         outLimits = {};
-        outLimits.featureBits = flag(
-            PaperProviderFeatureBitV1::ReloadAnimationEvidence);
+        outLimits.featureBits =
+            flag(PaperProviderFeatureBitV1::ReloadAnimationEvidence) |
+            flag(PaperProviderFeatureBitV1::ReloadAnimationTelemetry);
         outLimits.maxClips = PAPER_MAX_RELOAD_ANIMATION_CLIPS_V1;
         outLimits.maxLiveClips =
             PAPER_MAX_RELOAD_LIVE_ANIMATION_CLIPS_V1;
