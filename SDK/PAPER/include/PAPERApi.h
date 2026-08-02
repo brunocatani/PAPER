@@ -273,6 +273,9 @@ namespace paper::api
         SlideBack = 1u << 2,
         MagazineIn = 1u << 3,
         MagazineOut = 1u << 4,
+        SlideForward = 1u << 5,
+        BoltForward = 1u << 6,
+        BoltBack = 1u << 7,
     };
 
     enum class PaperReloadStageStatusFlagV1 : std::uint32_t
@@ -291,6 +294,7 @@ namespace paper::api
         SlideObserved = 1u << 10,
         PartDataIncomplete = 1u << 11,
         PartCapacityTruncated = 1u << 12,
+        BoltObserved = 1u << 13,
     };
 
     enum class PaperReloadStagePartFlagV1 : std::uint32_t
@@ -309,6 +313,10 @@ namespace paper::api
         MagazineIn = 1u << 10,
         MagazineOut = 1u << 11,
         SlideBack = 1u << 12,
+        SlideForward = 1u << 13,
+        Bolt = 1u << 14,
+        BoltForward = 1u << 15,
+        BoltBack = 1u << 16,
     };
 
     enum class PaperReloadFireCorrelationV1 : std::uint32_t
@@ -854,10 +862,11 @@ namespace paper::api
     /*
      * Provisional pistol stage identification is derived separately from the
      * raw observation and animation records above. Flags are independent and
-     * may coexist. Magazine and slide flags require every unique tracked member
-     * of their classified group to match; incomplete members keep the group
-     * inactive. Per-part records independently retain the baseline/current
-     * transforms and exact deltas that caused each aggregate decision.
+     * may coexist. Magazine, slide, and bolt flags require every unique tracked
+     * member of their classified group to match; incomplete members keep the
+     * group inactive. Per-part records independently retain the
+     * baseline/current transforms and exact deltas that caused each aggregate
+     * decision.
      */
     struct PaperReloadStageStateV1
     {
@@ -894,7 +903,13 @@ namespace paper::api
         float maximumTranslationDeltaGameUnits{ 0.0f };
         float maximumRotationDeltaDegrees{ 0.0f };
         float maximumScaleDelta{ 0.0f };
-        std::uint32_t reserved[6]{};
+        // Additive V1 fields consume the original reserved tail so every
+        // established field offset and the public structure size stay stable.
+        std::uint32_t slideForwardCount{ 0 };
+        std::uint32_t boltPartCount{ 0 };
+        std::uint32_t boltForwardCount{ 0 };
+        std::uint32_t boltBackCount{ 0 };
+        std::uint32_t reserved[2]{};
     };
 
     struct PaperReloadStagePartV1

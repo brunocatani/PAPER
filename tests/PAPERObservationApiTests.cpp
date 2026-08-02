@@ -92,6 +92,35 @@ int main()
         static_cast<std::uint32_t>(
             PaperConsumerCapabilityV1::ReloadStageIdentification) ==
         (1u << 9));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperReloadStageFlagV1::SlideForward) ==
+        (1u << 5));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperReloadStageFlagV1::BoltForward) ==
+        (1u << 6));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperReloadStageFlagV1::BoltBack) ==
+        (1u << 7));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperReloadStageStatusFlagV1::BoltObserved) ==
+        (1u << 13));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperReloadStagePartFlagV1::SlideForward) ==
+        (1u << 13));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperReloadStagePartFlagV1::BoltBack) ==
+        (1u << 16));
+    static_assert(sizeof(PaperReloadStageStateV1) == 176);
+    static_assert(
+        offsetof(PaperReloadStageStateV1, slideForwardCount) == 152);
+    static_assert(
+        offsetof(PaperReloadStageStateV1, boltBackCount) == 164);
     static_assert(sizeof(PaperReloadQsTransformV1) == 40);
     static_assert(
         PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 ==

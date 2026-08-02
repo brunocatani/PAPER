@@ -71,6 +71,17 @@ namespace paper::reload_stages
                            RockProviderWeaponActionRoleV1::Slide);
         }
 
+        [[nodiscard]] bool isBolt(
+            const reload_observation::EvidenceMotionSource& source)
+        {
+            return source.partKind == static_cast<std::uint32_t>(
+                       rock::provider::
+                           RockProviderWeaponPartKindV1::Bolt) ||
+                   source.actionRole == static_cast<std::uint32_t>(
+                       rock::provider::
+                           RockProviderWeaponActionRoleV1::Bolt);
+        }
+
         [[nodiscard]] bool contributesToAggregate(
             const PublishedStages& published,
             const PaperReloadStagePartV1& candidate)
@@ -259,6 +270,7 @@ namespace paper::reload_stages
 
             const bool magazine = isMagazine(source);
             const bool slide = isSlide(source);
+            const bool bolt = isBolt(source);
             if (magazine) {
                 part.flags |= flag(
                     PaperReloadStagePartFlagV1::Magazine);
@@ -266,6 +278,10 @@ namespace paper::reload_stages
             if (slide) {
                 part.flags |= flag(
                     PaperReloadStagePartFlagV1::Slide);
+            }
+            if (bolt) {
+                part.flags |= flag(
+                    PaperReloadStagePartFlagV1::Bolt);
             }
 
             const bool aggregate = contributesToAggregate(next, part);
@@ -279,6 +295,11 @@ namespace paper::reload_stages
                     next,
                     part,
                     PaperReloadStagePartFlagV1::Slide);
+            const bool boltGroupMember = bolt &&
+                contributesToSemanticGroup(
+                    next,
+                    part,
+                    PaperReloadStagePartFlagV1::Bolt);
             if (aggregate) {
                 part.flags |= flag(
                     PaperReloadStagePartFlagV1::
@@ -290,6 +311,9 @@ namespace paper::reload_stages
             }
             if (slideGroupMember) {
                 ++next.state.slidePartCount;
+            }
+            if (boltGroupMember) {
+                ++next.state.boltPartCount;
             }
 
             if (!baselineValid || !currentValid) {
@@ -334,17 +358,36 @@ namespace paper::reload_stages
                         PaperReloadStagePartFlagV1::MagazineIn :
                         PaperReloadStagePartFlagV1::MagazineOut);
             }
-            if (slide && !atRest) {
+            if (slide) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::SlideBack);
+                    atRest ?
+                        PaperReloadStagePartFlagV1::SlideForward :
+                        PaperReloadStagePartFlagV1::SlideBack);
+            }
+            if (bolt) {
+                part.flags |= flag(
+                    atRest ?
+                        PaperReloadStagePartFlagV1::BoltForward :
+                        PaperReloadStagePartFlagV1::BoltBack);
             }
             if (magazineGroupMember && atRest) {
                 ++next.state.magazineInCount;
             } else if (magazineGroupMember) {
                 ++next.state.magazineOutCount;
             }
-            if (slideGroupMember && !atRest) {
-                ++next.state.slideBackCount;
+            if (slideGroupMember) {
+                if (atRest) {
+                    ++next.state.slideForwardCount;
+                } else {
+                    ++next.state.slideBackCount;
+                }
+            }
+            if (boltGroupMember) {
+                if (atRest) {
+                    ++next.state.boltForwardCount;
+                } else {
+                    ++next.state.boltBackCount;
+                }
             }
             if (!aggregate) {
                 continue;
@@ -364,6 +407,10 @@ namespace paper::reload_stages
         if (next.state.slidePartCount > 0) {
             next.state.statusFlags |= flag(
                 PaperReloadStageStatusFlagV1::SlideObserved);
+        }
+        if (next.state.boltPartCount > 0) {
+            next.state.statusFlags |= flag(
+                PaperReloadStageStatusFlagV1::BoltObserved);
         }
 
         std::array<clip_telemetry::ActivityState, 8> rawActivities{};
@@ -433,7 +480,10 @@ namespace paper::reload_stages
                     FireActivityCorrelated);
         }
 
-        const bool stageFrameValid = pistol && nativeOutputAvailable;
+        // Pistol is retained as raw classification evidence, not as a gate.
+        // Validation is user-directed in the prober, and a coarse ROCK size
+        // bucket must not suppress otherwise coherent semantic part motion.
+        const bool stageFrameValid = nativeOutputAvailable;
         if (stageFrameValid) {
             next.state.statusFlags |= flag(
                 PaperReloadStageStatusFlagV1::Valid);
@@ -452,6 +502,24 @@ namespace paper::reload_stages
                     next.state.slideBackCount)) {
                 next.state.stageFlags |= flag(
                     PaperReloadStageFlagV1::SlideBack);
+            }
+            if (reload_stage_policy::allGroupMembersMatch(
+                    next.state.slidePartCount,
+                    next.state.slideForwardCount)) {
+                next.state.stageFlags |= flag(
+                    PaperReloadStageFlagV1::SlideForward);
+            }
+            if (reload_stage_policy::allGroupMembersMatch(
+                    next.state.boltPartCount,
+                    next.state.boltForwardCount)) {
+                next.state.stageFlags |= flag(
+                    PaperReloadStageFlagV1::BoltForward);
+            }
+            if (reload_stage_policy::allGroupMembersMatch(
+                    next.state.boltPartCount,
+                    next.state.boltBackCount)) {
+                next.state.stageFlags |= flag(
+                    PaperReloadStageFlagV1::BoltBack);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.magazinePartCount,
