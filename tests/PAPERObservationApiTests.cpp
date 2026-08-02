@@ -243,6 +243,16 @@ int main()
         !paper::reload_stage_policy::isAtRest(transformDelta),
         "a part beyond the public translation tolerance must be displaced");
 
+    expect(
+        !paper::reload_stage_policy::allGroupMembersMatch(0, 0),
+        "an absent semantic group must not publish a completed stage");
+    expect(
+        !paper::reload_stage_policy::allGroupMembersMatch(4, 3),
+        "a partially matching semantic group must not publish a completed stage");
+    expect(
+        paper::reload_stage_policy::allGroupMembersMatch(4, 4),
+        "a semantic group must complete only when every member matches");
+
     using paper::reload_stage_policy::ActivityIdentity;
     using paper::reload_stage_policy::FireCorrelationState;
     std::array<ActivityIdentity, 1> activities{

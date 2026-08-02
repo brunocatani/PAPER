@@ -66,6 +66,14 @@ namespace paper::reload_stage_policy
                delta.scale <= kRestScaleTolerance;
     }
 
+    [[nodiscard]] constexpr bool allGroupMembersMatch(
+        const std::uint32_t memberCount,
+        const std::uint32_t matchingMemberCount)
+    {
+        return memberCount > 0 &&
+               matchingMemberCount == memberCount;
+    }
+
     struct ActivityIdentity
     {
         std::uint64_t activationOrder{ 0 };

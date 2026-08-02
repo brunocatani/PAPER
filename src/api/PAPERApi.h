@@ -854,8 +854,10 @@ namespace paper::api
     /*
      * Provisional pistol stage identification is derived separately from the
      * raw observation and animation records above. Flags are independent and
-     * may coexist. Per-part records retain the baseline/current transforms and
-     * exact deltas that caused each aggregate decision.
+     * may coexist. Magazine and slide flags require every unique tracked member
+     * of their classified group to match; incomplete members keep the group
+     * inactive. Per-part records independently retain the baseline/current
+     * transforms and exact deltas that caused each aggregate decision.
      */
     struct PaperReloadStageStateV1
     {
