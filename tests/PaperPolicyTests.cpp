@@ -1,5 +1,6 @@
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "compat/TacticalReloadBridgePolicy.h"
+#include "reload_observation/ReloadObservationPolicy.h"
 
 #include <cassert>
 
@@ -242,6 +243,33 @@ int main()
         .weaponPresent = true,
         .weaponIdentityCoherent = true,
     };
+
+    constexpr AffineTransform observationIdentity{ 1.0f, 0.0f };
+    constexpr auto observationRoot =
+        paper::reload_observation_policy::resolveWeaponLocalFromGraph(
+            true,
+            observationIdentity,
+            AffineTransform{ 7.0f, 700.0f },
+            AffineTransform{ 11.0f, 1100.0f },
+            compose);
+    static_assert(observationRoot.scale == 1.0f);
+    static_assert(observationRoot.translate == 0.0f);
+    constexpr auto observationParent =
+        paper::reload_observation_policy::resolveWeaponLocalFromGraph(
+            false,
+            observationIdentity,
+            observationRoot,
+            AffineTransform{ 2.0f, 10.0f },
+            compose);
+    constexpr auto observationChild =
+        paper::reload_observation_policy::resolveWeaponLocalFromGraph(
+            false,
+            observationIdentity,
+            observationParent,
+            AffineTransform{ 3.0f, 4.0f },
+            compose);
+    static_assert(observationChild.scale == 6.0f);
+    static_assert(observationChild.translate == 18.0f);
     constexpr auto boundAnimation =
         advanceNativeAnimationCompatibility(
             {},

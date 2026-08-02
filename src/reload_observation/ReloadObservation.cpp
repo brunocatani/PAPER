@@ -6,6 +6,7 @@
 #include "api/RockApiClient.h"
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservationPolicy.h"
+#include "support/TransformMath.h"
 
 #include <algorithm>
 #include <array>
@@ -77,86 +78,6 @@ namespace paper::reload_observation
                    std::isfinite(transform.translate.z) &&
                    std::isfinite(transform.scale) &&
                    std::abs(transform.scale) > 0.0001f;
-        }
-
-        [[nodiscard]] RE::NiMatrix3 transposeRotation(
-            const RE::NiMatrix3& matrix)
-        {
-            RE::NiMatrix3 result{};
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    result.entry[row][column] =
-                        matrix.entry[column][row];
-                }
-            }
-            return result;
-        }
-
-        [[nodiscard]] RE::NiMatrix3 multiplyStoredRotations(
-            const RE::NiMatrix3& lhs,
-            const RE::NiMatrix3& rhs)
-        {
-            RE::NiMatrix3 result{};
-            for (int row = 0; row < 3; ++row) {
-                for (int column = 0; column < 3; ++column) {
-                    double value = 0.0;
-                    for (int component = 0; component < 3; ++component) {
-                        value +=
-                            static_cast<double>(
-                                lhs.entry[row][component]) *
-                            static_cast<double>(
-                                rhs.entry[component][column]);
-                    }
-                    result.entry[row][column] =
-                        static_cast<float>(value);
-                }
-            }
-            return result;
-        }
-
-        [[nodiscard]] RE::NiPoint3 worldPointToLocal(
-            const RE::NiTransform& transform,
-            const RE::NiPoint3& point)
-        {
-            const double inverseScale =
-                1.0 / static_cast<double>(transform.scale);
-            const double offset[3]{
-                static_cast<double>(point.x) - transform.translate.x,
-                static_cast<double>(point.y) - transform.translate.y,
-                static_cast<double>(point.z) - transform.translate.z,
-            };
-            RE::NiPoint3 result{};
-            result.x = static_cast<float>(
-                (transform.rotate.entry[0][0] * offset[0] +
-                    transform.rotate.entry[0][1] * offset[1] +
-                    transform.rotate.entry[0][2] * offset[2]) *
-                inverseScale);
-            result.y = static_cast<float>(
-                (transform.rotate.entry[1][0] * offset[0] +
-                    transform.rotate.entry[1][1] * offset[1] +
-                    transform.rotate.entry[1][2] * offset[2]) *
-                inverseScale);
-            result.z = static_cast<float>(
-                (transform.rotate.entry[2][0] * offset[0] +
-                    transform.rotate.entry[2][1] * offset[1] +
-                    transform.rotate.entry[2][2] * offset[2]) *
-                inverseScale);
-            return result;
-        }
-
-        [[nodiscard]] RE::NiTransform relativeTransform(
-            const RE::NiTransform& referenceWorld,
-            const RE::NiTransform& childWorld)
-        {
-            RE::NiTransform result{};
-            result.rotate = multiplyStoredRotations(
-                childWorld.rotate,
-                transposeRotation(referenceWorld.rotate));
-            result.translate = worldPointToLocal(
-                referenceWorld,
-                childWorld.translate);
-            result.scale = childWorld.scale / referenceWorld.scale;
-            return result;
         }
 
         [[nodiscard]] std::uint64_t nextSequence(
@@ -546,16 +467,19 @@ namespace paper::reload_observation
                 }
             }
 
-            const auto weaponWorld = root->world;
             std::vector<RE::NiAVObject*> nodePointers;
             nodePointers.reserve(256);
             std::uint32_t visitedNodeCount = 0;
+            const auto identity =
+                transform_math::identityTransform<RE::NiTransform>();
             const auto walk = [&](auto&& self,
                                   RE::NiAVObject* object,
                                   const std::int32_t parentNodeId,
                                   const std::uint32_t childIndex,
                                   const std::uint32_t depth,
-                                  const std::string& parentPath) -> void {
+                                  const std::string& parentPath,
+                                  const RE::NiTransform& parentWeaponLocal,
+                                  const bool parentWeaponLocalValid) -> void {
                 if (!object || visitedNodeCount >= kMaxSceneVisits) {
                     if (object) {
                         building.state.statusFlags |= flag(
@@ -576,6 +500,26 @@ namespace paper::reload_observation
                 path += name.empty() ? "<unnamed>" : name;
                 path.push_back('#');
                 path += std::to_string(childIndex);
+
+                const bool localValid = finiteTransform(object->local);
+                bool weaponLocalValid = object == root ||
+                    (parentWeaponLocalValid && localValid);
+                RE::NiTransform weaponLocal = identity;
+                if (weaponLocalValid) {
+                    weaponLocal = reload_observation_policy::
+                        resolveWeaponLocalFromGraph(
+                            object == root,
+                            identity,
+                            parentWeaponLocal,
+                            object->local,
+                            [](const RE::NiTransform& parent,
+                               const RE::NiTransform& child) {
+                                return transform_math::composeTransforms(
+                                    parent,
+                                    child);
+                            });
+                    weaponLocalValid = finiteTransform(weaponLocal);
+                }
 
                 std::int32_t thisNodeId = -1;
                 if (depth <= kMaxSceneDepth &&
@@ -628,7 +572,7 @@ namespace paper::reload_observation
                         record.value.childCount =
                             asNode->GetRuntimeData().children.size();
                     }
-                    if (finiteTransform(object->local)) {
+                    if (localValid) {
                         record.value.flags |= flag(
                             PaperReloadNodeFlagV1::
                                 LocalTransformValid);
@@ -636,10 +580,7 @@ namespace paper::reload_observation
                             object->local,
                             record.value.baselineLocal);
                     }
-                    const auto weaponLocal = relativeTransform(
-                        weaponWorld,
-                        object->world);
-                    if (finiteTransform(weaponLocal)) {
+                    if (weaponLocalValid) {
                         record.value.flags |= flag(
                             PaperReloadNodeFlagV1::
                                 WeaponLocalTransformValid);
@@ -679,11 +620,13 @@ namespace paper::reload_observation
                             thisNodeId,
                             index,
                             depth + 1,
-                            path);
+                            path,
+                            weaponLocal,
+                            weaponLocalValid);
                     }
                 }
             };
-            walk(walk, root, -1, 0, 0, {});
+            walk(walk, root, -1, 0, 0, {}, identity, true);
             if (building.nodes.empty()) {
                 s_buildingCatalog = {};
                 return false;
@@ -935,17 +878,20 @@ namespace paper::reload_observation
                 std::uint8_t,
                 PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1>
                 present{};
-            const auto weaponWorld = root->world;
             std::uint32_t catalogIndex = 0;
             std::uint32_t visitedCount = 0;
             bool mismatch = false;
             bool stop = false;
+            const auto identity =
+                transform_math::identityTransform<RE::NiTransform>();
 
             const auto walk = [&](auto&& self,
                                   RE::NiAVObject* object,
                                   const std::int32_t parentNodeId,
                                   const std::uint32_t childIndex,
-                                  const std::uint32_t depth) -> void {
+                                  const std::uint32_t depth,
+                                  const RE::NiTransform& parentWeaponLocal,
+                                  const bool parentWeaponLocalValid) -> void {
                 if (!object || mismatch || stop ||
                     visitedCount >= kMaxSceneVisits) {
                     if (visitedCount >= kMaxSceneVisits) {
@@ -977,12 +923,33 @@ namespace paper::reload_observation
                 const auto nodeId = catalogIndex++;
                 const auto targetIndex =
                     s_catalog.targetIndexByNode[nodeId];
+                const bool localValid = finiteTransform(object->local);
+                bool weaponLocalValid = object == root ||
+                    (parentWeaponLocalValid && localValid);
+                RE::NiTransform weaponLocal = identity;
+                if (weaponLocalValid) {
+                    // Compose authored graph locals so controller/world motion
+                    // cannot leak through mixed-frame world-transform caches.
+                    weaponLocal = reload_observation_policy::
+                        resolveWeaponLocalFromGraph(
+                            object == root,
+                            identity,
+                            parentWeaponLocal,
+                            object->local,
+                            [](const RE::NiTransform& parent,
+                               const RE::NiTransform& child) {
+                                return transform_math::composeTransforms(
+                                    parent,
+                                    child);
+                            });
+                    weaponLocalValid = finiteTransform(weaponLocal);
+                }
                 if (targetIndex >= 0) {
                     PaperReloadNodeObservationV1 observation{};
                     observation.nodeId = nodeId;
                     observation.phase = phase;
                     observation.frameIndex = context.frameIndex;
-                    if (finiteTransform(object->local)) {
+                    if (localValid) {
                         observation.flags |= flag(
                             PaperReloadNodeObservationFlagV1::
                                 LocalTransformValid);
@@ -990,10 +957,7 @@ namespace paper::reload_observation
                             object->local,
                             observation.local);
                     }
-                    const auto weaponLocal = relativeTransform(
-                        weaponWorld,
-                        object->world);
-                    if (finiteTransform(weaponLocal)) {
+                    if (weaponLocalValid) {
                         observation.flags |= flag(
                             PaperReloadNodeObservationFlagV1::
                                 WeaponLocalTransformValid);
@@ -1027,11 +991,13 @@ namespace paper::reload_observation
                             children[index].get(),
                             static_cast<std::int32_t>(nodeId),
                             index,
-                            depth + 1);
+                            depth + 1,
+                            weaponLocal,
+                            weaponLocalValid);
                     }
                 }
             };
-            walk(walk, root, -1, 0, 0);
+            walk(walk, root, -1, 0, 0, identity, true);
 
             const bool catalogWasTruncated =
                 (s_catalog.state.statusFlags & flag(

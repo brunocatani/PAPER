@@ -9,6 +9,19 @@
 
 namespace paper::reload_observation_policy
 {
+    template <class Transform, class Compose>
+    [[nodiscard]] constexpr Transform resolveWeaponLocalFromGraph(
+        const bool isWeaponRoot,
+        const Transform& identity,
+        const Transform& parentWeaponLocal,
+        const Transform& objectLocal,
+        Compose&& compose)
+    {
+        return isWeaponRoot ?
+            identity :
+            compose(parentWeaponLocal, objectLocal);
+    }
+
     struct EvidenceNodeCandidate
     {
         std::int32_t sourceNodeId{ -1 };
