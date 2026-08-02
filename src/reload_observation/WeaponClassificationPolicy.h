@@ -172,27 +172,6 @@ namespace paper::weapon_classification_policy
             return (result.familyFlags & family(value)) != 0;
         };
 
-        if (signals.rockClassificationValid) {
-            switch (static_cast<PaperWeaponSizeClassV1>(signals.sizeClass)) {
-            case PaperWeaponSizeClassV1::Melee:
-                add(PaperWeaponFamilyFlagV1::MeleeWeapon,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
-                break;
-            case PaperWeaponSizeClassV1::Pistol:
-                add(PaperWeaponFamilyFlagV1::Pistol,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
-                break;
-            case PaperWeaponSizeClassV1::Rifle:
-                add(PaperWeaponFamilyFlagV1::Rifle,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
-                break;
-            case PaperWeaponSizeClassV1::Heavy:
-                add(PaperWeaponFamilyFlagV1::HeavyWeapon,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
-                break;
-            }
-        }
-
         if (signals.rockClassificationAvailable) {
             const auto addKeywordFamily = [&](
                                               const PaperWeaponKeywordFlagV1 source,
@@ -472,10 +451,29 @@ namespace paper::weapon_classification_policy
             }
         }
 
-        if ((signals.stockPart || signals.handguardPart ||
-             signals.foregripPart ||
-             hasFamily(PaperWeaponFamilyFlagV1::BoltAction) ||
-             hasFamily(PaperWeaponFamilyFlagV1::LeverAction)) &&
+        const bool longGunTopology =
+            signals.stockPart || signals.handguardPart ||
+            signals.foregripPart ||
+            hasFamily(PaperWeaponFamilyFlagV1::BoltAction) ||
+            hasFamily(PaperWeaponFamilyFlagV1::LeverAction);
+        const bool explicitLongGunFamily =
+            hasFamily(PaperWeaponFamilyFlagV1::Rifle) ||
+            hasFamily(PaperWeaponFamilyFlagV1::AssaultRifle) ||
+            hasFamily(PaperWeaponFamilyFlagV1::AKPattern) ||
+            hasFamily(PaperWeaponFamilyFlagV1::ARPattern) ||
+            hasFamily(PaperWeaponFamilyFlagV1::SniperRifle) ||
+            hasFamily(PaperWeaponFamilyFlagV1::Shotgun) ||
+            hasFamily(PaperWeaponFamilyFlagV1::GaussRifle) ||
+            hasFamily(PaperWeaponFamilyFlagV1::LaserMusket) ||
+            hasFamily(PaperWeaponFamilyFlagV1::RailwayRifle);
+
+        if (hasFamily(PaperWeaponFamilyFlagV1::SlideOperated) &&
+            !longGunTopology && !explicitLongGunFamily &&
+            !hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon)) {
+            result.familyFlags |= family(PaperWeaponFamilyFlagV1::Pistol);
+        }
+
+        if (longGunTopology &&
             !hasFamily(PaperWeaponFamilyFlagV1::Pistol)) {
             add(PaperWeaponFamilyFlagV1::Rifle,
                 PaperWeaponFamilyEvidenceFlagV1::PartTopology);
@@ -495,11 +493,6 @@ namespace paper::weapon_classification_policy
                 !hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon)) {
                 result.familyFlags |= family(PaperWeaponFamilyFlagV1::Pistol);
             }
-        }
-        if (hasFamily(PaperWeaponFamilyFlagV1::SlideOperated) &&
-            !hasFamily(PaperWeaponFamilyFlagV1::Rifle) &&
-            !hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::Pistol);
         }
         if (hasFamily(PaperWeaponFamilyFlagV1::LaserWeapon) ||
             hasFamily(PaperWeaponFamilyFlagV1::PlasmaWeapon) ||
@@ -536,6 +529,44 @@ namespace paper::weapon_classification_policy
             hasFamily(PaperWeaponFamilyFlagV1::Mine)) {
             result.familyFlags |= family(PaperWeaponFamilyFlagV1::ThrownWeapon);
             result.familyFlags |= family(PaperWeaponFamilyFlagV1::ExplosiveWeapon);
+        }
+
+        const bool semanticSizeKnown =
+            hasFamily(PaperWeaponFamilyFlagV1::Pistol) ||
+            hasFamily(PaperWeaponFamilyFlagV1::Rifle) ||
+            hasFamily(PaperWeaponFamilyFlagV1::Shotgun) ||
+            hasFamily(PaperWeaponFamilyFlagV1::SubmachineGun) ||
+            hasFamily(PaperWeaponFamilyFlagV1::MachineGun) ||
+            hasFamily(PaperWeaponFamilyFlagV1::LightMachineGun) ||
+            hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon) ||
+            hasFamily(PaperWeaponFamilyFlagV1::Minigun) ||
+            hasFamily(PaperWeaponFamilyFlagV1::Launcher) ||
+            hasFamily(PaperWeaponFamilyFlagV1::MeleeWeapon) ||
+            hasFamily(PaperWeaponFamilyFlagV1::UnarmedWeapon) ||
+            hasFamily(PaperWeaponFamilyFlagV1::ThrownWeapon) ||
+            hasFamily(PaperWeaponFamilyFlagV1::ExplosiveWeapon);
+        if (signals.rockClassificationValid && !semanticSizeKnown) {
+            // ROCK's size class is a coarse physical bucket. Preserve it in
+            // the API, but use it as a semantic family only when stronger
+            // keyword, identity, runtime, or part evidence found no family.
+            switch (static_cast<PaperWeaponSizeClassV1>(signals.sizeClass)) {
+            case PaperWeaponSizeClassV1::Melee:
+                add(PaperWeaponFamilyFlagV1::MeleeWeapon,
+                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+                break;
+            case PaperWeaponSizeClassV1::Pistol:
+                add(PaperWeaponFamilyFlagV1::Pistol,
+                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+                break;
+            case PaperWeaponSizeClassV1::Rifle:
+                add(PaperWeaponFamilyFlagV1::Rifle,
+                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+                break;
+            case PaperWeaponSizeClassV1::Heavy:
+                add(PaperWeaponFamilyFlagV1::HeavyWeapon,
+                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+                break;
+            }
         }
 
         const bool manualCycle =

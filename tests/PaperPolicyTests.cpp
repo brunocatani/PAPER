@@ -72,6 +72,47 @@ int main()
         partOnlyPistol.primaryFamily ==
         paper::api::PaperWeaponPrimaryFamilyV1::Pistol);
 
+    constexpr auto coarseRifleSlidePistol =
+        weapon_family::classifyWeaponFamily({
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = true,
+            .sizeClass = static_cast<std::uint32_t>(
+                paper::api::PaperWeaponSizeClassV1::Rifle),
+            .weaponDataAvailable = true,
+            .partEvidenceComplete = true,
+            .magazinePart = true,
+            .slidePart = true,
+            .pluginName = "GlockPack.esp",
+            .editorId = "Weapon_Glock17",
+            .displayName = "Glock 17",
+        });
+    static_assert(hasFamily(
+        coarseRifleSlidePistol,
+        paper::api::PaperWeaponFamilyFlagV1::Pistol));
+    static_assert(!hasFamily(
+        coarseRifleSlidePistol,
+        paper::api::PaperWeaponFamilyFlagV1::Rifle));
+    static_assert(!hasFamilyEvidence(
+        coarseRifleSlidePistol,
+        paper::api::PaperWeaponFamilyEvidenceFlagV1::RockSizeClass));
+    static_assert(
+        coarseRifleSlidePistol.primaryFamily ==
+        paper::api::PaperWeaponPrimaryFamilyV1::Pistol);
+
+    constexpr auto coarseRifleFallback =
+        weapon_family::classifyWeaponFamily({
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = true,
+            .sizeClass = static_cast<std::uint32_t>(
+                paper::api::PaperWeaponSizeClassV1::Rifle),
+        });
+    static_assert(hasFamily(
+        coarseRifleFallback,
+        paper::api::PaperWeaponFamilyFlagV1::Rifle));
+    static_assert(hasFamilyEvidence(
+        coarseRifleFallback,
+        paper::api::PaperWeaponFamilyEvidenceFlagV1::RockSizeClass));
+
     constexpr auto revolver = weapon_family::classifyWeaponFamily({
         .rockClassificationAvailable = true,
         .rockClassificationValid = true,
