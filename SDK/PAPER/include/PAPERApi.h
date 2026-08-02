@@ -204,6 +204,187 @@ namespace paper::api
         None = 0,
         Available = 1u << 0,
         Valid = 1u << 1,
+        FamilyAvailable = 1u << 2,
+        PrimaryFamilyValid = 1u << 3,
+    };
+
+    /*
+     * PAPER-owned mirrors of the raw ROCK classification vocabulary. The raw
+     * fields remain numeric in PaperWeaponClassificationV1 to preserve every
+     * established V1 field offset, while these enums let PAPER-only consumers
+     * interpret them without depending on the ROCK SDK.
+     */
+    enum class PaperWeaponSizeClassV1 : std::uint32_t
+    {
+        Melee = 0,
+        Pistol = 1,
+        Rifle = 2,
+        Heavy = 3,
+    };
+
+    enum class PaperWeaponClassificationSourceV1 : std::uint32_t
+    {
+        None = 0,
+        Keyword = 1,
+        WeightFallback = 2,
+        Default = 3,
+    };
+
+    enum class PaperWeaponKeywordFlagV1 : std::uint64_t
+    {
+        None = 0,
+        Pistol = 1ull << 0,
+        Rifle = 1ull << 1,
+        Shotgun = 1ull << 2,
+        AssaultRifle = 1ull << 3,
+        Sniper = 1ull << 4,
+        GaussRifle = 1ull << 5,
+        LaserMusket = 1ull << 6,
+        HeavyGun = 1ull << 7,
+        HandToHand = 1ull << 8,
+        Melee1H = 1ull << 9,
+        Melee2H = 1ull << 10,
+        Unarmed = 1ull << 11,
+        Minigun = 1ull << 12,
+        Fatman = 1ull << 13,
+        MissileLauncher = 1ull << 14,
+        GatlingLaser = 1ull << 15,
+        Flamer = 1ull << 16,
+        Cryolater = 1ull << 17,
+        JunkJet = 1ull << 18,
+        RailwayRifle = 1ull << 19,
+        Broadsider = 1ull << 20,
+        Syringer = 1ull << 21,
+        FlareGun = 1ull << 22,
+        GammaGun = 1ull << 23,
+        AlienBlaster = 1ull << 24,
+        Ripper = 1ull << 25,
+        Shishkebab = 1ull << 26,
+        Laser = 1ull << 27,
+        Plasma = 1ull << 28,
+        Ballistic = 1ull << 29,
+        Thrown = 1ull << 30,
+        Grenade = 1ull << 31,
+        Mine = 1ull << 32,
+        Explosive = 1ull << 33,
+        Automatic = 1ull << 34,
+    };
+
+    enum class PaperWeaponPrimaryFamilyV1 : std::uint32_t
+    {
+        Unknown = 0,
+        Pistol = 1,
+        Revolver = 2,
+        Rifle = 3,
+        AssaultRifle = 4,
+        AKPattern = 5,
+        ARPattern = 6,
+        SubmachineGun = 7,
+        Shotgun = 8,
+        SniperRifle = 9,
+        BoltActionWithMagazine = 10,
+        BoltActionWithoutMagazine = 11,
+        BoltAction = 12,
+        LeverAction = 13,
+        PumpAction = 14,
+        BreakAction = 15,
+        HeavyWeapon = 16,
+        MachineGun = 17,
+        LightMachineGun = 18,
+        Minigun = 19,
+        Launcher = 20,
+        EnergyWeapon = 21,
+        MeleeWeapon = 22,
+        UnarmedWeapon = 23,
+        ThrownWeapon = 24,
+        ExplosiveWeapon = 25,
+    };
+
+    /*
+     * Multi-label taxonomy: family, operating mechanism, feed evidence, and
+     * the specific weapon families already represented by ROCK's raw keyword
+     * mask may coexist. A primary family is supplied only as a convenient UI
+     * summary; consumers should retain these flags for fine-grained policy.
+     */
+    enum class PaperWeaponFamilyFlagV1 : std::uint64_t
+    {
+        None = 0,
+        Pistol = 1ull << 0,
+        Revolver = 1ull << 1,
+        Rifle = 1ull << 2,
+        AssaultRifle = 1ull << 3,
+        AKPattern = 1ull << 4,
+        ARPattern = 1ull << 5,
+        SubmachineGun = 1ull << 6,
+        Shotgun = 1ull << 7,
+        SniperRifle = 1ull << 8,
+        BoltAction = 1ull << 9,
+        BoltActionWithMagazine = 1ull << 10,
+        BoltActionWithoutMagazine = 1ull << 11,
+        LeverAction = 1ull << 12,
+        PumpAction = 1ull << 13,
+        BreakAction = 1ull << 14,
+        HeavyWeapon = 1ull << 15,
+        MachineGun = 1ull << 16,
+        LightMachineGun = 1ull << 17,
+        Minigun = 1ull << 18,
+        Launcher = 1ull << 19,
+        EnergyWeapon = 1ull << 20,
+        BallisticWeapon = 1ull << 21,
+        MeleeWeapon = 1ull << 22,
+        UnarmedWeapon = 1ull << 23,
+        ThrownWeapon = 1ull << 24,
+        ExplosiveWeapon = 1ull << 25,
+        MagazineFed = 1ull << 26,
+        CylinderFed = 1ull << 27,
+        SlideOperated = 1ull << 28,
+        LaserCellFed = 1ull << 29,
+        ShellFed = 1ull << 30,
+        LooseRoundFed = 1ull << 31,
+        Automatic = 1ull << 32,
+        SemiAutomatic = 1ull << 33,
+        ManualCycle = 1ull << 34,
+        InternalFeed = 1ull << 35,
+        SingleLoad = 1ull << 36,
+        TubeFed = 1ull << 37,
+        BeltFed = 1ull << 38,
+        DrumFed = 1ull << 39,
+        BullpupPattern = 1ull << 40,
+        GaussRifle = 1ull << 41,
+        LaserMusket = 1ull << 42,
+        RailwayRifle = 1ull << 43,
+        GatlingLaser = 1ull << 44,
+        MissileLauncher = 1ull << 45,
+        FatMan = 1ull << 46,
+        Flamer = 1ull << 47,
+        Cryolator = 1ull << 48,
+        JunkJet = 1ull << 49,
+        Broadsider = 1ull << 50,
+        Syringer = 1ull << 51,
+        FlareGun = 1ull << 52,
+        GammaGun = 1ull << 53,
+        AlienBlaster = 1ull << 54,
+        LaserWeapon = 1ull << 55,
+        PlasmaWeapon = 1ull << 56,
+        Grenade = 1ull << 57,
+        Mine = 1ull << 58,
+        OneHandedMelee = 1ull << 59,
+        TwoHandedMelee = 1ull << 60,
+        HandToHand = 1ull << 61,
+        Ripper = 1ull << 62,
+        Shishkebab = 1ull << 63,
+    };
+
+    enum class PaperWeaponFamilyEvidenceFlagV1 : std::uint32_t
+    {
+        None = 0,
+        RockKeyword = 1u << 0,
+        RockSizeClass = 1u << 1,
+        WeaponFlags = 1u << 2,
+        PartTopology = 1u << 3,
+        AnimationKeyword = 1u << 4,
+        FormIdentityText = 1u << 5,
+        PartEvidenceIncomplete = 1u << 6,
     };
 
     enum class PaperReloadCatalogStatusFlagV1 : std::uint32_t
@@ -217,6 +398,7 @@ namespace paper::api
         ClassificationAvailable = 1u << 5,
         ClassificationValid = 1u << 6,
         EvidenceUnavailable = 1u << 7,
+        FamilyClassificationAvailable = 1u << 8,
     };
 
     enum class PaperReloadNodeFlagV1 : std::uint32_t
@@ -521,7 +703,13 @@ namespace paper::api
         std::uint32_t source{ 0 };
         float confidence{ 0.0f };
         std::uint32_t provenanceFlags{ 0 };
-        std::uint32_t reserved[4]{};
+        // Additive V1 enrichment consumes the original reserved tail. Every
+        // established field offset and the public structure size stay stable.
+        std::uint64_t familyFlags{ 0 };
+        PaperWeaponPrimaryFamilyV1 primaryFamily{
+            PaperWeaponPrimaryFamilyV1::Unknown
+        };
+        std::uint32_t familyEvidenceFlags{ 0 };
     };
 
     struct PaperReloadObservationLimitsV1

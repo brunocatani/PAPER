@@ -116,6 +116,21 @@ int main()
         static_cast<std::uint32_t>(
             PaperReloadStagePartFlagV1::BoltBack) ==
         (1u << 16));
+    static_assert(
+        static_cast<std::uint64_t>(
+            PaperWeaponFamilyFlagV1::Shishkebab) ==
+        (1ull << 63));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperWeaponFamilyEvidenceFlagV1::PartEvidenceIncomplete) ==
+        (1u << 6));
+    static_assert(sizeof(PaperWeaponClassificationV1) == 64);
+    static_assert(
+        offsetof(PaperWeaponClassificationV1, familyFlags) == 48);
+    static_assert(
+        offsetof(PaperWeaponClassificationV1, primaryFamily) == 56);
+    static_assert(
+        offsetof(PaperWeaponClassificationV1, familyEvidenceFlags) == 60);
     static_assert(sizeof(PaperReloadStageStateV1) == 176);
     static_assert(
         offsetof(PaperReloadStageStateV1, slideForwardCount) == 152);

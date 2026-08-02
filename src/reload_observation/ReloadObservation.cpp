@@ -6,7 +6,11 @@
 #include "api/RockApiClient.h"
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservationPolicy.h"
+#include "reload_observation/WeaponClassificationPolicy.h"
+#include "support/Fo4VrRuntime.h"
 #include "support/TransformMath.h"
+
+#include "RE/Bethesda/TESBoundObjects.h"
 
 #include <algorithm>
 #include <array>
@@ -178,6 +182,75 @@ namespace paper::reload_observation
             return identity;
         }
 
+        struct RuntimeWeaponFamilySignals
+        {
+            bool weaponDataAvailable{ false };
+            bool automaticWeaponFlag{ false };
+            bool boltActionWeaponFlag{ false };
+            bool revolverAnimationKeyword{ false };
+        };
+
+        [[nodiscard]] bool hasRevolverAnimationKeyword(
+            const RE::BGSKeywordForm* keywords)
+        {
+            if (!keywords) {
+                return false;
+            }
+            bool matched = false;
+            keywords->ForEachKeyword(
+                [&](const RE::BGSKeyword* keyword) {
+                    const char* editorId =
+                        keyword ? keyword->formEditorID.c_str() : nullptr;
+                    const std::string_view value = editorId ?
+                        std::string_view{ editorId } :
+                        std::string_view{};
+                    if (weapon_classification_policy::containsIgnoreCase(
+                            value,
+                            "revolver") ||
+                        weapon_classification_policy::containsIgnoreCase(
+                            value,
+                            "anims44")) {
+                        matched = true;
+                        return RE::BSContainer::ForEachResult::kStop;
+                    }
+                    return RE::BSContainer::ForEachResult::kContinue;
+                });
+            return matched;
+        }
+
+        [[nodiscard]] RuntimeWeaponFamilySignals runtimeWeaponFamilySignals(
+            const std::uint32_t weaponFormId)
+        {
+            RuntimeWeaponFamilySignals result{};
+            auto* form = RE::TESForm::GetFormByID(weaponFormId);
+            auto* weapon = form ? form->As<RE::TESObjectWEAP>() : nullptr;
+            if (!weapon) {
+                return result;
+            }
+
+            const RE::TESObjectWEAP::InstanceData* weaponData =
+                &weapon->weaponData;
+            if (auto* equipData = f4vr::getEquippedItem();
+                equipData && equipData->item.object == weapon &&
+                equipData->item.instanceData) {
+                weaponData = static_cast<RE::TESObjectWEAP::InstanceData*>(
+                    equipData->item.instanceData.get());
+            }
+            if (!weaponData) {
+                return result;
+            }
+
+            result.weaponDataAvailable = true;
+            result.automaticWeaponFlag = weaponData->flags.any(
+                RE::WEAPON_FLAGS::kAutomatic);
+            result.boltActionWeaponFlag = weaponData->flags.any(
+                RE::WEAPON_FLAGS::kBoltAction);
+            result.revolverAnimationKeyword =
+                hasRevolverAnimationKeyword(weapon) ||
+                hasRevolverAnimationKeyword(weaponData->keywords);
+            return result;
+        }
+
         struct NodeRecord
         {
             PaperReloadNodeCatalogEntryV1 value{};
@@ -210,6 +283,135 @@ namespace paper::reload_observation
             bool geometryRequested{ false };
             bool valid{ false };
         };
+
+        void classifyCatalogWeaponFamily(CatalogBuffer& building)
+        {
+            auto& classification = building.state.classification;
+            const auto runtimeSignals = runtimeWeaponFamilySignals(
+                building.state.weaponFormId);
+            weapon_classification_policy::WeaponFamilySignals signals{
+                .rockClassificationAvailable =
+                    (classification.flags & flag(
+                        PaperWeaponClassificationFlagV1::Available)) != 0,
+                .rockClassificationValid =
+                    (classification.flags & flag(
+                        PaperWeaponClassificationFlagV1::Valid)) != 0,
+                .keywordFlags = classification.keywordFlags,
+                .sizeClass = classification.sizeClass,
+                .weaponDataAvailable =
+                    runtimeSignals.weaponDataAvailable,
+                .automaticWeaponFlag =
+                    runtimeSignals.automaticWeaponFlag,
+                .boltActionWeaponFlag =
+                    runtimeSignals.boltActionWeaponFlag,
+                .revolverAnimationKeyword =
+                    runtimeSignals.revolverAnimationKeyword,
+                .partEvidenceComplete =
+                    building.state.reportedEvidenceCount > 0 &&
+                    building.evidence.size() ==
+                        building.state.reportedEvidenceCount &&
+                    (building.state.statusFlags & flag(
+                        PaperReloadCatalogStatusFlagV1::
+                            EvidenceUnavailable)) == 0 &&
+                    (building.state.statusFlags & flag(
+                        PaperReloadCatalogStatusFlagV1::
+                            EvidenceTruncated)) == 0,
+                .pluginName = fixedStringView(
+                    building.state.weapon.pluginName,
+                    std::size(building.state.weapon.pluginName)),
+                .editorId = fixedStringView(
+                    building.state.weapon.editorId,
+                    std::size(building.state.weapon.editorId)),
+                .displayName = fixedStringView(
+                    building.state.weapon.displayName,
+                    std::size(building.state.weapon.displayName)),
+            };
+
+            for (const auto& record : building.evidence) {
+                const auto partKind = static_cast<rock::provider::
+                    RockProviderWeaponPartKindV1>(record.value.partKind);
+                switch (partKind) {
+                case rock::provider::RockProviderWeaponPartKindV1::Magazine:
+                    signals.magazinePart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Cylinder:
+                    signals.cylinderPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Slide:
+                    signals.slidePart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Stock:
+                    signals.stockPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Handguard:
+                    signals.handguardPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Foregrip:
+                    signals.foregripPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Lever:
+                    signals.leverPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Pump:
+                    signals.pumpPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::BreakAction:
+                    signals.breakActionPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::LaserCell:
+                    signals.laserCellPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Shell:
+                    signals.shellPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponPartKindV1::Round:
+                    signals.looseRoundPart = true;
+                    break;
+                default:
+                    break;
+                }
+
+                const auto actionRole = static_cast<rock::provider::
+                    RockProviderWeaponActionRoleV1>(record.value.actionRole);
+                switch (actionRole) {
+                case rock::provider::RockProviderWeaponActionRoleV1::Slide:
+                    signals.slidePart = true;
+                    break;
+                case rock::provider::RockProviderWeaponActionRoleV1::Cylinder:
+                    signals.cylinderPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponActionRoleV1::Lever:
+                    signals.leverPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponActionRoleV1::Pump:
+                    signals.pumpPart = true;
+                    break;
+                case rock::provider::RockProviderWeaponActionRoleV1::BreakAction:
+                    signals.breakActionPart = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+
+            const auto result =
+                weapon_classification_policy::classifyWeaponFamily(signals);
+            classification.familyFlags = result.familyFlags;
+            classification.primaryFamily = result.primaryFamily;
+            classification.familyEvidenceFlags = result.evidenceFlags;
+            if (result.familyFlags != 0) {
+                classification.flags |= flag(
+                    PaperWeaponClassificationFlagV1::FamilyAvailable);
+                building.state.statusFlags |= flag(
+                    PaperReloadCatalogStatusFlagV1::
+                        FamilyClassificationAvailable);
+            }
+            if (result.primaryFamily !=
+                PaperWeaponPrimaryFamilyV1::Unknown) {
+                classification.flags |= flag(
+                    PaperWeaponClassificationFlagV1::PrimaryFamilyValid);
+            }
+        }
 
         struct PhaseCapture
         {
@@ -428,6 +630,10 @@ namespace paper::reload_observation
             }
             building.state.weapon = describeForm(
                 gripState.weaponFormId);
+            building.state.classification.formId =
+                gripState.weaponFormId;
+            building.state.classification.weaponGenerationKey =
+                gripState.weaponGenerationKey;
             api_transform::fromNi(
                 root->world,
                 building.state.weaponRootWorld);
@@ -752,6 +958,8 @@ namespace paper::reload_observation
                     describeForm(source.attachPointFormId);
                 building.evidence.push_back(std::move(record));
             }
+
+            classifyCatalogWeaponFamily(building);
 
             s_buildingCatalogActive = true;
             s_geometryEvidenceIndex = 0;
