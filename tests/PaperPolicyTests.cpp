@@ -767,8 +767,10 @@ int main()
     static_assert(!updateManualCycleHandMotionQualification(
         false,
         ManualCycleHandMotionSample{
-            .translationGameUnits = 1.499f,
-            .rotationDegrees = 9.999f,
+            .translationGameUnits =
+                kManualCycleHandMotionTranslationThresholdGameUnits - 0.001f,
+            .rotationDegrees =
+                kManualCycleHandMotionRotationThresholdDegrees - 0.001f,
         }));
     static_assert(updateManualCycleHandMotionQualification(
         false,
@@ -776,12 +778,16 @@ int main()
             .translationGameUnits =
                 kManualCycleHandMotionTranslationThresholdGameUnits,
         }));
+    static_assert(
+        kManualCycleHandMotionTranslationThresholdGameUnits == 0.75f);
     static_assert(updateManualCycleHandMotionQualification(
         false,
         ManualCycleHandMotionSample{
             .rotationDegrees =
                 kManualCycleHandMotionRotationThresholdDegrees,
         }));
+    static_assert(
+        kManualCycleHandMotionRotationThresholdDegrees == 5.0f);
     static_assert(updateManualCycleHandMotionQualification(
         true,
         ManualCycleHandMotionSample{}));

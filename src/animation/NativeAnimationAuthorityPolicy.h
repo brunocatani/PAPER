@@ -11,8 +11,8 @@ namespace paper::native_animation_authority_policy
     inline constexpr std::uint32_t kWeaponFixedHandsPose = kArms | kHands;
     inline constexpr std::uint32_t kManualCyclePose = kWeaponFixedHandsPose;
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
-    inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 1.5f;
-    inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 10.0f;
+    inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 0.75f;
+    inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 5.0f;
     inline constexpr float kAuthoredSupportGripTranslationToleranceGameUnits = 0.05f;
     inline constexpr float kAuthoredSupportGripRotationToleranceDegrees = 0.5f;
     inline constexpr float kAuthoredSupportGripScaleTolerance = 0.001f;
