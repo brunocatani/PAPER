@@ -1229,11 +1229,13 @@ namespace paper::native_animation_authority
             if (!finiteTransform(weaponLocal)) {
                 return false;
             }
+
+            // The native animation graph and OMOD controllers own the weapon's
+            // articulated descendants.  Restore only the flattened Weapon root;
+            // recursively rebuilding from descendant locals would erase their
+            // already-evaluated presentation transforms.
             weaponNode->local = weaponLocal;
-            f4vr::updateTransformsDown(weaponNode, true);
-            if (!finiteTransform(weaponNode->world)) {
-                return false;
-            }
+            weaponNode->world = weaponWorld;
 
             if (validTree(s_cache.sourceTree) &&
                 s_cache.sourceWeaponIndex >= 0 &&

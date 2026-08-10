@@ -142,6 +142,22 @@ Reject-Text 'src/reload_stages/ReloadStages.cpp' 'stageFrameValid\s*=\s*pistol\s
 Require-Text 'src/reload_stages/ReloadStages.cpp' 'allGroupMembersMatch\([\s\S]{0,180}aggregatePartCount[\s\S]{0,600}allGroupMembersMatch\([\s\S]{0,180}slidePartCount[\s\S]{0,600}allGroupMembersMatch\([\s\S]{0,180}slidePartCount[\s\S]{0,600}allGroupMembersMatch\([\s\S]{0,180}boltPartCount[\s\S]{0,600}allGroupMembersMatch\([\s\S]{0,180}boltPartCount[\s\S]{0,600}allGroupMembersMatch\([\s\S]{0,180}magazinePartCount[\s\S]{0,600}allGroupMembersMatch\([\s\S]{0,180}magazinePartCount' 'Rest, slide, bolt, and magazine aggregate stages must require every member of their deduplicated group to match.'
 Reject-Text 'src/reload_stages/ReloadStages.cpp' 'animationName|WeaponMagazine|ReloadStart|ReloadEnd' 'Stage identification must use exact event/activity identities and classified part transforms, never animation or node-name guessing.'
 Require-Text 'src/animation/NativeAnimationAuthority.cpp' 'afterHandlerActivityOrder\s*>\s*activityOrderBeforeEvent[\s\S]{0,160}afterHandlerActivityOrder\s*:[\s\S]{0,80}0' 'Fire correlation must not bind an animation activity that was already active before the handled weapon-fire event.'
+
+$nativeAuthoritySource = Get-Content -Raw (Join-Path $Root 'src/animation/NativeAnimationAuthority.cpp')
+$fixedRestoreStart = $nativeAuthoritySource.IndexOf('bool restoreFixedVisibleWeaponTarget(')
+$fixedRestoreEnd = $nativeAuthoritySource.IndexOf('bool tryRestoreFixedVisibleWeaponTarget(', $fixedRestoreStart)
+if ($fixedRestoreStart -lt 0 -or $fixedRestoreEnd -le $fixedRestoreStart) {
+    $failures.Add('Paper source boundary could not isolate the fixed visible-weapon restore.')
+} else {
+    $fixedRestoreSource = $nativeAuthoritySource.Substring($fixedRestoreStart, $fixedRestoreEnd - $fixedRestoreStart)
+    if ($fixedRestoreSource -match 'updateTransformsDown\s*\(') {
+        $failures.Add('Fixed visible-weapon restore must not rebuild native animated descendants from their locals.')
+    }
+    if ($fixedRestoreSource -notmatch 'weaponNode->local\s*=\s*weaponLocal\s*;[\s\S]*weaponNode->world\s*=\s*weaponWorld\s*;') {
+        $failures.Add('Fixed visible-weapon restore must update the Weapon root local and exact world without touching descendants.')
+    }
+}
+
 Require-Text 'src/exports.def' 'PAPERAPI_GetProviderApi[\s\S]*PAPERAPI_GetProviderDescriptorV1' 'PAPER must export both the legacy-compatible V1 lookup and the table-extent descriptor.'
 
 $sourceHeader = [System.IO.File]::ReadAllBytes((Join-Path $Root 'src/api/PAPERApi.h'))
