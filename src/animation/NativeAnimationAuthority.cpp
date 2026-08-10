@@ -46,14 +46,6 @@ namespace paper::native_animation_authority
         constexpr int kManualCycleVisualAuthorityPriority = 110;
         constexpr const char* kManualCycleVisualAuthorityTag =
             "PAPER_NativeManualCycle";
-        constexpr std::string_view kFortyFourAnimationKeyword = "Anims44";
-        constexpr std::string_view kRevolverAnimationKeywordToken = "Revolver";
-        constexpr std::array<std::string_view, 3>
-            kManualCycleAnimationKeywordTokens{
-                "BoltAction",
-                "Lever",
-                "Repeater",
-            };
         constexpr std::uint32_t kImplementedFlags = native_animation_authority_policy::kReloadPose;
         constexpr std::array<std::string_view, 15> kManualCyclePrimaryFingerBoneNames{
             "RArm_Finger11", "RArm_Finger12", "RArm_Finger13",
@@ -140,8 +132,6 @@ namespace paper::native_animation_authority
             std::uint64_t weaponGenerationKey{ 0 };
             bool rightValid{ false };
             bool authoredLeftActive{ false };
-            bool pumpActionPresent{ false };
-            bool leverActionPresent{ false };
         };
 
         struct LatchedManualCycleAuthoredSupportGrip
@@ -205,8 +195,6 @@ namespace paper::native_animation_authority
         std::atomic<bool> s_localReloadPartialAuthorityEnabled{ false };
         std::atomic<bool> s_localReloadLeasePartialAuthority{ false };
         std::atomic<bool> s_manualCycleHandAnimationEligible{ false };
-        std::atomic<bool> s_manualCyclePumpActionPresent{ false };
-        std::atomic<bool> s_manualCycleLeverActionPresent{ false };
         std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
         std::atomic<bool> s_captureValid{ false };
         std::atomic<bool> s_threadMismatch{ false };
@@ -322,30 +310,20 @@ namespace paper::native_animation_authority
             const bool authoredLeftStateChanged =
                 s_manualCycleRockGripBaselines.authoredLeftActive !=
                 resolved.authoredLeftActive;
-            const bool actionEvidenceChanged =
-                s_manualCycleRockGripBaselines.pumpActionPresent !=
-                    resolved.pumpActionPresent ||
-                s_manualCycleRockGripBaselines.leverActionPresent !=
-                    resolved.leverActionPresent;
             if (weaponGenerationChanged) {
                 s_sourceAimFrame.manualCycleHandRebases = {};
-            } else if (authoredLeftStateChanged || actionEvidenceChanged) {
+            } else if (authoredLeftStateChanged) {
                 s_sourceAimFrame.manualCycleHandRebases[
                     manualCycleHandIndex(
                         frik_visual_authority::Hand::Left)] = {};
             }
             s_manualCycleRockGripBaselines = resolved;
-            if ((weaponGenerationChanged || authoredLeftStateChanged ||
-                    actionEvidenceChanged) &&
-                resolved.authoredLeftActive &&
-                (resolved.pumpActionPresent ||
-                    resolved.leverActionPresent)) {
+            if ((weaponGenerationChanged || authoredLeftStateChanged) &&
+                resolved.authoredLeftActive) {
                 PAPER_LOG_INFO(
                     Animation,
-                    "Native manual-cycle authored support eligible weapon={:016X} pump={} lever={}",
-                    resolved.weaponGenerationKey,
-                    resolved.pumpActionPresent,
-                    resolved.leverActionPresent);
+                    "Native fire-cycle authored support eligible weapon={:016X}",
+                    resolved.weaponGenerationKey);
             }
         }
 
@@ -917,64 +895,6 @@ namespace paper::native_animation_authority
             return watchdogSeconds;
         }
 
-        [[nodiscard]] bool hasRevolverAnimationKeyword(
-            const RE::BGSKeywordForm* keywords)
-        {
-            return keywords &&
-                   (keywords->HasKeywordString(kFortyFourAnimationKeyword) ||
-                       keywords->ContainsKeywordString(
-                       kRevolverAnimationKeywordToken));
-        }
-
-        template <std::size_t TokenCount>
-        [[nodiscard]] bool hasKeywordEditorIdToken(
-            const RE::BGSKeywordForm* keywords,
-            const std::array<std::string_view, TokenCount>& tokens)
-        {
-            if (!keywords) {
-                return false;
-            }
-
-            bool matched = false;
-            keywords->ForEachKeyword(
-                [&](const RE::BGSKeyword* keyword) {
-                    const char* editorId =
-                        keyword ? keyword->formEditorID.c_str() : nullptr;
-                    if (editorId) {
-                        const std::string_view value{ editorId };
-                        for (const auto token : tokens) {
-                            if (native_animation_authority_policy::
-                                    containsIgnoreCase(value, token)) {
-                                matched = true;
-                                return RE::BSContainer::ForEachResult::kStop;
-                            }
-                        }
-                    }
-                    return RE::BSContainer::ForEachResult::kContinue;
-                });
-            return matched;
-        }
-
-        [[nodiscard]] bool usesRevolverFireAnimation(
-            const RE::TESObjectWEAP& weapon,
-            const RE::TESObjectWEAP::InstanceData& weaponData)
-        {
-            return hasRevolverAnimationKeyword(&weapon) ||
-                   hasRevolverAnimationKeyword(weaponData.keywords);
-        }
-
-        [[nodiscard]] bool usesManualCycleAnimationKeyword(
-            const RE::TESObjectWEAP& weapon,
-            const RE::TESObjectWEAP::InstanceData& weaponData)
-        {
-            return hasKeywordEditorIdToken(
-                       &weapon,
-                       kManualCycleAnimationKeywordTokens) ||
-                   hasKeywordEditorIdToken(
-                       weaponData.keywords,
-                       kManualCycleAnimationKeywordTokens);
-        }
-
         void cancelLocalManualCycleTestLease()
         {
             s_localManualCycleRequestedWatchdogMilliseconds.store(0, std::memory_order_release);
@@ -1059,25 +979,7 @@ namespace paper::native_animation_authority
 
             RE::TESObjectWEAP* weapon = nullptr;
             const auto* weaponData = currentPlayerWeaponInstanceData(weapon);
-            if (!weapon || !weaponData ||
-                !native_animation_authority_policy::isManualCycleFireAnimationAllowed(
-                    native_animation_authority_policy::ManualCycleWeaponEligibility{
-                        .boltAction = weaponData->flags.any(
-                            RE::WEAPON_FLAGS::kBoltAction),
-                        .revolverAnimation = usesRevolverFireAnimation(
-                            *weapon,
-                            *weaponData),
-                        .pumpAction =
-                            s_manualCyclePumpActionPresent.load(
-                                std::memory_order_acquire),
-                        .leverAction =
-                            s_manualCycleLeverActionPresent.load(
-                                std::memory_order_acquire),
-                        .manualCycleAnimationKeyword =
-                            usesManualCycleAnimationKeyword(
-                                *weapon,
-                                *weaponData),
-                    })) {
+            if (!weapon || !weaponData) {
                 return handled;
             }
 
@@ -1577,16 +1479,7 @@ namespace paper::native_animation_authority
                 native_animation_authority_policy::
                     shouldPublishWeaponFixedSupportHand(
                         s_framePartialReloadExpected,
-                        s_manualCycleRockGripBaselines.authoredLeftActive,
-                        native_animation_authority_policy::
-                            ManualCycleWeaponActionEvidence{
-                                .pumpAction =
-                                    s_manualCycleRockGripBaselines.
-                                        pumpActionPresent,
-                                .leverAction =
-                                    s_manualCycleRockGripBaselines.
-                                        leverActionPresent,
-                            })) {
+                        s_manualCycleRockGripBaselines.authoredLeftActive)) {
                 (void)publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_nativeHandPoseCapture.supportHandInWeapon,
@@ -2322,17 +2215,8 @@ namespace paper::native_animation_authority
     void setManualCycleRockGripSnapshot(
         const ManualCycleRockGripSnapshot& snapshot)
     {
-        s_manualCyclePumpActionPresent.store(
-            snapshot.pumpActionPresent,
-            std::memory_order_release);
-        s_manualCycleLeverActionPresent.store(
-            snapshot.leverActionPresent,
-            std::memory_order_release);
-
         ResolvedManualCycleRockGripBaselines resolved{};
         resolved.weaponGenerationKey = snapshot.weaponGenerationKey;
-        resolved.pumpActionPresent = snapshot.pumpActionPresent;
-        resolved.leverActionPresent = snapshot.leverActionPresent;
         if (s_manualCycleHandAnimationEligible.load(
                 std::memory_order_acquire)) {
             if (snapshot.rightValid &&
@@ -2585,8 +2469,6 @@ namespace paper::native_animation_authority
         s_localReloadPartialAuthorityEnabled.store(false, std::memory_order_release);
         s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
         s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
-        s_manualCyclePumpActionPresent.store(false, std::memory_order_release);
-        s_manualCycleLeverActionPresent.store(false, std::memory_order_release);
         clearManualCycleRockGripState();
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
         cancelLocalManualCycleTestLease();

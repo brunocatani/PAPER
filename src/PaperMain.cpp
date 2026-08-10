@@ -14,8 +14,6 @@
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
 
-#include <algorithm>
-#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -43,18 +41,6 @@ namespace
     bool s_handlingStateValid{ false };
     native_animation_authority_policy::NativeAnimationCompatibilityState
         s_animationCompatibilityState{};
-
-    struct ManualCycleWeaponActionEvidenceCache
-    {
-        native_animation_authority_policy::ManualCycleWeaponActionEvidence
-            evidence{};
-        std::uint64_t weaponGenerationKey{ 0 };
-        std::uint32_t weaponFormId{ 0 };
-        bool resolved{ false };
-        bool diagnosticPublished{ false };
-    };
-    ManualCycleWeaponActionEvidenceCache
-        s_manualCycleWeaponActionEvidenceCache{};
 
     struct CompatibilityLogSnapshot
     {
@@ -447,103 +433,6 @@ namespace
                        SupportVisualOnly;
     }
 
-    [[nodiscard]] native_animation_authority_policy::
-        ManualCycleWeaponActionEvidence refreshManualCycleWeaponActionEvidence(
-            const std::uint32_t weaponFormId,
-            const std::uint64_t weaponGenerationKey)
-    {
-        if (weaponFormId == 0 || weaponGenerationKey == 0) {
-            s_manualCycleWeaponActionEvidenceCache = {};
-            return {};
-        }
-
-        auto& cache = s_manualCycleWeaponActionEvidenceCache;
-        if (cache.weaponFormId != weaponFormId ||
-            cache.weaponGenerationKey != weaponGenerationKey) {
-            cache = {};
-            cache.weaponFormId = weaponFormId;
-            cache.weaponGenerationKey = weaponGenerationKey;
-        }
-        if (cache.resolved ||
-            !rockApiClient().reloadObservationEvidenceReady()) {
-            return cache.evidence;
-        }
-
-        const std::uint32_t reportedCount =
-            rockApiClient().weaponEvidenceDetailCount();
-        if (reportedCount == 0) {
-            return {};
-        }
-
-        std::array<rock::provider::RockProviderWeaponEvidenceDetailV1,
-            api::PAPER_MAX_RELOAD_EVIDENCE_V1>
-            details{};
-        const std::uint32_t capacity = std::min(
-            reportedCount,
-            static_cast<std::uint32_t>(details.size()));
-        const std::uint32_t copiedCount =
-            rockApiClient().copyWeaponEvidenceDetails(
-                details.data(),
-                capacity);
-        if (copiedCount == 0) {
-            return {};
-        }
-
-        native_animation_authority_policy::ManualCycleWeaponActionEvidence
-            evidence{};
-        bool generationCoherent = true;
-        for (std::uint32_t index = 0; index < copiedCount; ++index) {
-            const auto& detail = details[index];
-            if (detail.weaponGenerationKey != weaponGenerationKey) {
-                generationCoherent = false;
-                continue;
-            }
-
-            const auto actionRole = static_cast<
-                rock::provider::RockProviderWeaponActionRoleV1>(
-                detail.actionRole);
-            const auto partKind = static_cast<
-                rock::provider::RockProviderWeaponPartKindV1>(
-                detail.partKind);
-            evidence.pumpAction = evidence.pumpAction ||
-                actionRole ==
-                    rock::provider::RockProviderWeaponActionRoleV1::Pump ||
-                partKind ==
-                    rock::provider::RockProviderWeaponPartKindV1::Pump;
-            evidence.leverAction = evidence.leverAction ||
-                actionRole ==
-                    rock::provider::RockProviderWeaponActionRoleV1::Lever ||
-                partKind ==
-                    rock::provider::RockProviderWeaponPartKindV1::Lever;
-        }
-
-        const bool positiveEvidence =
-            evidence.pumpAction || evidence.leverAction;
-        const bool completeEvidence =
-            generationCoherent &&
-            reportedCount <= details.size() &&
-            copiedCount == reportedCount;
-        if (!positiveEvidence && !completeEvidence) {
-            return {};
-        }
-
-        cache.evidence = evidence;
-        cache.resolved = true;
-        if (!cache.diagnosticPublished) {
-            PAPER_LOG_INFO(
-                Animation,
-                "Manual-cycle composition evidence weapon={:08X}/{:016X} pump={} lever={} records={}/{}",
-                weaponFormId,
-                weaponGenerationKey,
-                evidence.pumpAction,
-                evidence.leverAction,
-                copiedCount,
-                reportedCount);
-            cache.diagnosticPublished = true;
-        }
-        return cache.evidence;
-    }
-
     void publishConfigState()
     {
         api::PaperConfigStateV1 state{};
@@ -610,14 +499,6 @@ namespace
         native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
         snapshot.weaponGenerationKey =
             s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
-        const auto manualCycleActionEvidence =
-            refreshManualCycleWeaponActionEvidence(
-                s_gripStateValid ? s_gripState.weaponFormId : 0,
-                snapshot.weaponGenerationKey);
-        snapshot.pumpActionPresent =
-            manualCycleActionEvidence.pumpAction;
-        snapshot.leverActionPresent =
-            manualCycleActionEvidence.leverAction;
         if (s_gripStateValid && hasGripFlag(
                 s_gripState.flags,
                 rock::provider::RockProviderEquippedWeaponGripStateFlagV1::RightHandInWeaponValid)) {
@@ -1159,7 +1040,6 @@ namespace
         s_handlingState = {};
         s_gripStateValid = false;
         s_handlingStateValid = false;
-        s_manualCycleWeaponActionEvidenceCache = {};
         s_animationCompatibilityState = {};
         s_lastCompatibilityLogSnapshot = {};
         s_hasCompatibilityLogSnapshot = false;

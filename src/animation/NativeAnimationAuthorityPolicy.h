@@ -85,7 +85,7 @@ namespace paper::native_animation_authority_policy
     };
 
     /*
-     * Bolt/lever/revolver hammer motion remains rebased onto each exact live
+     * Fire-triggered authored-hand motion remains rebased onto each exact live
      * ROCK grip. During a partial reload, however, the native support hand
      * must target its authored Weapon-relative pose directly. Rebasing that
      * hand onto an arbitrary dynamic support grab carries the grab offset all
@@ -101,20 +101,11 @@ namespace paper::native_animation_authority_policy
             WeaponFixedHandTargetMode::LiveGripDelta;
     }
 
-    struct ManualCycleWeaponActionEvidence
-    {
-        bool pumpAction{ false };
-        bool leverAction{ false };
-    };
-
     [[nodiscard]] inline constexpr bool shouldPublishWeaponFixedSupportHand(
         const bool partialReload,
-        const bool authoredSupportGripActive,
-        const ManualCycleWeaponActionEvidence& actionEvidence)
+        const bool authoredSupportGripActive)
     {
-        return partialReload ||
-               (authoredSupportGripActive &&
-                   (actionEvidence.pumpAction || actionEvidence.leverAction));
+        return partialReload || authoredSupportGripActive;
     }
 
     enum class LocalManualCycleLeaseEndReason : std::uint32_t
@@ -151,25 +142,6 @@ namespace paper::native_animation_authority_policy
                    state.watchdogSecondsRemaining > 0.0f;
         }
     };
-
-    struct ManualCycleWeaponEligibility
-    {
-        bool boltAction{ false };
-        bool revolverAnimation{ false };
-        bool pumpAction{ false };
-        bool leverAction{ false };
-        bool manualCycleAnimationKeyword{ false };
-    };
-
-    [[nodiscard]] inline constexpr bool isManualCycleFireAnimationAllowed(
-        const ManualCycleWeaponEligibility& eligibility)
-    {
-        return eligibility.boltAction ||
-               eligibility.revolverAnimation ||
-               eligibility.pumpAction ||
-               eligibility.leverAction ||
-               eligibility.manualCycleAnimationKeyword;
-    }
 
     enum class NativeAnimationCompatibilityReason : std::uint8_t
     {
@@ -572,24 +544,6 @@ namespace paper::native_animation_authority_policy
     [[nodiscard]] constexpr bool startsWithIgnoreCase(std::string_view value, std::string_view prefix)
     {
         return value.size() >= prefix.size() && equalsIgnoreCase(value.substr(0, prefix.size()), prefix);
-    }
-
-    [[nodiscard]] constexpr bool containsIgnoreCase(
-        const std::string_view value,
-        const std::string_view token)
-    {
-        if (token.empty()) {
-            return true;
-        }
-        if (token.size() > value.size()) {
-            return false;
-        }
-        for (std::size_t i = 0; i <= value.size() - token.size(); ++i) {
-            if (equalsIgnoreCase(value.substr(i, token.size()), token)) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /*

@@ -472,60 +472,15 @@ int main()
                       true,
                       WeaponFixedHandRole::Support) ==
                   WeaponFixedHandTargetMode::NativeWeaponRelative);
-    constexpr ManualCycleWeaponActionEvidence noManualAction{};
-    constexpr ManualCycleWeaponActionEvidence pumpAction{
-        .pumpAction = true,
-    };
-    constexpr ManualCycleWeaponActionEvidence leverAction{
-        .leverAction = true,
-    };
     static_assert(!shouldPublishWeaponFixedSupportHand(
         false,
-        false,
-        noManualAction));
-    static_assert(!shouldPublishWeaponFixedSupportHand(
-        false,
-        true,
-        noManualAction));
-    static_assert(!shouldPublishWeaponFixedSupportHand(
-        false,
-        false,
-        pumpAction));
+        false));
     static_assert(shouldPublishWeaponFixedSupportHand(
         false,
-        true,
-        pumpAction));
-    static_assert(shouldPublishWeaponFixedSupportHand(
-        false,
-        true,
-        leverAction));
+        true));
     static_assert(shouldPublishWeaponFixedSupportHand(
         true,
-        false,
-        noManualAction));
-
-    static_assert(!isManualCycleFireAnimationAllowed(
-        ManualCycleWeaponEligibility{}));
-    static_assert(isManualCycleFireAnimationAllowed(
-        ManualCycleWeaponEligibility{
-            .boltAction = true,
-        }));
-    static_assert(isManualCycleFireAnimationAllowed(
-        ManualCycleWeaponEligibility{
-            .revolverAnimation = true,
-        }));
-    static_assert(isManualCycleFireAnimationAllowed(
-        ManualCycleWeaponEligibility{
-            .pumpAction = true,
-        }));
-    static_assert(isManualCycleFireAnimationAllowed(
-        ManualCycleWeaponEligibility{
-            .leverAction = true,
-        }));
-    static_assert(isManualCycleFireAnimationAllowed(
-        ManualCycleWeaponEligibility{
-            .manualCycleAnimationKeyword = true,
-        }));
+        false));
 
     constexpr NativeAnimationCompatibilityObservation compatibleWeapon{
         .weaponGenerationKey = 42,
@@ -947,16 +902,6 @@ int main()
     static_assert(classifyBone("COM") == 0);
     static_assert(classifyBone("SPINE1") == 0);
     static_assert(classifyBone("WeaponMagazine") == 0);
-    static_assert(containsIgnoreCase(
-        "AnimsDakVintageRepeater",
-        "repeater"));
-    static_assert(containsIgnoreCase(
-        "DLC03_ma_LeverGun",
-        "LEVER"));
-    static_assert(!containsIgnoreCase(
-        "WeaponTypeRifle",
-        "lever"));
-
     assert(isRequested(classifyBone("LArm_Hand"), kArms));
     assert(isRequested(classifyBone("LArm_Hand"), kHands));
     assert(!isRequested(classifyBone("LArm_Finger11"), kArms));
