@@ -472,10 +472,37 @@ int main()
                       true,
                       WeaponFixedHandRole::Support) ==
                   WeaponFixedHandTargetMode::NativeWeaponRelative);
-    static_assert(!shouldPublishWeaponFixedSupportHand(false, false));
-    static_assert(shouldPublishWeaponFixedSupportHand(false, true));
-    static_assert(shouldPublishWeaponFixedSupportHand(true, false));
-    static_assert(shouldPublishWeaponFixedSupportHand(true, true));
+    constexpr ManualCycleWeaponActionEvidence noManualAction{};
+    constexpr ManualCycleWeaponActionEvidence pumpAction{
+        .pumpAction = true,
+    };
+    constexpr ManualCycleWeaponActionEvidence leverAction{
+        .leverAction = true,
+    };
+    static_assert(!shouldPublishWeaponFixedSupportHand(
+        false,
+        false,
+        noManualAction));
+    static_assert(!shouldPublishWeaponFixedSupportHand(
+        false,
+        true,
+        noManualAction));
+    static_assert(!shouldPublishWeaponFixedSupportHand(
+        false,
+        false,
+        pumpAction));
+    static_assert(shouldPublishWeaponFixedSupportHand(
+        false,
+        true,
+        pumpAction));
+    static_assert(shouldPublishWeaponFixedSupportHand(
+        false,
+        true,
+        leverAction));
+    static_assert(shouldPublishWeaponFixedSupportHand(
+        true,
+        false,
+        noManualAction));
 
     static_assert(!isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{}));
@@ -489,11 +516,11 @@ int main()
         }));
     static_assert(isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{
-            .shotgun = true,
+            .pumpAction = true,
         }));
     static_assert(isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{
-            .rifle = true,
+            .leverAction = true,
         }));
     static_assert(isManualCycleFireAnimationAllowed(
         ManualCycleWeaponEligibility{
@@ -791,44 +818,6 @@ int main()
     static_assert(updateManualCycleHandMotionQualification(
         true,
         ManualCycleHandMotionSample{}));
-
-    constexpr AuthoredSupportGripMatchSample authoredSupportGripMatch{
-        .transformDelta = {
-            .translationGameUnits =
-                kAuthoredSupportGripTranslationToleranceGameUnits,
-            .rotationDegrees =
-                kAuthoredSupportGripRotationToleranceDegrees,
-        },
-        .scaleDelta = kAuthoredSupportGripScaleTolerance,
-        .supportGripValid = true,
-        .authoredGripValid = true,
-    };
-    static_assert(isAuthoredSupportGripMatch(authoredSupportGripMatch));
-    static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.supportGripValid = false;
-        return !isAuthoredSupportGripMatch(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.authoredGripValid = false;
-        return !isAuthoredSupportGripMatch(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.transformDelta.translationGameUnits += 0.001f;
-        return !isAuthoredSupportGripMatch(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.transformDelta.rotationDegrees += 0.001f;
-        return !isAuthoredSupportGripMatch(input);
-    }());
-    static_assert([=] {
-        auto input = authoredSupportGripMatch;
-        input.scaleDelta += 0.001f;
-        return !isAuthoredSupportGripMatch(input);
-    }());
 
     constexpr AffineTransform nativeWeaponModel{ 2.0f, 40.0f };
     constexpr AffineTransform nativeHandModel{ 4.0f, 80.0f };

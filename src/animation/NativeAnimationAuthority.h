@@ -48,13 +48,14 @@ namespace paper::native_animation_authority
     {
         RE::NiTransform rightHandInWeapon{};
         RE::NiTransform leftSupportHandInWeapon{};
-        RE::NiTransform authoredLeftHandInWeapon{};
         std::uint64_t weaponGenerationKey{ 0 };
         bool rightValid{ false };
         bool leftPartGripStateValid{ false };
         bool leftPartGripActive{ false };
         bool leftSupportGripValid{ false };
-        bool authoredLeftValid{ false };
+        bool authoredLeftSupportGripActive{ false };
+        bool pumpActionPresent{ false };
+        bool leverActionPresent{ false };
     };
 
     struct CapturedTransform

@@ -13,9 +13,6 @@ namespace paper::native_animation_authority_policy
     inline constexpr std::uint32_t kReloadPose = kArms | kHands | kWeapon;
     inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 0.75f;
     inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 5.0f;
-    inline constexpr float kAuthoredSupportGripTranslationToleranceGameUnits = 0.05f;
-    inline constexpr float kAuthoredSupportGripRotationToleranceDegrees = 0.5f;
-    inline constexpr float kAuthoredSupportGripScaleTolerance = 0.001f;
 
     enum class LocalReloadLeaseEndReason : std::uint32_t
     {
@@ -104,11 +101,20 @@ namespace paper::native_animation_authority_policy
             WeaponFixedHandTargetMode::LiveGripDelta;
     }
 
+    struct ManualCycleWeaponActionEvidence
+    {
+        bool pumpAction{ false };
+        bool leverAction{ false };
+    };
+
     [[nodiscard]] inline constexpr bool shouldPublishWeaponFixedSupportHand(
         const bool partialReload,
-        const bool authoredSupportGripActive)
+        const bool authoredSupportGripActive,
+        const ManualCycleWeaponActionEvidence& actionEvidence)
     {
-        return partialReload || authoredSupportGripActive;
+        return partialReload ||
+               (authoredSupportGripActive &&
+                   (actionEvidence.pumpAction || actionEvidence.leverAction));
     }
 
     enum class LocalManualCycleLeaseEndReason : std::uint32_t
@@ -150,8 +156,8 @@ namespace paper::native_animation_authority_policy
     {
         bool boltAction{ false };
         bool revolverAnimation{ false };
-        bool shotgun{ false };
-        bool rifle{ false };
+        bool pumpAction{ false };
+        bool leverAction{ false };
         bool manualCycleAnimationKeyword{ false };
     };
 
@@ -160,8 +166,8 @@ namespace paper::native_animation_authority_policy
     {
         return eligibility.boltAction ||
                eligibility.revolverAnimation ||
-               eligibility.shotgun ||
-               eligibility.rifle ||
+               eligibility.pumpAction ||
+               eligibility.leverAction ||
                eligibility.manualCycleAnimationKeyword;
     }
 
@@ -388,26 +394,6 @@ namespace paper::native_animation_authority_policy
         float translationGameUnits{ 0.0f };
         float rotationDegrees{ 0.0f };
     };
-
-    struct AuthoredSupportGripMatchSample
-    {
-        ManualCycleHandMotionSample transformDelta{};
-        float scaleDelta{ 0.0f };
-        bool supportGripValid{ false };
-        bool authoredGripValid{ false };
-    };
-
-    [[nodiscard]] inline constexpr bool isAuthoredSupportGripMatch(
-        const AuthoredSupportGripMatchSample& sample)
-    {
-        return sample.supportGripValid &&
-               sample.authoredGripValid &&
-               sample.transformDelta.translationGameUnits <=
-                   kAuthoredSupportGripTranslationToleranceGameUnits &&
-               sample.transformDelta.rotationDegrees <=
-                   kAuthoredSupportGripRotationToleranceDegrees &&
-               sample.scaleDelta <= kAuthoredSupportGripScaleTolerance;
-    }
 
     [[nodiscard]] inline constexpr bool updateManualCycleHandMotionQualification(
         const bool alreadyQualified,
