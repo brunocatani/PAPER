@@ -7,6 +7,7 @@ namespace paper
     struct PaperConfig
     {
         bool enabled{ true };
+        bool manualReloadOnly{ true };
         bool nativeReloadAnimationAuthorityTestEnabled{ true };
         bool nativeReloadAnimationPartialAuthorityTestEnabled{ true };
         bool debugDrawNativeAnimation{ false };

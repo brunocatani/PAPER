@@ -65,6 +65,10 @@ namespace paper
         enabled = ini.GetBoolValue("Main", "bEnabled", enabled);
         logLevel = static_cast<int>(
             ini.GetLongValue("Main", "iLogLevel", logLevel));
+        manualReloadOnly = ini.GetBoolValue(
+            "Reload",
+            "bManualReloadOnly",
+            manualReloadOnly);
         nativeReloadAnimationAuthorityTestEnabled = ini.GetBoolValue(
             "NativeAnimation",
             "bNativeReloadAnimationAuthorityTestEnabled",
@@ -106,9 +110,10 @@ namespace paper
         logger::setLevel(logLevel);
         PAPER_LOG_INFO(
             Config,
-            "Loaded '{}' enabled={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f}",
+            "Loaded '{}' enabled={} manualReloadOnly={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f}",
             activePath,
             enabled,
+            manualReloadOnly,
             nativeReloadAnimationAuthorityTestEnabled,
             nativeReloadAnimationPartialAuthorityTestEnabled,
             debugDrawNativeAnimation,

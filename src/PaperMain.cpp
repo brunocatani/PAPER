@@ -11,6 +11,7 @@
 #include "debug/NativeAnimationDebugVisualization.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
+#include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
 
@@ -445,6 +446,18 @@ namespace
         state.revision = ++s_configRevision;
         provider::publishConfig(state);
         provider::dispatchEvent(api::PaperEventKindV1::ConfigReloaded);
+    }
+
+    void configureManualReloadOnlyForSession()
+    {
+        const bool requested = g_config.enabled && g_config.manualReloadOnly;
+        const bool hookReady = manual_reload_only::installHook();
+        manual_reload_only::setRuntimeEnabled(requested && hookReady);
+        if (requested && !hookReady) {
+            PAPER_LOG_ERROR(
+                Reload,
+                "bManualReloadOnly was requested, but native validation failed; vanilla automatic reload remains active");
+        }
     }
 
     [[nodiscard]] native_animation_authority_policy::
@@ -1031,6 +1044,7 @@ namespace
 
     void resetSession()
     {
+        manual_reload_only::resetSession();
         tactical_reload_bridge::resetSession();
         debug_visualization::clear();
         rockApiClient().clearNativeAnimationAuthority();
@@ -1061,6 +1075,7 @@ namespace
         if (message->type == F4SE::MessagingInterface::kGameLoaded) {
             (void)g_config.reload();
             publishConfigState();
+            configureManualReloadOnlyForSession();
             tactical_reload_bridge::initializeSession();
             s_gameLoaded.store(true, std::memory_order_release);
             (void)connectRock();
@@ -1081,6 +1096,7 @@ namespace
             resetSession();
             (void)g_config.reload();
             publishConfigState();
+            configureManualReloadOnlyForSession();
             tactical_reload_bridge::initializeSession();
             s_gameLoaded.store(true, std::memory_order_release);
             (void)connectRock();
@@ -1132,6 +1148,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(
     const F4SE::LoadInterface* f4se)
 {
     F4SE::Init(f4se, false);
+    F4SE::AllocTrampoline(64);
     paper::provider::initialize();
 
     s_messaging = F4SE::GetMessagingInterface();
