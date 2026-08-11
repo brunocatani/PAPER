@@ -20,6 +20,7 @@ namespace paper::provider
         const api::PaperNativeHandSolutionV1& leftHand);
     void clearNativePosePipeline();
     void dispatchEvent(api::PaperEventKindV1 kind);
+    void dispatchEvent(const api::PaperEventV1& eventData);
 
     [[nodiscard]] bool hasConsumerCapability(
         api::PaperConsumerCapabilityV1 capability);

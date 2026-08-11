@@ -4,12 +4,14 @@
 #include "animation_evidence/AnimationEvidencePolicy.h"
 #include "reload_observation/ReloadObservationPolicy.h"
 #include "reload_stages/ReloadStagePolicy.h"
+#include "weapon_motion/WeaponMotionPolicy.h"
 
 #include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <numbers>
 #include <span>
 
 namespace
@@ -33,14 +35,14 @@ int main()
     using namespace paper::reload_observation_policy;
 
     static_assert(PAPER_API_VERSION == 1);
-    static_assert(PAPER_MOD_VERSION == 400);
+    static_assert(PAPER_MOD_VERSION == 500);
     static_assert(PAPER_MAX_RELOAD_EVIDENCE_V1 == 100);
     static_assert(PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 == 25'200);
     static_assert(
         offsetof(PaperProviderApiV1, getReloadObservationLimitsV1) ==
         PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
-    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 280);
+    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 376);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES ==
         176);
@@ -58,6 +60,18 @@ int main()
         PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES);
     static_assert(
         PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES ==
+        280);
+    static_assert(
+        offsetof(PaperProviderApiV1, getWeaponMotionLimitsV1) ==
+        PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES);
+    static_assert(
+        PAPER_PROVIDER_API_V1_WEAPON_MOTION_CATALOG_TABLE_BYTES ==
+        336);
+    static_assert(
+        PAPER_PROVIDER_API_V1_WEAPON_MANIPULATION_TABLE_BYTES ==
+        368);
+    static_assert(
+        PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES ==
         sizeof(PaperProviderApiV1));
     static_assert(
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
@@ -83,6 +97,19 @@ int main()
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
             static_cast<std::uint32_t>(
                 PaperProviderFeatureBitV1::NativePosePipeline)) != 0);
+    static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::WeaponMotionCatalog)) != 0);
+    static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::WeaponMotionDiagnostics)) != 0);
+    static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::
+                    WeaponManipulationTelemetry)) != 0);
     static_assert(
         (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
             static_cast<std::uint32_t>(
@@ -111,6 +138,18 @@ int main()
         (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
             static_cast<std::uint32_t>(
                 PaperConsumerCapabilityV1::NativePosePipeline)) != 0);
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::WeaponMotionCatalog) ==
+        (1u << 11));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::WeaponMotionDiagnostics) ==
+        (1u << 12));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::WeaponManipulationTelemetry) ==
+        (1u << 13));
     static_assert(sizeof(PaperNativePoseFrameStateV1) == 264);
     static_assert(sizeof(PaperNativeHandSolutionV1) == 2000);
     static_assert(
@@ -158,6 +197,17 @@ int main()
     static_assert(
         offsetof(PaperReloadStageStateV1, boltBackCount) == 164);
     static_assert(sizeof(PaperReloadQsTransformV1) == 40);
+    static_assert(PAPER_MAX_WEAPON_MOTION_EVENTS_V1 == 144);
+    static_assert(sizeof(PaperWeaponMotionLimitsV1) == 72);
+    static_assert(sizeof(PaperWeaponMotionCatalogStateV1) == 168);
+    static_assert(sizeof(PaperWeaponMotionPartV1) == 524);
+    static_assert(sizeof(PaperWeaponMotionStageV1) == 208);
+    static_assert(sizeof(PaperWeaponMotionFollowerV1) == 128);
+    static_assert(sizeof(PaperWeaponMotionLearningStateV1) == 128);
+    static_assert(sizeof(PaperWeaponMotionRecorderV1) == 168);
+    static_assert(sizeof(PaperWeaponManipulationFrameStateV1) == 112);
+    static_assert(sizeof(PaperWeaponManipulationHandStateV1) == 208);
+    static_assert(sizeof(PaperWeaponMotionStoreStateV1) == 136);
     static_assert(
         PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 ==
         128ull * 1024ull * 1024ull);
@@ -193,6 +243,16 @@ int main()
         rotationResidual.valid &&
             std::abs(rotationResidual.rotationDegrees - 90.0f) < 0.001f,
         "pose residual must preserve target-to-presented rotation angle");
+    const auto identityQs =
+        paper::weapon_motion_policy::fromTransform(identity);
+    const auto quarterTurnQs =
+        paper::weapon_motion_policy::fromTransform(quarterTurn);
+    expect(
+        std::abs(
+            paper::weapon_motion_policy::rotationDistanceRadians(
+                identityQs, quarterTurnQs) -
+            std::numbers::pi_v<float> * 0.5f) < 0.001f,
+        "motion learning must preserve graph-output matrix rotation");
 
     expect(
         clipSampleCount(0.01f) == 24,
@@ -224,6 +284,52 @@ int main()
     expect(
         boneNameMatchesSceneNode("weaponmagazine", "WeaponMagazine:2"),
         "rig and scene-node matching must remain case-insensitive");
+
+    expect(
+        paper::weapon_motion_policy::namesMatch(
+            "WeaponMagazine", "weaponmagazine:12"),
+        "motion paths must map exact tracks to instanced scene names");
+
+    std::array<
+        PaperReloadQsTransformV1,
+        paper::weapon_motion_policy::kMaximumStrokeSamples> motionSamples{};
+    for (std::uint32_t index = 0; index < 5; ++index) {
+        motionSamples[index].translate[0] = static_cast<float>(index);
+    }
+    std::array<
+        PaperReloadQsTransformV1,
+        PAPER_WEAPON_MOTION_KEY_COUNT_V1> motionKeys{};
+    const auto motionLength =
+        paper::weapon_motion_policy::resamplePath(
+            motionSamples, 0, 4, motionKeys);
+    expect(
+        std::abs(motionLength - 4.0f) < 0.0001f &&
+            std::abs(motionKeys.front().translate[0]) < 0.0001f &&
+            std::abs(motionKeys.back().translate[0] - 4.0f) < 0.0001f,
+        "learned motion paths must retain endpoints and arc length");
+
+    PaperReloadQsTransformV1 projectedInput{};
+    projectedInput.translate[0] = 2.0f;
+    const auto projection =
+        paper::weapon_motion_policy::projectOntoPath(
+            projectedInput, motionKeys);
+    expect(
+        projection.valid &&
+            std::abs(projection.normalizedProgress - 0.5f) < 0.01f &&
+            projection.residual < 0.001f,
+        "manipulation telemetry must project live parts onto motion paths");
+
+    PaperReloadQsTransformV1 authoredRest{};
+    authoredRest.translate[0] = 10.0f;
+    PaperReloadQsTransformV1 authoredMoved = authoredRest;
+    authoredMoved.translate[0] = 13.0f;
+    PaperReloadQsTransformV1 liveRest{};
+    liveRest.translate[0] = 20.0f;
+    const auto rebased = paper::weapon_motion_policy::rebase(
+        authoredRest, liveRest, authoredMoved);
+    expect(
+        std::abs(rebased.translate[0] - 23.0f) < 0.0001f,
+        "authored motion must rebase onto the live observation baseline");
 
     const std::array<std::int16_t, 4> parents{ -1, 0, 1, 2 };
     std::array<std::int16_t, 4> chain{};

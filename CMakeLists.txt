@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.2)
 
 set(NAME "PAPER")
 set(FRIENDLY_NAME "PAPER")
-set(VERSION 0.4.0)
+set(VERSION 0.5.0)
 
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")

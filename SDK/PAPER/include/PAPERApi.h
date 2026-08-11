@@ -23,7 +23,7 @@
 namespace paper::api
 {
     inline constexpr std::uint32_t PAPER_API_VERSION = 1;
-    inline constexpr std::uint32_t PAPER_MOD_VERSION = 400;
+    inline constexpr std::uint32_t PAPER_MOD_VERSION = 500;
     inline constexpr std::uint32_t PAPER_MAX_CONSUMERS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CAPTURED_TRANSFORMS_V1 = 192;
@@ -62,6 +62,15 @@ namespace paper::api
     inline constexpr std::uint32_t PAPER_RELOAD_RESOLVE_POINT_CAPACITY_V1 = 32;
     inline constexpr std::uint64_t PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 =
         128ull * 1024ull * 1024ull;
+    inline constexpr std::uint32_t PAPER_MAX_WEAPON_MOTION_PARTS_V1 = 256;
+    inline constexpr std::uint32_t PAPER_MAX_WEAPON_MOTION_STAGES_V1 =
+        PAPER_MAX_WEAPON_MOTION_PARTS_V1 * 3;
+    inline constexpr std::uint32_t PAPER_WEAPON_MOTION_KEY_COUNT_V1 = 24;
+    inline constexpr std::uint32_t PAPER_MAX_WEAPON_MOTION_FOLLOWERS_V1 = 10;
+    inline constexpr std::uint32_t PAPER_MAX_WEAPON_MOTION_RECORDERS_V1 = 128;
+    inline constexpr std::uint32_t PAPER_MAX_WEAPON_MOTION_EVENTS_V1 =
+        PAPER_MAX_WEAPON_MOTION_RECORDERS_V1 + 16;
+    inline constexpr std::uint32_t PAPER_WEAPON_MOTION_NAME_CAPACITY_V1 = 64;
 
     enum class PaperResultV1 : std::uint32_t
     {
@@ -98,7 +107,10 @@ namespace paper::api
         ReloadAnimationTelemetry = 1u << 8,
         ReloadStageIdentification = 1u << 9,
         NativePosePipeline = 1u << 10,
-        All = (1u << 11) - 1u,
+        WeaponMotionCatalog = 1u << 11,
+        WeaponMotionDiagnostics = 1u << 12,
+        WeaponManipulationTelemetry = 1u << 13,
+        All = (1u << 14) - 1u,
     };
 
     enum class PaperProviderFeatureBitV1 : std::uint32_t
@@ -110,6 +122,9 @@ namespace paper::api
         ReloadAnimationTelemetry = 1u << 3,
         ReloadStageIdentification = 1u << 4,
         NativePosePipeline = 1u << 5,
+        WeaponMotionCatalog = 1u << 6,
+        WeaponMotionDiagnostics = 1u << 7,
+        WeaponManipulationTelemetry = 1u << 8,
     };
 
     enum class PaperReloadAnimationAcquisitionV1 : std::uint32_t
@@ -626,11 +641,174 @@ namespace paper::api
         PresentedPoseCoherent = 1u << 14,
     };
 
+    enum class PaperWeaponMotionSourceV1 : std::uint32_t
+    {
+        None = 0,
+        ExactAuthored = 1,
+        Learned = 2,
+    };
+
+    enum class PaperWeaponMotionStageKindV1 : std::uint32_t
+    {
+        Primary = 0,
+        Return = 1,
+    };
+
+    enum class PaperWeaponMotionRecorderPhaseV1 : std::uint32_t
+    {
+        WaitingForRest = 0,
+        Armed = 1,
+        Recording = 2,
+    };
+
+    enum class PaperWeaponMotionServingDecisionV1 : std::uint32_t
+    {
+        None = 0,
+        RejectedBelowNoise = 1,
+        RejectedInvalidPath = 2,
+        RejectedSmallerPrimary = 3,
+        RejectedSmallerReturn = 4,
+        NoServingSlot = 5,
+        StoredPrimary = 6,
+        ReplacedPrimary = 7,
+        StoredReturn = 8,
+        ReplacedReturn = 9,
+    };
+
+    enum class PaperWeaponMotionStrokeTerminationV1 : std::uint32_t
+    {
+        None = 0,
+        Settled = 1,
+        ObservationLost = 2,
+        SampleCapacity = 3,
+        WeaponChanged = 4,
+        DemandEnded = 5,
+        RuntimeReset = 6,
+    };
+
+    enum class PaperWeaponManipulationEndReasonV1 : std::uint32_t
+    {
+        None = 0,
+        GripEnded = 1,
+        WeaponChanged = 2,
+        PathUnavailable = 3,
+        ProviderReset = 4,
+        DemandEnded = 5,
+    };
+
+    enum class PaperWeaponMotionCatalogFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        BuildingAuthoredPaths = 1u << 1,
+        ExactEvidenceAvailable = 1u << 2,
+        LearningActive = 1u << 3,
+        LearnedPathsAvailable = 1u << 4,
+        AuthoredPathsAvailable = 1u << 5,
+        PartsTruncated = 1u << 6,
+        StagesTruncated = 1u << 7,
+        FollowersTruncated = 1u << 8,
+    };
+
+    enum class PaperWeaponMotionPartFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        BaselineValid = 1u << 1,
+        CurrentValid = 1u << 2,
+        SourceNodeSelected = 1u << 3,
+        InteractionNodeFallback = 1u << 4,
+        ExactAuthoredAvailable = 1u << 5,
+        LearnedPrimaryAvailable = 1u << 6,
+        LearnedReturnAvailable = 1u << 7,
+        RecorderActive = 1u << 8,
+    };
+
+    enum class PaperWeaponMotionStageFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        ExactAuthored = 1u << 1,
+        Learned = 1u << 2,
+        ReturnStage = 1u << 3,
+        TravelExtremeValid = 1u << 4,
+        FollowersTruncated = 1u << 5,
+        LiveRebased = 1u << 6,
+    };
+
+    enum class PaperWeaponMotionFollowerFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        Rigid = 1u << 1,
+        CoTimed = 1u << 2,
+        EvidenceMapped = 1u << 3,
+        LiveRebased = 1u << 4,
+    };
+
+    enum class PaperWeaponMotionLearningFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Active = 1u << 0,
+        NativeGraphObservations = 1u << 1,
+        RecorderCapacityReached = 1u << 2,
+        SampleCapacityReached = 1u << 3,
+    };
+
+    enum class PaperWeaponMotionRecorderFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        ObservationValid = 1u << 1,
+        CandidateValid = 1u << 2,
+        ReturnCandidate = 1u << 3,
+    };
+
+    enum class PaperWeaponManipulationFrameFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        RockGripStateAvailable = 1u << 1,
+        AnyGripActive = 1u << 2,
+        AnyMappedManipulation = 1u << 3,
+    };
+
+    enum class PaperWeaponManipulationHandFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        GripActive = 1u << 1,
+        AttachOnly = 1u << 2,
+        PartMapped = 1u << 3,
+        PathAvailable = 1u << 4,
+        ProgressValid = 1u << 5,
+        AtRest = 1u << 6,
+        AtMaximumTravel = 1u << 7,
+        ReturnStage = 1u << 8,
+    };
+
+    enum class PaperWeaponMotionStoreFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Active = 1u << 0,
+        InMemoryCatalog = 1u << 1,
+        PersistentStorageAvailable = 1u << 2,
+        RawObservationEvidenceAvailable = 1u << 3,
+        RawAnimationEvidenceAvailable = 1u << 4,
+    };
+
     enum class PaperEventKindV1 : std::uint32_t
     {
         FrameComplete = 1,
         RuntimeReset = 2,
         ConfigReloaded = 3,
+        WeaponMotionCatalogChanged = 4,
+        WeaponManipulationStarted = 5,
+        WeaponManipulationStageChanged = 6,
+        WeaponManipulationReachedMaximum = 7,
+        WeaponManipulationReachedRest = 8,
+        WeaponManipulationEnded = 9,
+        WeaponMotionCandidateCompleted = 10,
     };
 
     struct PaperTransformV1
@@ -810,7 +988,14 @@ namespace paper::api
         PaperEventKindV1 kind{ PaperEventKindV1::FrameComplete };
         std::uint32_t reserved0{ 0 };
         PaperRuntimeStateV1 runtime{};
-        std::uint32_t reserved[8]{};
+        // Motion events identify a published snapshot and part. Other event
+        // kinds leave these additive fields zeroed.
+        std::uint64_t relatedSnapshotSequence{ 0 };
+        std::uint64_t relatedCatalogSequence{ 0 };
+        std::uint32_t relatedPartId{ 0xFFFF'FFFFu };
+        PaperHandV1 relatedHand{ PaperHandV1::Right };
+        std::uint32_t relatedMotionFlags{ 0 };
+        float relatedNormalizedProgress{ 0.0f };
     };
 
     /*
@@ -1012,6 +1197,249 @@ namespace paper::api
         float translate[3]{};
         float rotate[4]{ 0.0f, 0.0f, 0.0f, 1.0f };
         float scale[3]{ 1.0f, 1.0f, 1.0f };
+    };
+
+    /*
+     * Weapon-motion records are PAPER-owned, demand-gated derived data. Exact
+     * stages come from PAPER's immutable weapon-local animation evidence;
+     * learned stages come only from NativeGraphOutput observations. No record
+     * grants scene, animation, or drive authority.
+     */
+    struct PaperWeaponMotionLimitsV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionLimitsV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t featureBits{ 0 };
+        std::uint32_t maxParts{ 0 };
+        std::uint32_t maxStages{ 0 };
+        std::uint32_t keysPerStage{ 0 };
+        std::uint32_t maxFollowersPerStage{ 0 };
+        std::uint32_t maxRecorders{ 0 };
+        std::uint32_t nameCapacity{ 0 };
+        std::uint32_t maxPendingEvents{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct PaperWeaponMotionCatalogStateV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionCatalogStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t observationCatalogSequence{ 0 };
+        std::uint64_t observationSnapshotSequence{ 0 };
+        std::uint64_t animationCatalogSequence{ 0 };
+        std::uint64_t animationCatalogRevision{ 0 };
+        std::uint64_t learningRevision{ 0 };
+        std::uint64_t authoredRevision{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
+        std::uint32_t partCount{ 0 };
+        std::uint32_t stageCount{ 0 };
+        std::uint32_t followerCount{ 0 };
+        std::uint32_t activeRecorderCount{ 0 };
+        std::uint32_t processedExactClipCount{ 0 };
+        std::uint32_t pendingExactClipCount{ 0 };
+        std::uint32_t omittedPartCount{ 0 };
+        std::uint32_t omittedStageCount{ 0 };
+        std::uint32_t omittedFollowerCount{ 0 };
+        std::uint32_t reserved[7]{};
+    };
+
+    struct PaperWeaponMotionPartV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionPartV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t partId{ 0xFFFF'FFFFu };
+        std::uint32_t evidenceId{ 0xFFFF'FFFFu };
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::int32_t sourceNodeId{ -1 };
+        std::int32_t interactionNodeId{ -1 };
+        std::int32_t selectedNodeId{ -1 };
+        std::uint32_t flags{ 0 };
+        std::uint32_t partKind{ 0 };
+        std::uint32_t reloadRole{ 0 };
+        std::uint32_t supportRole{ 0 };
+        std::uint32_t socketRole{ 0 };
+        std::uint32_t actionRole{ 0 };
+        std::uint32_t fallbackGripPose{ 0 };
+        std::uint32_t classificationSource{ 0 };
+        std::uint32_t stageCount{ 0 };
+        char sourceName[PAPER_WEAPON_MOTION_NAME_CAPACITY_V1]{};
+        PaperFormIdentityV1 omod{};
+        PaperTransformV1 baselineWeaponLocal{};
+        PaperTransformV1 currentWeaponLocal{};
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperWeaponMotionStageV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionStageV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t stageId{ 0xFFFF'FFFFu };
+        std::uint32_t partId{ 0xFFFF'FFFFu };
+        PaperWeaponMotionSourceV1 source{ PaperWeaponMotionSourceV1::None };
+        PaperWeaponMotionStageKindV1 kind{
+            PaperWeaponMotionStageKindV1::Primary
+        };
+        std::uint32_t flags{ 0 };
+        std::uint32_t sourceClipId{ 0xFFFF'FFFFu };
+        // Source-sample index at the primary/return travel extreme.
+        std::uint32_t sourceBoundary{ 0 };
+        std::uint32_t keyCount{ 0 };
+        std::uint32_t followerCount{ 0 };
+        // Arc distance is the PAPER pose metric: translation in game units
+        // plus three game-unit equivalents per radian of rotation.
+        float totalArcLengthGameUnits{ 0.0f };
+        float maximumTravelArcPosition{ 0.0f };
+        float restArcPosition{ 0.0f };
+        float peakDeltaGameUnits{ 0.0f };
+        float restDeltaGameUnits{ 0.0f };
+        PaperReloadQsTransformV1 start{};
+        PaperReloadQsTransformV1 end{};
+        PaperReloadQsTransformV1 restReference{};
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperWeaponMotionFollowerV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionFollowerV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t stageId{ 0xFFFF'FFFFu };
+        std::uint32_t followerIndex{ 0 };
+        std::uint32_t partId{ 0xFFFF'FFFFu };
+        std::uint32_t evidenceId{ 0xFFFF'FFFFu };
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::uint32_t flags{ 0 };
+        float restScale{ 1.0f };
+        std::uint32_t keyCount{ 0 };
+        char sourceName[PAPER_WEAPON_MOTION_NAME_CAPACITY_V1]{};
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperWeaponMotionLearningStateV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionLearningStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t learningRevision{ 0 };
+        std::uint32_t recorderCount{ 0 };
+        std::uint32_t activeRecorderCount{ 0 };
+        std::uint64_t observationCount{ 0 };
+        std::uint64_t completedStrokeCount{ 0 };
+        std::uint64_t acceptedStrokeCount{ 0 };
+        std::uint64_t rejectedStrokeCount{ 0 };
+        std::uint64_t interruptedStrokeCount{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct PaperWeaponMotionRecorderV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionRecorderV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t recorderId{ 0xFFFF'FFFFu };
+        std::uint32_t partId{ 0xFFFF'FFFFu };
+        std::uint32_t flags{ 0 };
+        PaperWeaponMotionRecorderPhaseV1 phase{
+            PaperWeaponMotionRecorderPhaseV1::WaitingForRest
+        };
+        std::uint32_t sampleCount{ 0 };
+        std::uint32_t stableFrameCount{ 0 };
+        std::uint64_t startFrameIndex{ 0 };
+        std::uint64_t lastObservedFrameIndex{ 0 };
+        float peakExcursionGameUnits{ 0.0f };
+        float recordedArcLengthGameUnits{ 0.0f };
+        PaperWeaponMotionStrokeTerminationV1 lastTermination{
+            PaperWeaponMotionStrokeTerminationV1::None
+        };
+        PaperWeaponMotionServingDecisionV1 lastDecision{
+            PaperWeaponMotionServingDecisionV1::None
+        };
+        PaperReloadQsTransformV1 restPose{};
+        PaperReloadQsTransformV1 currentPose{};
+        std::uint32_t reserved[6]{};
+    };
+
+    struct PaperWeaponManipulationFrameStateV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponManipulationFrameStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t eventSequence{ 0 };
+        std::uint32_t activeHandCount{ 0 };
+        std::uint32_t mappedHandCount{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    struct PaperWeaponManipulationHandStateV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponManipulationHandStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        PaperHandV1 hand{ PaperHandV1::Right };
+        std::uint32_t flags{ 0 };
+        PaperWeaponMotionSourceV1 source{ PaperWeaponMotionSourceV1::None };
+        PaperWeaponMotionStageKindV1 stageKind{
+            PaperWeaponMotionStageKindV1::Primary
+        };
+        PaperWeaponManipulationEndReasonV1 lastEndReason{
+            PaperWeaponManipulationEndReasonV1::None
+        };
+        std::uint32_t rockGripKind{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t gripSequence{ 0 };
+        std::uint32_t partId{ 0xFFFF'FFFFu };
+        std::uint32_t evidenceId{ 0xFFFF'FFFFu };
+        std::uint32_t bodyId{ 0x7FFF'FFFFu };
+        std::uint32_t stageId{ 0xFFFF'FFFFu };
+        float arcPositionGameUnits{ 0.0f };
+        float normalizedProgress{ 0.0f };
+        float projectionResidualGameUnits{ 0.0f };
+        float maximumTravelArcPosition{ 0.0f };
+        float restArcPosition{ 0.0f };
+        PaperReloadQsTransformV1 currentPartWeaponLocal{};
+        PaperReloadQsTransformV1 projectedPartWeaponLocal{};
+        std::uint32_t reserved[8]{};
+    };
+
+    struct PaperWeaponMotionStoreStateV1
+    {
+        std::uint32_t size{ sizeof(PaperWeaponMotionStoreStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t catalogSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t learningRevision{ 0 };
+        std::uint64_t authoredRevision{ 0 };
+        std::uint64_t rawObservationSnapshotSequence{ 0 };
+        std::uint64_t rawAnimationCatalogSequence{ 0 };
+        std::uint64_t rawAnimationCatalogRevision{ 0 };
+        std::uint32_t inMemoryPartCount{ 0 };
+        std::uint32_t inMemoryStageCount{ 0 };
+        std::uint32_t persistentRecordCount{ 0 };
+        std::uint32_t pendingWriteCount{ 0 };
+        std::uint64_t droppedCaptureCount{ 0 };
+        std::uint32_t reserved[8]{};
     };
 
     struct PaperReloadAnimationLimitsV1
@@ -1443,6 +1871,71 @@ namespace paper::api
             std::uint64_t ownerToken,
             PaperHandV1 hand,
             PaperNativeHandSolutionV1* outSolution);
+        PaperResultV1(PAPER_CALL* getWeaponMotionLimitsV1)(
+            std::uint64_t ownerToken,
+            PaperWeaponMotionLimitsV1* outLimits);
+        PaperResultV1(PAPER_CALL* getWeaponMotionCatalogStateV1)(
+            std::uint64_t ownerToken,
+            PaperWeaponMotionCatalogStateV1* outState);
+        PaperResultV1(PAPER_CALL* copyWeaponMotionPartsV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t firstPart,
+            PaperWeaponMotionPartV1* outParts,
+            std::uint32_t maxParts,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyWeaponMotionStagesV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t firstStage,
+            PaperWeaponMotionStageV1* outStages,
+            std::uint32_t maxStages,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyWeaponMotionStageKeysV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t stageId,
+            std::uint32_t firstKey,
+            PaperReloadQsTransformV1* outKeys,
+            std::uint32_t maxKeys,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyWeaponMotionFollowersV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t stageId,
+            std::uint32_t firstFollower,
+            PaperWeaponMotionFollowerV1* outFollowers,
+            std::uint32_t maxFollowers,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* copyWeaponMotionFollowerKeysV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t catalogSequence,
+            std::uint32_t stageId,
+            std::uint32_t followerIndex,
+            std::uint32_t firstKey,
+            PaperReloadQsTransformV1* outKeys,
+            std::uint32_t maxKeys,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* getWeaponMotionLearningStateV1)(
+            std::uint64_t ownerToken,
+            PaperWeaponMotionLearningStateV1* outState);
+        PaperResultV1(PAPER_CALL* copyWeaponMotionRecordersV1)(
+            std::uint64_t ownerToken,
+            std::uint64_t snapshotSequence,
+            std::uint32_t firstRecorder,
+            PaperWeaponMotionRecorderV1* outRecorders,
+            std::uint32_t maxRecorders,
+            std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* getWeaponManipulationFrameStateV1)(
+            std::uint64_t ownerToken,
+            PaperWeaponManipulationFrameStateV1* outState);
+        PaperResultV1(PAPER_CALL* getWeaponManipulationHandStateV1)(
+            std::uint64_t ownerToken,
+            PaperHandV1 hand,
+            PaperWeaponManipulationHandStateV1* outState);
+        PaperResultV1(PAPER_CALL* getWeaponMotionStoreStateV1)(
+            std::uint64_t ownerToken,
+            PaperWeaponMotionStoreStateV1* outState);
     };
 
     inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES =
@@ -1476,7 +1969,36 @@ namespace paper::api
                     PaperProviderApiV1::copyReloadStagePartsV1)));
     inline constexpr std::uint32_t
         PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES =
-            static_cast<std::uint32_t>(sizeof(PaperProviderApiV1));
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    getNativeHandSolutionV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::getNativeHandSolutionV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_WEAPON_MOTION_CATALOG_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    copyWeaponMotionFollowerKeysV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::copyWeaponMotionFollowerKeysV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    getWeaponMotionStoreStateV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::getWeaponMotionStoreStateV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_WEAPON_MANIPULATION_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    getWeaponManipulationHandStateV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::getWeaponManipulationHandStateV1)));
     inline constexpr std::uint32_t PAPER_PROVIDER_FEATURE_BITS_V1 =
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadObservations) |
@@ -1489,7 +2011,13 @@ namespace paper::api
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadStageIdentification) |
         static_cast<std::uint32_t>(
-            PaperProviderFeatureBitV1::NativePosePipeline);
+            PaperProviderFeatureBitV1::NativePosePipeline) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::WeaponMotionCatalog) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::WeaponMotionDiagnostics) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::WeaponManipulationTelemetry);
 
     struct PaperProviderDescriptorV1
     {
@@ -1562,6 +2090,36 @@ namespace paper::api
     static_assert(std::is_standard_layout_v<PaperReloadStagePartV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadStagePartV1>);
     static_assert(sizeof(PaperReloadQsTransformV1) == 40);
+    static_assert(sizeof(PaperWeaponMotionLimitsV1) == 72);
+    static_assert(sizeof(PaperWeaponMotionCatalogStateV1) == 168);
+    static_assert(sizeof(PaperWeaponMotionPartV1) == 524);
+    static_assert(sizeof(PaperWeaponMotionStageV1) == 208);
+    static_assert(sizeof(PaperWeaponMotionFollowerV1) == 128);
+    static_assert(sizeof(PaperWeaponMotionLearningStateV1) == 128);
+    static_assert(sizeof(PaperWeaponMotionRecorderV1) == 168);
+    static_assert(sizeof(PaperWeaponManipulationFrameStateV1) == 112);
+    static_assert(sizeof(PaperWeaponManipulationHandStateV1) == 208);
+    static_assert(sizeof(PaperWeaponMotionStoreStateV1) == 136);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionLimitsV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionLimitsV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionCatalogStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionCatalogStateV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionPartV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionPartV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionStageV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionStageV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionFollowerV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionFollowerV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionLearningStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionLearningStateV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionRecorderV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionRecorderV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponManipulationFrameStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponManipulationFrameStateV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponManipulationHandStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponManipulationHandStateV1>);
+    static_assert(std::is_standard_layout_v<PaperWeaponMotionStoreStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperWeaponMotionStoreStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadAnimationCatalogStateV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadAnimationCatalogStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadAnimationClipV1>);
@@ -1580,7 +2138,7 @@ namespace paper::api
     static_assert(std::is_trivially_copyable_v<PaperReloadFrameStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadNodeObservationV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadNodeObservationV1>);
-    static_assert(sizeof(PaperProviderApiV1) == 280);
+    static_assert(sizeof(PaperProviderApiV1) == 376);
     static_assert(alignof(PaperProviderApiV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderApiV1>);
     static_assert(std::is_trivially_copyable_v<PaperProviderApiV1>);
@@ -1589,6 +2147,9 @@ namespace paper::api
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES == 248);
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES == 264);
     static_assert(PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES == 280);
+    static_assert(PAPER_PROVIDER_API_V1_WEAPON_MOTION_CATALOG_TABLE_BYTES == 336);
+    static_assert(PAPER_PROVIDER_API_V1_WEAPON_MANIPULATION_TABLE_BYTES == 368);
+    static_assert(PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES == 376);
     static_assert(sizeof(PaperProviderDescriptorV1) == 48);
     static_assert(alignof(PaperProviderDescriptorV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderDescriptorV1>);
@@ -1730,6 +2291,49 @@ namespace paper::api
                        PaperProviderFeatureBitV1::NativePosePipeline)) != 0 &&
                PaperApi::inst->getNativePoseFrameStateV1 &&
                PaperApi::inst->getNativeHandSolutionV1;
+    }
+
+    [[nodiscard]] inline bool supportsWeaponMotionCatalogV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_WEAPON_MOTION_CATALOG_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::WeaponMotionCatalog)) != 0 &&
+               PaperApi::inst->getWeaponMotionLimitsV1 &&
+               PaperApi::inst->getWeaponMotionCatalogStateV1 &&
+               PaperApi::inst->copyWeaponMotionPartsV1 &&
+               PaperApi::inst->copyWeaponMotionStagesV1 &&
+               PaperApi::inst->copyWeaponMotionStageKeysV1 &&
+               PaperApi::inst->copyWeaponMotionFollowersV1 &&
+               PaperApi::inst->copyWeaponMotionFollowerKeysV1;
+    }
+
+    [[nodiscard]] inline bool supportsWeaponMotionDiagnosticsV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::WeaponMotionDiagnostics)) != 0 &&
+               PaperApi::inst->getWeaponMotionLearningStateV1 &&
+               PaperApi::inst->copyWeaponMotionRecordersV1 &&
+               PaperApi::inst->getWeaponMotionStoreStateV1;
+    }
+
+    [[nodiscard]] inline bool supportsWeaponManipulationTelemetryV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_WEAPON_MANIPULATION_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::
+                           WeaponManipulationTelemetry)) != 0 &&
+               PaperApi::inst->getWeaponManipulationFrameStateV1 &&
+               PaperApi::inst->getWeaponManipulationHandStateV1;
     }
 }
 

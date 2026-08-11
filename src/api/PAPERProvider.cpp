@@ -7,6 +7,7 @@
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
+#include "weapon_motion/WeaponMotion.h"
 
 #include <Windows.h>
 
@@ -1040,6 +1041,233 @@ namespace paper::provider
             return PaperResultV1::Ok;
         }
 
+        PaperResultV1 PAPER_CALL getWeaponMotionLimitsV1(
+            const std::uint64_t ownerToken,
+            PaperWeaponMotionLimitsV1* outLimits)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog,
+                outLimits);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::getLimits(*outLimits) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL getWeaponMotionCatalogStateV1(
+            const std::uint64_t ownerToken,
+            PaperWeaponMotionCatalogStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::getCatalogState(*outState) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyWeaponMotionPartsV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t firstPart,
+            PaperWeaponMotionPartV1* outParts,
+            const std::uint32_t maxParts,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::copyParts(
+                    catalogSequence,
+                    firstPart,
+                    outParts,
+                    maxParts,
+                    *outCopied) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyWeaponMotionStagesV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t firstStage,
+            PaperWeaponMotionStageV1* outStages,
+            const std::uint32_t maxStages,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::copyStages(
+                    catalogSequence,
+                    firstStage,
+                    outStages,
+                    maxStages,
+                    *outCopied) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyWeaponMotionStageKeysV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t stageId,
+            const std::uint32_t firstKey,
+            PaperReloadQsTransformV1* outKeys,
+            const std::uint32_t maxKeys,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::copyStageKeys(
+                    catalogSequence,
+                    stageId,
+                    firstKey,
+                    outKeys,
+                    maxKeys,
+                    *outCopied) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyWeaponMotionFollowersV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t stageId,
+            const std::uint32_t firstFollower,
+            PaperWeaponMotionFollowerV1* outFollowers,
+            const std::uint32_t maxFollowers,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::copyFollowers(
+                    catalogSequence,
+                    stageId,
+                    firstFollower,
+                    outFollowers,
+                    maxFollowers,
+                    *outCopied) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyWeaponMotionFollowerKeysV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t catalogSequence,
+            const std::uint32_t stageId,
+            const std::uint32_t followerIndex,
+            const std::uint32_t firstKey,
+            PaperReloadQsTransformV1* outKeys,
+            const std::uint32_t maxKeys,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionCatalog);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::copyFollowerKeys(
+                    catalogSequence,
+                    stageId,
+                    followerIndex,
+                    firstKey,
+                    outKeys,
+                    maxKeys,
+                    *outCopied) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL getWeaponMotionLearningStateV1(
+            const std::uint64_t ownerToken,
+            PaperWeaponMotionLearningStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionDiagnostics,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::getLearningState(*outState) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL copyWeaponMotionRecordersV1(
+            const std::uint64_t ownerToken,
+            const std::uint64_t snapshotSequence,
+            const std::uint32_t firstRecorder,
+            PaperWeaponMotionRecorderV1* outRecorders,
+            const std::uint32_t maxRecorders,
+            std::uint32_t* outCopied)
+        {
+            if (!outCopied) {
+                return PaperResultV1::InvalidArgument;
+            }
+            *outCopied = 0;
+            const auto validation = validateReloadConsumer(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionDiagnostics);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::copyRecorders(
+                    snapshotSequence,
+                    firstRecorder,
+                    outRecorders,
+                    maxRecorders,
+                    *outCopied) : validation;
+        }
+
+        PaperResultV1 PAPER_CALL getWeaponManipulationFrameStateV1(
+            const std::uint64_t ownerToken,
+            PaperWeaponManipulationFrameStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponManipulationTelemetry,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::getManipulationFrameState(*outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL getWeaponManipulationHandStateV1(
+            const std::uint64_t ownerToken,
+            const PaperHandV1 hand,
+            PaperWeaponManipulationHandStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponManipulationTelemetry,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::getManipulationHandState(hand, *outState) :
+                validation;
+        }
+
+        PaperResultV1 PAPER_CALL getWeaponMotionStoreStateV1(
+            const std::uint64_t ownerToken,
+            PaperWeaponMotionStoreStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::WeaponMotionDiagnostics,
+                outState);
+            return validation == PaperResultV1::Ok ?
+                weapon_motion::getStoreState(*outState) : validation;
+        }
+
         const PaperProviderApiV1 s_api{
             &getVersion,
             &getModVersion,
@@ -1076,6 +1304,18 @@ namespace paper::provider
             &copyReloadStagePartsV1,
             &getNativePoseFrameStateV1,
             &getNativeHandSolutionV1,
+            &getWeaponMotionLimitsV1,
+            &getWeaponMotionCatalogStateV1,
+            &copyWeaponMotionPartsV1,
+            &copyWeaponMotionStagesV1,
+            &copyWeaponMotionStageKeysV1,
+            &copyWeaponMotionFollowersV1,
+            &copyWeaponMotionFollowerKeysV1,
+            &getWeaponMotionLearningStateV1,
+            &copyWeaponMotionRecordersV1,
+            &getWeaponManipulationFrameStateV1,
+            &getWeaponManipulationHandStateV1,
+            &getWeaponMotionStoreStateV1,
         };
 
         const PaperProviderDescriptorV1 s_descriptor{
@@ -1098,6 +1338,7 @@ namespace paper::provider
         reload_observation::reset();
         animation_evidence::reset();
         reload_stages::reset();
+        weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
         s_ready.store(true, std::memory_order_release);
     }
 
@@ -1113,6 +1354,7 @@ namespace paper::provider
         reload_observation::reset();
         animation_evidence::reset();
         reload_stages::reset();
+        weapon_motion::reset(weapon_motion::ResetReason::ProviderShutdown);
         s_ownerThread = 0;
     }
 
@@ -1159,6 +1401,7 @@ namespace paper::provider
         reload_observation::reset();
         animation_evidence::reset();
         reload_stages::reset();
+        weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
         clearNativePosePipeline();
         publishRuntime(state);
         dispatchEvent(PaperEventKindV1::RuntimeReset);
@@ -1210,7 +1453,7 @@ namespace paper::provider
             NativePosePipelineSnapshot{});
     }
 
-    void dispatchEvent(const PaperEventKindV1 kind)
+    void dispatchEvent(const PaperEventV1& sourceEvent)
     {
         if (!onOwnerThread()) {
             return;
@@ -1219,8 +1462,7 @@ namespace paper::provider
         if (!copySeqlocked(s_runtimeState, s_runtimeSequence, runtime)) {
             return;
         }
-        PaperEventV1 eventData{};
-        eventData.kind = kind;
+        auto eventData = sourceEvent;
         eventData.runtime = runtime;
 
         for (auto& slot : s_callbacks) {
@@ -1228,6 +1470,35 @@ namespace paper::provider
                 continue;
             }
             const auto ownerToken = slot.ownerToken;
+            const auto* consumer = findConsumerConst(ownerToken);
+            if (!consumer) {
+                continue;
+            }
+            const auto manipulationEvent =
+                eventData.kind >=
+                    PaperEventKindV1::WeaponManipulationStarted &&
+                eventData.kind <=
+                    PaperEventKindV1::WeaponManipulationEnded;
+            if (manipulationEvent && !hasCapability(
+                    *consumer,
+                    PaperConsumerCapabilityV1::
+                        WeaponManipulationTelemetry)) {
+                continue;
+            }
+            if (eventData.kind ==
+                    PaperEventKindV1::WeaponMotionCatalogChanged &&
+                !hasCapability(
+                    *consumer,
+                    PaperConsumerCapabilityV1::WeaponMotionCatalog)) {
+                continue;
+            }
+            if (eventData.kind ==
+                    PaperEventKindV1::WeaponMotionCandidateCompleted &&
+                !hasCapability(
+                    *consumer,
+                    PaperConsumerCapabilityV1::WeaponMotionDiagnostics)) {
+                continue;
+            }
             const auto callback = slot.callback;
             void* const userData = slot.userData;
 #if defined(_MSC_VER)
@@ -1244,6 +1515,13 @@ namespace paper::provider
             callback(&eventData, userData);
 #endif
         }
+    }
+
+    void dispatchEvent(const PaperEventKindV1 kind)
+    {
+        PaperEventV1 eventData{};
+        eventData.kind = kind;
+        dispatchEvent(eventData);
     }
 
     bool hasConsumerCapability(const PaperConsumerCapabilityV1 capability)

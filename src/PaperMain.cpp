@@ -15,8 +15,10 @@
 #include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
+#include "weapon_motion/WeaponMotion.h"
 
 #include <atomic>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -37,6 +39,7 @@ namespace
     bool s_animationTelemetryDemandActive{ false };
     bool s_reloadStageDemandActive{ false };
     bool s_nativePosePipelineDemandActive{ false };
+    bool s_weaponMotionDemandActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
     rock::provider::RockProviderEquippedWeaponHandlingStateV1
         s_handlingState{};
@@ -97,6 +100,7 @@ namespace
         bool exactAnimationEvidence{ false };
         bool reloadStages{ false };
         bool nativePosePipeline{ false };
+        bool weaponMotion{ false };
     };
 
     using PerformanceClock = std::chrono::steady_clock;
@@ -370,11 +374,20 @@ namespace
 
     [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
     {
+        const bool weaponMotion =
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::WeaponMotionCatalog) ||
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::WeaponMotionDiagnostics) ||
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::
+                    WeaponManipulationTelemetry);
         const bool reloadStages = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::
                 ReloadStageIdentification);
-        const bool exactAnimationEvidence = provider::hasConsumerCapability(
-            api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+        const bool exactAnimationEvidence = weaponMotion ||
+            provider::hasConsumerCapability(
+                api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
         const bool animationTelemetry = reloadStages ||
             exactAnimationEvidence ||
             provider::hasConsumerCapability(
@@ -382,7 +395,7 @@ namespace
         const bool reloadEvidenceGeometry =
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
-        const bool reloadObservation = reloadStages ||
+        const bool reloadObservation = weaponMotion || reloadStages ||
             animationTelemetry ||
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadObservations) ||
@@ -390,6 +403,10 @@ namespace
         const bool nativePosePipeline = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::NativePosePipeline);
 
+        if (s_weaponMotionDemandActive && !weaponMotion) {
+            weapon_motion::reset(
+                weapon_motion::ResetReason::DemandEnded);
+        }
         if (s_animationTelemetryDemandActive && !animationTelemetry) {
             animation_evidence::reset();
         }
@@ -406,6 +423,7 @@ namespace
         s_animationTelemetryDemandActive = animationTelemetry;
         s_reloadStageDemandActive = reloadStages;
         s_nativePosePipelineDemandActive = nativePosePipeline;
+        s_weaponMotionDemandActive = weaponMotion;
         return EnrichmentDemand{
             .reloadObservation = reloadObservation,
             .reloadEvidenceGeometry = reloadEvidenceGeometry,
@@ -413,6 +431,7 @@ namespace
             .exactAnimationEvidence = exactAnimationEvidence,
             .reloadStages = reloadStages,
             .nativePosePipeline = nativePosePipeline,
+            .weaponMotion = weaponMotion,
         };
     }
 
@@ -1033,10 +1052,27 @@ namespace
                 s_reloadPerformance.animationComplete.add(
                     elapsedPerformanceMicroseconds(animationStarted));
             }
+            if (enrichmentDemand.weaponMotion) {
+                weapon_motion::completeFrame(
+                    *context,
+                    rockApiClient(),
+                    provider::generation());
+            }
             if (enrichmentDemand.reloadStages) {
                 reload_stages::completeFrame(*context);
             }
             const auto dispatchStarted = PerformanceClock::now();
+            std::array<
+                api::PaperEventV1,
+                api::PAPER_MAX_WEAPON_MOTION_EVENTS_V1> motionEvents{};
+            const auto motionEventCount = weapon_motion::drainEvents(
+                motionEvents.data(),
+                static_cast<std::uint32_t>(motionEvents.size()));
+            for (std::uint32_t index = 0;
+                 index < motionEventCount;
+                 ++index) {
+                provider::dispatchEvent(motionEvents[index]);
+            }
             provider::dispatchEvent(api::PaperEventKindV1::FrameComplete);
             s_reloadPerformance.consumerDispatch.add(
                 elapsedPerformanceMicroseconds(dispatchStarted));
@@ -1097,6 +1133,8 @@ namespace
         s_animationTelemetryDemandActive = false;
         s_reloadStageDemandActive = false;
         s_nativePosePipelineDemandActive = false;
+        s_weaponMotionDemandActive = false;
+        weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
         s_reloadPerformance = {};
         provider::resetRuntime();
     }

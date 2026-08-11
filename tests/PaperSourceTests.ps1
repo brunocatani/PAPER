@@ -173,6 +173,19 @@ if ($fixedRestoreStart -lt 0 -or $fixedRestoreEnd -le $fixedRestoreStart) {
 
 Require-Text 'src/exports.def' 'PAPERAPI_GetProviderApi[\s\S]*PAPERAPI_GetProviderDescriptorV1' 'PAPER must export both the legacy-compatible V1 lookup and the table-extent descriptor.'
 
+Require-Text 'src/api/PAPERApi.h' 'WeaponMotionCatalog\s*=\s*1u\s*<<\s*11[\s\S]*WeaponMotionDiagnostics\s*=\s*1u\s*<<\s*12[\s\S]*WeaponManipulationTelemetry\s*=\s*1u\s*<<\s*13[\s\S]*getWeaponMotionCatalogStateV1[\s\S]*copyWeaponMotionStageKeysV1[\s\S]*getWeaponMotionLearningStateV1[\s\S]*getWeaponManipulationHandStateV1[\s\S]*getWeaponMotionStoreStateV1' 'PAPER V1 must append the independent motion catalog, diagnostics, manipulation telemetry, and store-state surface.'
+Require-Text 'src/api/PAPERApi.h' 'PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES[\s\S]*getNativeHandSolutionV1[\s\S]*PAPER_PROVIDER_API_V1_WEAPON_MOTION_CATALOG_TABLE_BYTES[\s\S]*PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES' 'The motion API must preserve all earlier V1 table extents while advertising its additive extent.'
+Require-Text 'src/api/PAPERProvider.cpp' 'getWeaponMotionCatalogStateV1[\s\S]*WeaponMotionCatalog[\s\S]*copyWeaponMotionStageKeysV1[\s\S]*WeaponMotionCatalog[\s\S]*getWeaponMotionLearningStateV1[\s\S]*WeaponMotionDiagnostics[\s\S]*getWeaponManipulationHandStateV1[\s\S]*WeaponManipulationTelemetry' 'Every derived motion query must remain owner-bound and capability-gated.'
+Require-Text 'src/PaperMain.cpp' 'refreshEnrichmentDemand[\s\S]*WeaponMotionCatalog[\s\S]*WeaponMotionDiagnostics[\s\S]*WeaponManipulationTelemetry[\s\S]*exactAnimationEvidence\s*=\s*weaponMotion[\s\S]*reloadObservation\s*=\s*weaponMotion[\s\S]*weapon_motion::reset[\s\S]*Complete[\s\S]*animation_evidence::completeFrame[\s\S]*weapon_motion::completeFrame[\s\S]*drainEvents[\s\S]*dispatchEvent' 'Motion intelligence must be dormant without consumers and publish only after its raw observation and exact-animation inputs complete.'
+Require-Text 'src/weapon_motion/WeaponMotion.cpp' 'copyEvidenceMotionSources[\s\S]*updateLearning[\s\S]*processOneExactTrack' 'PAPER motion intelligence must learn from value-only native observations and time-slice authored evidence.'
+Require-Text 'src/weapon_motion/WeaponMotion.cpp' 'projectOntoPath[\s\S]*queryWeaponPartGripState' 'PAPER manipulation telemetry must project value-only ROCK grip observations onto published motion paths.'
+Reject-Text 'src/weapon_motion/WeaponMotion.cpp' 'setWeaponPartDriveTargets|setHandVisualAuthority|setNativeAnimationAuthority|REL::|RE::' 'The motion-intelligence layer must not acquire engine or drive authority.'
+
+$motionSources = Get-ChildItem -Path (Join-Path $Root 'src/weapon_motion') -File | ForEach-Object { Get-Content -Raw $_.FullName }
+if (($motionSources -join "`n") -match 'PAPER_Toolkit|paper_toolkit') {
+    $failures.Add('PAPER motion intelligence must have no Toolkit source or runtime dependency.')
+}
+
 $sourceHeader = [System.IO.File]::ReadAllBytes((Join-Path $Root 'src/api/PAPERApi.h'))
 $sdkHeader = [System.IO.File]::ReadAllBytes((Join-Path $Root 'SDK/PAPER/include/PAPERApi.h'))
 if (-not [System.Linq.Enumerable]::SequenceEqual[byte]($sourceHeader, $sdkHeader)) {
