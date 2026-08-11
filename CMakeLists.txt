@@ -193,6 +193,31 @@ if(BUILD_PAPER_TESTS)
   )
   add_test(NAME PAPERConfigFileTests COMMAND "$<TARGET_FILE:PAPERConfigFileTests>")
 
+  add_executable(PAPERWeaponMotionCacheTests
+    "${ROOT_DIR}/tests/PAPERWeaponMotionCacheTests.cpp"
+    "${SOURCE_DIR}/weapon_motion/WeaponMotionCache.cpp"
+  )
+  target_compile_features(PAPERWeaponMotionCacheTests PRIVATE cxx_std_23)
+  target_compile_definitions(PAPERWeaponMotionCacheTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+  )
+  target_compile_options(PAPERWeaponMotionCacheTests PRIVATE
+    /sdl
+    /utf-8
+    /permissive-
+    /Zc:__cplusplus
+    /Zc:preprocessor
+    /W4
+  )
+  target_include_directories(PAPERWeaponMotionCacheTests PRIVATE "${SOURCE_DIR}")
+  add_test(
+    NAME PAPERWeaponMotionCacheTests
+    COMMAND "$<TARGET_FILE:PAPERWeaponMotionCacheTests>"
+  )
+
   add_test(
     NAME PAPERSourceTests
     COMMAND "${PAPER_PWSH_EXECUTABLE}" -NoProfile -File

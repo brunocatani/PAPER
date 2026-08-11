@@ -93,6 +93,43 @@ namespace paper
             "Debug",
             "fDebugNativeAnimationMarkerSize",
             debugNativeAnimationMarkerSize));
+        weaponMotionCacheEnabled = ini.GetBoolValue(
+            "WeaponMotionCache",
+            "bEnabled",
+            weaponMotionCacheEnabled);
+        weaponMotionSessionCacheMiB = static_cast<std::uint32_t>(std::clamp<long>(
+            ini.GetLongValue(
+                "WeaponMotionCache",
+                "iSessionCacheMiB",
+                weaponMotionSessionCacheMiB),
+            8,
+            256));
+        weaponMotionDiskCacheMiB = static_cast<std::uint32_t>(std::clamp<long>(
+            ini.GetLongValue(
+                "WeaponMotionCache",
+                "iDiskCacheMiB",
+                weaponMotionDiskCacheMiB),
+            32,
+            2048));
+        weaponMotionMaximumFileMiB = static_cast<std::uint32_t>(
+            std::clamp<long>(
+                ini.GetLongValue(
+                    "WeaponMotionCache",
+                    "iMaximumFileMiB",
+                    weaponMotionMaximumFileMiB),
+                1,
+                64));
+        weaponMotionMaximumFileMiB = (std::min)(
+            weaponMotionMaximumFileMiB,
+            weaponMotionDiskCacheMiB);
+        weaponMotionMaximumEntries = static_cast<std::uint32_t>(
+            std::clamp<long>(
+                ini.GetLongValue(
+                    "WeaponMotionCache",
+                    "iMaximumEntries",
+                    weaponMotionMaximumEntries),
+                16,
+                2048));
         if (!std::isfinite(debugNativeAnimationAxisLength)) {
             debugNativeAnimationAxisLength = 5.0f;
         }
@@ -110,7 +147,7 @@ namespace paper
         logger::setLevel(logLevel);
         PAPER_LOG_INFO(
             Config,
-            "Loaded '{}' enabled={} manualReloadOnly={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f}",
+            "Loaded '{}' enabled={} manualReloadOnly={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f} motionCache={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
             activePath,
             enabled,
             manualReloadOnly,
@@ -119,7 +156,12 @@ namespace paper
             debugDrawNativeAnimation,
             debugDrawNativeAnimationText,
             debugNativeAnimationAxisLength,
-            debugNativeAnimationMarkerSize);
+            debugNativeAnimationMarkerSize,
+            weaponMotionCacheEnabled,
+            weaponMotionSessionCacheMiB,
+            weaponMotionDiskCacheMiB,
+            weaponMotionMaximumFileMiB,
+            weaponMotionMaximumEntries);
         return true;
     }
 }

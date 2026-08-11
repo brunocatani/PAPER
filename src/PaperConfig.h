@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <cstdint>
 
 namespace paper
 {
@@ -14,6 +15,11 @@ namespace paper
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };
         float debugNativeAnimationMarkerSize{ 1.5f };
+        bool weaponMotionCacheEnabled{ true };
+        std::uint32_t weaponMotionSessionCacheMiB{ 64 };
+        std::uint32_t weaponMotionDiskCacheMiB{ 256 };
+        std::uint32_t weaponMotionMaximumFileMiB{ 16 };
+        std::uint32_t weaponMotionMaximumEntries{ 256 };
         int logLevel{ 2 };
         std::string activePath{};
 

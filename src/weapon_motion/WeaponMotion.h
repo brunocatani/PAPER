@@ -8,6 +8,7 @@
 namespace paper
 {
     class RockApiClient;
+    struct PaperConfig;
 }
 
 namespace paper::weapon_motion
@@ -20,6 +21,8 @@ namespace paper::weapon_motion
     };
 
     void activate();
+    void configureCache(const PaperConfig& config);
+    [[nodiscard]] bool requiresExactAnimationEvidence();
     void reset(ResetReason reason);
     void completeFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,

@@ -385,9 +385,11 @@ namespace
         const bool reloadStages = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::
                 ReloadStageIdentification);
-        const bool exactAnimationEvidence = weaponMotion ||
+        const bool exactAnimationEvidence =
             provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+                api::PaperConsumerCapabilityV1::ReloadAnimationEvidence) ||
+            (weaponMotion &&
+                weapon_motion::requiresExactAnimationEvidence());
         const bool animationTelemetry = reloadStages ||
             exactAnimationEvidence ||
             provider::hasConsumerCapability(
@@ -1147,6 +1149,7 @@ namespace
 
         if (message->type == F4SE::MessagingInterface::kGameLoaded) {
             (void)g_config.reload();
+            weapon_motion::configureCache(g_config);
             publishConfigState();
             configureManualReloadOnlyForSession();
             tactical_reload_bridge::initializeSession();
@@ -1168,6 +1171,7 @@ namespace
             message->type == F4SE::MessagingInterface::kNewGame) {
             resetSession();
             (void)g_config.reload();
+            weapon_motion::configureCache(g_config);
             publishConfigState();
             configureManualReloadOnlyForSession();
             tactical_reload_bridge::initializeSession();

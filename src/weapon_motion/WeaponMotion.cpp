@@ -1,17 +1,24 @@
 #include "weapon_motion/WeaponMotion.h"
 
+#include "PaperConfig.h"
+#include "PaperLog.h"
 #include "animation_evidence/AnimationEvidence.h"
 #include "api/RockApiClient.h"
 #include "reload_observation/ReloadObservation.h"
+#include "weapon_motion/WeaponMotionCache.h"
 #include "weapon_motion/WeaponMotionPolicy.h"
 
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <limits>
 #include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace paper::weapon_motion
 {
@@ -25,7 +32,10 @@ namespace paper::weapon_motion
         constexpr float kRestProgressThreshold = 0.05f;
         constexpr float kMaximumProgressThreshold = 0.95f;
         constexpr float kReturnToRestTolerance = 0.60f;
-        constexpr float kRigidFollowerTolerance = 0.15f;
+        constexpr float kRigidFollowerTranslationTolerance = 0.15f;
+        constexpr float kRigidFollowerRotationToleranceRadians = 0.02f;
+        constexpr float kRigidFollowerScaleTolerance = 0.01f;
+        constexpr float kFollowerMotionOverlapMinimum = 0.35f;
 
         template <class Enum>
         [[nodiscard]] constexpr std::uint32_t flag(const Enum value)
@@ -118,6 +128,16 @@ namespace paper::weapon_motion
             std::array<
                 PaperReloadQsTransformV1,
                 PAPER_WEAPON_MOTION_KEY_COUNT_V1> returning{};
+            std::array<
+                PaperReloadQsTransformV1,
+                PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1> sourcePoses{};
+            std::array<
+                float,
+                PAPER_WEAPON_MOTION_KEY_COUNT_V1> primarySourcePositions{};
+            std::array<
+                float,
+                PAPER_WEAPON_MOTION_KEY_COUNT_V1> returnSourcePositions{};
+            std::uint32_t sampleCount{ 0 };
             float primaryLength{ 0.0f };
             float returnLength{ 0.0f };
             float peakDelta{ 0.0f };
@@ -151,6 +171,8 @@ namespace paper::weapon_motion
             std::uint32_t nextCandidateToFinalize{ 0 };
             std::uint32_t processedExactClipCount{ 0 };
             bool finalizing{ false };
+            bool preharvestCompleted{ false };
+            bool cacheEligible{ false };
         };
 
         struct HandRuntime
@@ -159,6 +181,18 @@ namespace paper::weapon_motion
             bool active{ false };
             bool atMaximum{ false };
             bool atRest{ false };
+        };
+
+        enum class CacheLookupState : std::uint32_t
+        {
+            Uninitialized = 0,
+            Pending = 1,
+            HitSession = 2,
+            HitPersistent = 3,
+            Miss = 4,
+            Bypass = 5,
+            Compiled = 6,
+            ExactUnavailable = 7,
         };
 
         struct Runtime
@@ -170,6 +204,9 @@ namespace paper::weapon_motion
             std::array<
                 std::array<char, PAPER_RELOAD_NODE_NAME_CAPACITY_V1>,
                 PAPER_MAX_WEAPON_MOTION_PARTS_V1> partNodeNames{};
+            std::array<
+                std::array<char, PAPER_RELOAD_NODE_PATH_CAPACITY_V1>,
+                PAPER_MAX_WEAPON_MOTION_PARTS_V1> partNodePaths{};
             std::array<
                 PaperReloadNodeCatalogEntryV1,
                 PAPER_MAX_RELOAD_CATALOG_NODES_V1> catalogNodes{};
@@ -192,9 +229,16 @@ namespace paper::weapon_motion
             std::uint32_t recorderCount{ 0 };
             std::uint32_t eventCount{ 0 };
             std::uint64_t eventSequence{ 0 };
+            PaperFormIdentityV1 weaponIdentity{};
+            PaperWeaponClassificationV1 weaponClassification{};
+            std::uint64_t cacheLoadoutKey{ 0 };
+            std::uint64_t lastQueuedAuthoredRevision{ 0 };
+            CacheLookupState cacheLookupState{ CacheLookupState::Uninitialized };
         };
 
         std::unique_ptr<Runtime> s_runtime{};
+        std::unique_ptr<weapon_motion_cache::Store> s_cacheStore{};
+        std::optional<weapon_motion_cache::Settings> s_cacheSettings{};
         std::uint64_t s_nextCatalogSequence{ 0 };
         std::uint64_t s_nextLearningSnapshotSequence{ 0 };
         std::uint64_t s_nextManipulationSnapshotSequence{ 0 };
@@ -293,6 +337,79 @@ namespace paper::weapon_motion
                 }
             }
             return kInvalidId;
+        }
+
+        [[nodiscard]] bool textEqualInsensitive(
+            const std::string_view left,
+            const std::string_view right)
+        {
+            if (left.size() != right.size()) {
+                return false;
+            }
+            for (std::size_t index = 0; index < left.size(); ++index) {
+                if (asciiLower(left[index]) != asciiLower(right[index])) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] weapon_motion_cache::StablePartKey stablePartKey(
+            const Runtime& state,
+            const std::uint32_t partId)
+        {
+            if (partId >= state.partCount) {
+                return {};
+            }
+            const auto& part = state.parts[partId];
+            return {
+                .sourceName = std::string(boundedText(part.sourceName)),
+                .nodePath = std::string(boundedText(state.partNodePaths[partId])),
+                .omodPluginName = std::string(
+                    boundedText(part.omod.pluginName)),
+                .omodLocalFormId = part.omod.localFormId,
+            };
+        }
+
+        [[nodiscard]] std::uint32_t findPartByStableKey(
+            const Runtime& state,
+            const weapon_motion_cache::StablePartKey& key)
+        {
+            auto match = kInvalidId;
+            for (std::uint32_t index = 0; index < state.partCount; ++index) {
+                const auto candidate = stablePartKey(state, index);
+                if (!textEqualInsensitive(candidate.sourceName, key.sourceName) ||
+                    !textEqualInsensitive(candidate.nodePath, key.nodePath) ||
+                    !textEqualInsensitive(
+                        candidate.omodPluginName, key.omodPluginName) ||
+                    candidate.omodLocalFormId != key.omodLocalFormId) {
+                    continue;
+                }
+                if (match != kInvalidId) {
+                    return kInvalidId;
+                }
+                match = index;
+            }
+            return match;
+        }
+
+        [[nodiscard]] std::uint64_t buildCurrentLoadoutKey(
+            const Runtime& state)
+        {
+            weapon_motion_cache::LoadoutIdentity identity{
+                .weaponPluginName = std::string(
+                    boundedText(state.weaponIdentity.pluginName)),
+                .weaponLocalFormId = state.weaponIdentity.localFormId,
+                .weaponKeywordFlags = state.weaponClassification.keywordFlags,
+                .weaponFamilyFlags = state.weaponClassification.familyFlags,
+                .weaponPrimaryFamily = static_cast<std::uint32_t>(
+                    state.weaponClassification.primaryFamily),
+            };
+            identity.parts.reserve(state.partCount);
+            for (std::uint32_t index = 0; index < state.partCount; ++index) {
+                identity.parts.push_back(stablePartKey(state, index));
+            }
+            return weapon_motion_cache::buildLoadoutKey(std::move(identity));
         }
 
         [[nodiscard]] std::uint32_t findPartForGrip(
@@ -504,6 +621,12 @@ namespace paper::weapon_motion
             state.stageCount = 0;
             state.recorderCount = 0;
             state.partNodeNames.fill({});
+            state.partNodePaths.fill({});
+            state.weaponIdentity = catalog.weapon;
+            state.weaponClassification = catalog.classification;
+            state.cacheLoadoutKey = 0;
+            state.lastQueuedAuthoredRevision = 0;
+            state.cacheLookupState = CacheLookupState::Uninitialized;
             for (auto& recorder : state.recorders) {
                 std::destroy_at(std::addressof(recorder));
                 std::construct_at(std::addressof(recorder));
@@ -613,6 +736,10 @@ namespace paper::weapon_motion
                         copyText(
                             state.partNodeNames[state.partCount],
                             boundedText(state.catalogNodes[nodeIndex].name));
+                        copyText(
+                            state.partNodePaths[state.partCount],
+                            boundedText(
+                                state.catalogNodes[nodeIndex].rootRelativePath));
                         break;
                     }
                 }
@@ -656,9 +783,387 @@ namespace paper::weapon_motion
             state.store.flags = flag(PaperWeaponMotionStoreFlagV1::Active) |
                 flag(PaperWeaponMotionStoreFlagV1::InMemoryCatalog) |
                 flag(PaperWeaponMotionStoreFlagV1::RawObservationEvidenceAvailable);
+            if (s_cacheStore && s_cacheStore->enabled()) {
+                state.store.flags |= flag(
+                    PaperWeaponMotionStoreFlagV1::CompiledStageCacheEnabled);
+            }
             state.store.weaponFormId = catalog.weaponFormId;
             state.store.weaponGenerationKey = catalog.weaponGenerationKey;
             queueEvent(state, PaperEventKindV1::WeaponMotionCatalogChanged);
+        }
+
+        void beginCacheLookup(Runtime& state)
+        {
+            if (state.cacheLookupState != CacheLookupState::Uninitialized) {
+                return;
+            }
+            if (!s_cacheStore || !s_cacheStore->enabled()) {
+                state.cacheLookupState = CacheLookupState::Bypass;
+                return;
+            }
+            if (state.cacheLoadoutKey == 0) {
+                state.cacheLoadoutKey = buildCurrentLoadoutKey(state);
+            }
+            if (state.cacheLoadoutKey == 0) {
+                state.cacheLookupState = CacheLookupState::Bypass;
+                PAPER_LOG_DEBUG(
+                    MotionCache,
+                    "Bypassing compiled cache: weapon/loadout identity is not stable");
+                return;
+            }
+            if (s_cacheStore->requestLoad(state.cacheLoadoutKey)) {
+                state.cacheLookupState = CacheLookupState::Pending;
+                state.store.flags |= flag(
+                    PaperWeaponMotionStoreFlagV1::CacheLookupPending);
+            }
+        }
+
+        [[nodiscard]] bool validateCachedRecord(
+            const Runtime& state,
+            const weapon_motion_cache::CompiledRecord& record)
+        {
+            if (record.loadoutKey != state.cacheLoadoutKey ||
+                record.stages.empty() ||
+                record.stages.size() > state.stages.size()) {
+                return false;
+            }
+            std::array<bool, PAPER_MAX_WEAPON_MOTION_PARTS_V1 * 2> occupied{};
+            for (const auto& cachedStage : record.stages) {
+                const auto partId = findPartByStableKey(state, cachedStage.part);
+                if (partId == kInvalidId ||
+                    !hasFlag(
+                        state.parts[partId].flags,
+                        flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                    return false;
+                }
+                const auto baseline = fromTransform(
+                    state.parts[partId].baselineWeaponLocal);
+                if (!finite(baseline)) {
+                    return false;
+                }
+                std::array<
+                    PaperReloadQsTransformV1,
+                    PAPER_WEAPON_MOTION_KEY_COUNT_V1> rebasedKeys{};
+                for (std::size_t key = 0; key < rebasedKeys.size(); ++key) {
+                    rebasedKeys[key] = compose(
+                        baseline, cachedStage.keys[key]);
+                    if (!finite(rebasedKeys[key])) {
+                        return false;
+                    }
+                }
+                if (pathLength(rebasedKeys) < kMinimumExcursionGameUnits) {
+                    return false;
+                }
+                const auto kindIndex =
+                    cachedStage.kind == PaperWeaponMotionStageKindV1::Primary ?
+                        0u : 1u;
+                const auto slot = partId * 2u + kindIndex;
+                if (slot >= occupied.size() || occupied[slot]) {
+                    return false;
+                }
+                occupied[slot] = true;
+                for (const auto& follower : cachedStage.followers) {
+                    const auto followerPartId = findPartByStableKey(
+                        state, follower.part);
+                    if (followerPartId == kInvalidId ||
+                        !hasFlag(
+                            state.parts[followerPartId].flags,
+                            flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                        return false;
+                    }
+                    const auto followerBaseline = fromTransform(
+                        state.parts[followerPartId].baselineWeaponLocal);
+                    if (!finite(followerBaseline)) {
+                        return false;
+                    }
+                    for (const auto& key : follower.keys) {
+                        if (!finite(compose(followerBaseline, key))) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+
+        [[nodiscard]] bool hydrateCachedRecord(
+            Runtime& state,
+            const weapon_motion_cache::CompiledRecord& record)
+        {
+            if (!validateCachedRecord(state, record)) {
+                return false;
+            }
+            for (const auto& cachedStage : record.stages) {
+                const auto partId = findPartByStableKey(state, cachedStage.part);
+                const auto baseline = fromTransform(
+                    state.parts[partId].baselineWeaponLocal);
+                std::array<
+                    PaperReloadQsTransformV1,
+                    PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+                for (std::size_t key = 0; key < keys.size(); ++key) {
+                    keys[key] = compose(baseline, cachedStage.keys[key]);
+                    if (!finite(keys[key])) {
+                        return false;
+                    }
+                }
+                const auto length = pathLength(keys);
+                const auto update = upsertStage(
+                    state,
+                    partId,
+                    PaperWeaponMotionSourceV1::ExactAuthored,
+                    cachedStage.kind,
+                    kInvalidId,
+                    0,
+                    keys,
+                    length,
+                    poseDistance(keys.front(), keys.back()));
+                if (!update.accepted || update.index >= state.stageCount) {
+                    return false;
+                }
+                auto& stage = state.stages[update.index];
+                stage.value.flags |= flag(
+                    PaperWeaponMotionStageFlagV1::HydratedFromCache);
+                for (const auto& cachedFollower : cachedStage.followers) {
+                    if (stage.followerCount >= stage.followers.size()) {
+                        return false;
+                    }
+                    const auto followerPartId = findPartByStableKey(
+                        state, cachedFollower.part);
+                    const auto followerBaseline = fromTransform(
+                        state.parts[followerPartId].baselineWeaponLocal);
+                    auto& follower = stage.followers[stage.followerCount];
+                    follower = {};
+                    follower.value.stageId = update.index;
+                    follower.value.followerIndex = stage.followerCount;
+                    follower.value.partId = followerPartId;
+                    follower.value.evidenceId =
+                        state.parts[followerPartId].evidenceId;
+                    follower.value.bodyId = state.parts[followerPartId].bodyId;
+                    follower.value.flags =
+                        flag(PaperWeaponMotionFollowerFlagV1::Valid) |
+                        flag(PaperWeaponMotionFollowerFlagV1::CoTimed) |
+                        flag(PaperWeaponMotionFollowerFlagV1::EvidenceMapped) |
+                        flag(PaperWeaponMotionFollowerFlagV1::LiveRebased) |
+                        flag(PaperWeaponMotionFollowerFlagV1::
+                            HydratedFromCache) |
+                        (cachedFollower.flags &
+                            flag(PaperWeaponMotionFollowerFlagV1::Rigid));
+                    follower.value.keyCount =
+                        PAPER_WEAPON_MOTION_KEY_COUNT_V1;
+                    copyText(
+                        follower.value.sourceName,
+                        boundedText(state.parts[followerPartId].sourceName));
+                    for (std::size_t key = 0; key < follower.keys.size(); ++key) {
+                        follower.keys[key] = compose(
+                            followerBaseline, cachedFollower.keys[key]);
+                        if (!finite(follower.keys[key])) {
+                            return false;
+                        }
+                    }
+                    ++stage.followerCount;
+                }
+                stage.value.followerCount = stage.followerCount;
+            }
+            return true;
+        }
+
+        void pollCacheLookup(Runtime& state)
+        {
+            if (state.cacheLookupState != CacheLookupState::Pending ||
+                !s_cacheStore) {
+                return;
+            }
+            weapon_motion_cache::LoadResult result{};
+            if (!s_cacheStore->tryTakeLoadResult(result)) {
+                return;
+            }
+            if (result.loadoutKey != state.cacheLoadoutKey) {
+                return;
+            }
+            state.store.flags &= ~flag(
+                PaperWeaponMotionStoreFlagV1::CacheLookupPending);
+            const auto sessionHit =
+                result.status == weapon_motion_cache::LoadStatus::HitSession;
+            const auto persistentHit =
+                result.status == weapon_motion_cache::LoadStatus::HitPersistent;
+            if ((sessionHit || persistentHit) && result.record &&
+                hydrateCachedRecord(state, *result.record)) {
+                state.cacheLookupState = sessionHit ?
+                    CacheLookupState::HitSession :
+                    CacheLookupState::HitPersistent;
+                state.store.flags |= flag(sessionHit ?
+                    PaperWeaponMotionStoreFlagV1::SessionCacheHit :
+                    PaperWeaponMotionStoreFlagV1::PersistentCacheHit);
+                PAPER_LOG_INFO(
+                    MotionCache,
+                    "Hydrated {} authored stages for loadout {:016X} from {} cache",
+                    result.record->stages.size(),
+                    state.cacheLoadoutKey,
+                    sessionHit ? "session" : "persistent");
+                return;
+            }
+            state.cacheLookupState = CacheLookupState::Miss;
+            PAPER_LOG_DEBUG(
+                MotionCache,
+                "Compiled cache miss for loadout {:016X}; exact preharvest enabled",
+                state.cacheLoadoutKey);
+        }
+
+        [[nodiscard]] std::string sourceAnimationPath(
+            const Runtime& state,
+            const std::uint32_t sourceClipId)
+        {
+            for (std::uint32_t index = 0; index < state.exact.clipCount; ++index) {
+                const auto& clip = state.exact.clips[index];
+                if (clip.clipId == sourceClipId) {
+                    return std::string(boundedText(clip.animationPath));
+                }
+            }
+            return {};
+        }
+
+        [[nodiscard]] std::unique_ptr<
+            weapon_motion_cache::CompiledRecord> buildCacheRecord(
+                const Runtime& state)
+        {
+            auto record = std::make_unique<
+                weapon_motion_cache::CompiledRecord>();
+            record->loadoutKey = state.cacheLoadoutKey;
+            for (std::uint32_t index = 0; index < state.exact.clipCount; ++index) {
+                const auto& clip = state.exact.clips[index];
+                if (clip.acquisition !=
+                        PaperReloadAnimationAcquisitionV1::
+                            ExactWeaponPreharvest) {
+                    continue;
+                }
+                const auto path = std::string(boundedText(clip.animationPath));
+                if (path.empty()) {
+                    continue;
+                }
+                const auto duplicate = std::find_if(
+                    record->animationPaths.begin(),
+                    record->animationPaths.end(),
+                    [&path](const std::string& existing) {
+                        return textEqualInsensitive(existing, path);
+                    });
+                if (duplicate == record->animationPaths.end()) {
+                    record->animationPaths.push_back(path);
+                }
+            }
+            record->stages.reserve(state.stageCount);
+            for (std::uint32_t index = 0; index < state.stageCount; ++index) {
+                const auto& stage = state.stages[index];
+                if (stage.value.source !=
+                    PaperWeaponMotionSourceV1::ExactAuthored) {
+                    continue;
+                }
+                const auto* part = findPart(state, stage.value.partId);
+                if (!part || !hasFlag(
+                        part->flags,
+                        flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                    return {};
+                }
+                weapon_motion_cache::CachedStage cached{
+                    .part = stablePartKey(state, stage.value.partId),
+                    .kind = stage.value.kind,
+                    .sourceAnimationPath = sourceAnimationPath(
+                        state, stage.value.sourceClipId),
+                    .sourceBoundary = stage.value.sourceBoundary,
+                    .totalArcLengthGameUnits =
+                        stage.value.totalArcLengthGameUnits,
+                    .peakDeltaGameUnits = stage.value.peakDeltaGameUnits,
+                };
+                const auto baseline = fromTransform(part->baselineWeaponLocal);
+                const auto inverseBaseline = inverse(baseline);
+                for (std::size_t key = 0; key < cached.keys.size(); ++key) {
+                    cached.keys[key] = compose(inverseBaseline, stage.keys[key]);
+                }
+                cached.followers.reserve(stage.followerCount);
+                for (std::uint32_t followerIndex = 0;
+                     followerIndex < stage.followerCount;
+                     ++followerIndex) {
+                    const auto& follower = stage.followers[followerIndex];
+                    const auto* followerPart = findPart(
+                        state, follower.value.partId);
+                    if (!followerPart || !hasFlag(
+                            followerPart->flags,
+                            flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                        return {};
+                    }
+                    weapon_motion_cache::CachedFollower cachedFollower{
+                        .part = stablePartKey(state, follower.value.partId),
+                        .flags = follower.value.flags &
+                            flag(PaperWeaponMotionFollowerFlagV1::Rigid),
+                    };
+                    const auto inverseFollowerBaseline = inverse(
+                        fromTransform(followerPart->baselineWeaponLocal));
+                    for (std::size_t key = 0;
+                         key < cachedFollower.keys.size();
+                         ++key) {
+                        cachedFollower.keys[key] = compose(
+                            inverseFollowerBaseline, follower.keys[key]);
+                    }
+                    cached.followers.push_back(std::move(cachedFollower));
+                }
+                record->stages.push_back(std::move(cached));
+            }
+            if (record->stages.empty()) {
+                return {};
+            }
+            return record;
+        }
+
+        void queueCompletedCacheRecord(Runtime& state)
+        {
+            const bool compilationFinished =
+                state.exact.preharvestCompleted &&
+                state.exact.currentClipIndex == kInvalidId &&
+                !state.exact.finalizing &&
+                state.exact.nextClip >= state.exact.clipCount;
+            if (!compilationFinished) {
+                return;
+            }
+            if (state.catalog.authoredRevision == 0) {
+                state.cacheLookupState = CacheLookupState::ExactUnavailable;
+                state.store.flags &= ~flag(
+                    PaperWeaponMotionStoreFlagV1::
+                        RawAnimationEvidenceAvailable);
+                state.store.rawAnimationCatalogSequence = 0;
+                state.store.rawAnimationCatalogRevision = 0;
+                return;
+            }
+            if (state.cacheLookupState == CacheLookupState::Bypass ||
+                !state.exact.cacheEligible) {
+                state.cacheLookupState = CacheLookupState::Compiled;
+                state.store.flags &= ~flag(
+                    PaperWeaponMotionStoreFlagV1::
+                        RawAnimationEvidenceAvailable);
+                state.store.rawAnimationCatalogSequence = 0;
+                state.store.rawAnimationCatalogRevision = 0;
+                return;
+            }
+            if (state.cacheLookupState != CacheLookupState::Miss ||
+                !s_cacheStore || state.cacheLoadoutKey == 0 ||
+                state.catalog.authoredRevision ==
+                    state.lastQueuedAuthoredRevision) {
+                return;
+            }
+            auto record = buildCacheRecord(state);
+            if (record && s_cacheStore->requestSave(std::move(record))) {
+                state.lastQueuedAuthoredRevision =
+                    state.catalog.authoredRevision;
+                state.cacheLookupState = CacheLookupState::Compiled;
+                state.store.flags &= ~flag(
+                    PaperWeaponMotionStoreFlagV1::
+                        RawAnimationEvidenceAvailable);
+                state.store.rawAnimationCatalogSequence = 0;
+                state.store.rawAnimationCatalogRevision = 0;
+                PAPER_LOG_DEBUG(
+                    MotionCache,
+                    "Queued compiled authored revision {} for loadout {:016X}",
+                    state.catalog.authoredRevision,
+                    state.cacheLoadoutKey);
+            }
         }
 
         [[nodiscard]] bool synchronizeParts(
@@ -682,6 +1187,7 @@ namespace paper::weapon_motion
             if (state.partCount == 0) {
                 return false;
             }
+            beginCacheLookup(state);
 
             std::array<
                 reload_observation::EvidenceMotionSource,
@@ -930,37 +1436,37 @@ namespace paper::weapon_motion
         }
 
         [[nodiscard]] bool rigidFollowers(
-            const ExactTrackCandidate& leader,
-            const ExactTrackCandidate& follower,
-            const PaperWeaponMotionStageKindV1 kind)
+            const std::array<
+                PaperReloadQsTransformV1,
+                PAPER_WEAPON_MOTION_KEY_COUNT_V1>& leaderKeys,
+            const std::array<
+                PaperReloadQsTransformV1,
+                PAPER_WEAPON_MOTION_KEY_COUNT_V1>& followerKeys)
         {
-            const auto& leaderKeys =
-                kind == PaperWeaponMotionStageKindV1::Primary ?
-                    leader.primary : leader.returning;
-            const auto& followerKeys =
-                kind == PaperWeaponMotionStageKindV1::Primary ?
-                    follower.primary : follower.returning;
-            float reference[3]{
-                followerKeys[0].translate[0] - leaderKeys[0].translate[0],
-                followerKeys[0].translate[1] - leaderKeys[0].translate[1],
-                followerKeys[0].translate[2] - leaderKeys[0].translate[2],
-            };
             for (std::size_t key = 1; key < leaderKeys.size(); ++key) {
-                const float relative[3]{
-                    followerKeys[key].translate[0] - leaderKeys[key].translate[0],
-                    followerKeys[key].translate[1] - leaderKeys[key].translate[1],
-                    followerKeys[key].translate[2] - leaderKeys[key].translate[2],
-                };
-                const auto x = relative[0] - reference[0];
-                const auto y = relative[1] - reference[1];
-                const auto z = relative[2] - reference[2];
-                if (std::sqrt(x * x + y * y + z * z) >
-                    kRigidFollowerTolerance) {
+                if (!relativeTransformStable(
+                        leaderKeys[0],
+                        followerKeys[0],
+                        leaderKeys[key],
+                        followerKeys[key],
+                        kRigidFollowerTranslationTolerance,
+                        kRigidFollowerRotationToleranceRadians,
+                        kRigidFollowerScaleTolerance)) {
                     return false;
                 }
             }
             return true;
         }
+
+        struct RankedFollower
+        {
+            std::uint32_t candidateIndex{ kInvalidId };
+            std::array<
+                PaperReloadQsTransformV1,
+                PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+            float overlap{ 0.0f };
+            bool rigid{ false };
+        };
 
         void attachFollowers(
             Runtime& state,
@@ -972,25 +1478,75 @@ namespace paper::weapon_motion
                 return;
             }
             auto& stage = state.stages[stageIndex];
+            const auto& leaderKeys =
+                kind == PaperWeaponMotionStageKindV1::Primary ?
+                    leader.primary : leader.returning;
+            const auto& sourcePositions =
+                kind == PaperWeaponMotionStageKindV1::Primary ?
+                    leader.primarySourcePositions :
+                    leader.returnSourcePositions;
+            std::array<
+                RankedFollower,
+                PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1> ranked{};
+            std::uint32_t rankedCount = 0;
             for (std::uint32_t index = 0;
                  index < state.exact.candidateCount;
                  ++index) {
                 const auto& candidate = state.exact.candidates[index];
-                const auto length =
-                    kind == PaperWeaponMotionStageKindV1::Primary ?
-                        candidate.primaryLength : candidate.returnLength;
                 if (!candidate.valid || candidate.partId == leader.partId ||
-                    length < kMinimumExcursionGameUnits) {
+                    (kind == PaperWeaponMotionStageKindV1::Return &&
+                        candidate.returnLength < kMinimumExcursionGameUnits)) {
                     continue;
                 }
-                if (stage.followerCount >= stage.followers.size()) {
-                    stage.value.flags |= flag(
-                        PaperWeaponMotionStageFlagV1::FollowersTruncated);
-                    state.catalog.flags |= flag(
-                        PaperWeaponMotionCatalogFlagV1::FollowersTruncated);
-                    ++state.catalog.omittedFollowerCount;
+                auto& entry = ranked[rankedCount];
+                if (!sampleAtSourcePositions(
+                        candidate.sourcePoses,
+                        candidate.sampleCount,
+                        sourcePositions,
+                        entry.keys)) {
                     continue;
                 }
+                const auto length = pathLength(entry.keys);
+                if (length < kMinimumExcursionGameUnits) {
+                    continue;
+                }
+                entry.rigid = rigidFollowers(leaderKeys, entry.keys);
+                entry.overlap = temporalMotionOverlap(leaderKeys, entry.keys);
+                if (!entry.rigid &&
+                    entry.overlap < kFollowerMotionOverlapMinimum) {
+                    continue;
+                }
+                entry.candidateIndex = index;
+                ++rankedCount;
+            }
+            std::sort(
+                ranked.begin(),
+                ranked.begin() + rankedCount,
+                [&state](const RankedFollower& left,
+                         const RankedFollower& right) {
+                    if (left.rigid != right.rigid) {
+                        return left.rigid;
+                    }
+                    if (left.overlap != right.overlap) {
+                        return left.overlap > right.overlap;
+                    }
+                    return state.exact.candidates[left.candidateIndex].partId <
+                        state.exact.candidates[right.candidateIndex].partId;
+                });
+            const auto acceptedCount = (std::min)(
+                rankedCount,
+                static_cast<std::uint32_t>(stage.followers.size()));
+            if (rankedCount > acceptedCount) {
+                stage.value.flags |= flag(
+                    PaperWeaponMotionStageFlagV1::FollowersTruncated);
+                state.catalog.flags |= flag(
+                    PaperWeaponMotionCatalogFlagV1::FollowersTruncated);
+                state.catalog.omittedFollowerCount += rankedCount - acceptedCount;
+            }
+            for (std::uint32_t rank = 0; rank < acceptedCount; ++rank) {
+                const auto& rankedFollower = ranked[rank];
+                const auto& candidate = state.exact.candidates[
+                    rankedFollower.candidateIndex];
                 auto& follower = stage.followers[stage.followerCount];
                 follower = {};
                 follower.value.stageId = stageIndex;
@@ -1009,14 +1565,12 @@ namespace paper::weapon_motion
                     flag(PaperWeaponMotionFollowerFlagV1::CoTimed) |
                     flag(PaperWeaponMotionFollowerFlagV1::EvidenceMapped) |
                     flag(PaperWeaponMotionFollowerFlagV1::LiveRebased);
-                if (rigidFollowers(leader, candidate, kind)) {
+                if (rankedFollower.rigid) {
                     follower.value.flags |=
                         flag(PaperWeaponMotionFollowerFlagV1::Rigid);
                 }
                 follower.value.keyCount = PAPER_WEAPON_MOTION_KEY_COUNT_V1;
-                follower.keys =
-                    kind == PaperWeaponMotionStageKindV1::Primary ?
-                        candidate.primary : candidate.returning;
+                follower.keys = rankedFollower.keys;
                 ++stage.followerCount;
             }
             stage.value.followerCount = stage.followerCount;
@@ -1095,6 +1649,26 @@ namespace paper::weapon_motion
             state.store.rawAnimationCatalogRevision = catalog.catalogRevision;
             state.store.flags |= flag(
                 PaperWeaponMotionStoreFlagV1::RawAnimationEvidenceAvailable);
+            const bool preharvestCompleted = hasFlag(
+                catalog.statusFlags,
+                flag(PaperReloadAnimationCatalogFlagV1::
+                    ExactPreharvestCompleted));
+            const bool cacheEligible = preharvestCompleted &&
+                catalog.omittedClipCount == 0 &&
+                catalog.exactClipsRejected == 0 &&
+                catalog.exactTargetTruncationCount == 0 &&
+                !hasFlag(
+                    catalog.statusFlags,
+                    flag(PaperReloadAnimationCatalogFlagV1::
+                        ExactPreharvestFailed)) &&
+                !hasFlag(
+                    catalog.statusFlags,
+                    flag(PaperReloadAnimationCatalogFlagV1::
+                        ClipCapacityTruncated)) &&
+                !hasFlag(
+                    catalog.statusFlags,
+                    flag(PaperReloadAnimationCatalogFlagV1::
+                        SampleStorageTruncated));
             if (catalog.exactClipCount != 0) {
                 state.catalog.flags |= flag(
                     PaperWeaponMotionCatalogFlagV1::ExactEvidenceAvailable);
@@ -1110,26 +1684,49 @@ namespace paper::weapon_motion
                 }
                 state.exact.catalogSequence = catalog.catalogSequence;
             }
-            if (catalog.catalogRevision == state.exact.catalogRevision &&
-                catalog.clipCount == state.exact.clipCount) {
-                return;
-            }
             if (catalog.clipCount < state.exact.clipCount) {
                 std::destroy_at(std::addressof(state.exact));
                 std::construct_at(std::addressof(state.exact));
                 state.exact.catalogSequence = catalog.catalogSequence;
             }
-            std::uint32_t copied = 0;
-            const auto remaining = static_cast<std::uint32_t>(
-                state.exact.clips.size()) - state.exact.clipCount;
-            if (remaining != 0 &&
-                animation_evidence::copyClips(
-                    catalog.catalogSequence,
-                    state.exact.clipCount,
-                    state.exact.clips.data() + state.exact.clipCount,
-                    remaining,
-                    copied) == PaperResultV1::Ok) {
-                state.exact.clipCount += copied;
+            state.exact.preharvestCompleted = preharvestCompleted;
+            state.exact.cacheEligible = cacheEligible;
+            if (catalog.catalogRevision != state.exact.catalogRevision ||
+                catalog.clipCount != state.exact.clipCount) {
+                std::uint32_t copied = 0;
+                const auto remaining = static_cast<std::uint32_t>(
+                    state.exact.clips.size()) - state.exact.clipCount;
+                if (remaining != 0 &&
+                    animation_evidence::copyClips(
+                        catalog.catalogSequence,
+                        state.exact.clipCount,
+                        state.exact.clips.data() + state.exact.clipCount,
+                        remaining,
+                        copied) == PaperResultV1::Ok) {
+                    state.exact.clipCount += copied;
+                }
+            }
+            for (std::uint32_t index = 0;
+                 index < state.exact.clipCount && state.exact.cacheEligible;
+                 ++index) {
+                const auto& clip = state.exact.clips[index];
+                if (clip.acquisition !=
+                    PaperReloadAnimationAcquisitionV1::
+                        ExactWeaponPreharvest) {
+                    continue;
+                }
+                state.exact.cacheEligible =
+                    !boundedText(clip.animationPath).empty() &&
+                    !hasFlag(
+                        clip.flags,
+                        flag(PaperReloadAnimationClipFlagV1::
+                            AnimationPathTruncated)) &&
+                    !hasFlag(
+                        clip.flags,
+                        flag(PaperReloadAnimationClipFlagV1::TracksTruncated)) &&
+                    !hasFlag(
+                        clip.flags,
+                        flag(PaperReloadAnimationClipFlagV1::SamplesTruncated));
             }
             state.exact.catalogRevision = catalog.catalogRevision;
         }
@@ -1234,19 +1831,29 @@ namespace paper::weapon_motion
             candidate.partId = partId;
             candidate.sourceClipId = clip.clipId;
             candidate.sourceBoundary = peak;
+            candidate.sampleCount = sampleCount;
+            std::copy_n(
+                state.exact.poses.data(),
+                sampleCount,
+                candidate.sourcePoses.data());
             candidate.peakDelta = poseDistance(
                 state.exact.poses[0], state.exact.poses[peak]);
-            candidate.primaryLength = resamplePath(
-                state.exact.poses, 0, peak, candidate.primary);
+            candidate.primaryLength = resamplePathWithSourcePositions(
+                state.exact.poses,
+                0,
+                peak,
+                candidate.primary,
+                candidate.primarySourcePositions);
             if (peak + 1 < sampleCount &&
                 poseDistance(
                     state.exact.poses[sampleCount - 1],
                     state.exact.poses[0]) <= kReturnToRestTolerance) {
-                candidate.returnLength = resamplePath(
+                candidate.returnLength = resamplePathWithSourcePositions(
                     state.exact.poses,
                     peak,
                     sampleCount - 1,
-                    candidate.returning);
+                    candidate.returning,
+                    candidate.returnSourcePositions);
             }
             candidate.valid =
                 candidate.primaryLength >= kMinimumExcursionGameUnits;
@@ -1303,6 +1910,23 @@ namespace paper::weapon_motion
                 state.catalog.observationSnapshotSequence;
             state.store.inMemoryPartCount = state.partCount;
             state.store.inMemoryStageCount = state.stageCount;
+            if (s_cacheStore) {
+                const auto statistics = s_cacheStore->statistics();
+                state.store.persistentRecordCount =
+                    statistics.persistentRecordCount;
+                state.store.pendingWriteCount = statistics.pendingWriteCount;
+                state.store.droppedCaptureCount =
+                    statistics.droppedRequestCount;
+                if (statistics.persistentStorageAvailable) {
+                    state.store.flags |= flag(
+                        PaperWeaponMotionStoreFlagV1::
+                            PersistentStorageAvailable);
+                } else {
+                    state.store.flags &= ~flag(
+                        PaperWeaponMotionStoreFlagV1::
+                            PersistentStorageAvailable);
+                }
+            }
         }
 
         [[nodiscard]] const StageRecord* selectProjectedStage(
@@ -1583,9 +2207,74 @@ namespace paper::weapon_motion
         }
     }
 
-    void reset(const ResetReason)
+    void configureCache(const PaperConfig& config)
+    {
+        if (!config.weaponMotionCacheEnabled) {
+            if (s_cacheStore) {
+                s_cacheStore->shutdown();
+            }
+            s_cacheSettings.reset();
+            return;
+        }
+        const auto iniPath = std::filesystem::path(config.activePath);
+        weapon_motion_cache::Settings settings{
+            .enabled = true,
+            .root = iniPath.parent_path() / "MotionCache" / "v1",
+            .dataRoot = std::filesystem::current_path() / "Data",
+            .maximumSessionBytes =
+                static_cast<std::uint64_t>(
+                    config.weaponMotionSessionCacheMiB) *
+                1024ull * 1024ull,
+            .maximumDiskBytes =
+                static_cast<std::uint64_t>(config.weaponMotionDiskCacheMiB) *
+                1024ull * 1024ull,
+            .maximumFileBytes =
+                static_cast<std::uint64_t>(
+                    config.weaponMotionMaximumFileMiB) *
+                1024ull * 1024ull,
+            .maximumEntries = config.weaponMotionMaximumEntries,
+        };
+        if (s_cacheSettings && *s_cacheSettings == settings &&
+            s_cacheStore && s_cacheStore->enabled()) {
+            return;
+        }
+        if (!s_cacheStore) {
+            s_cacheStore = std::make_unique<weapon_motion_cache::Store>();
+        }
+        s_cacheStore->configure(settings);
+        s_cacheSettings = std::move(settings);
+        PAPER_LOG_INFO(
+            MotionCache,
+            "Configured compiled motion cache at '{}' (session={} MiB, disk={} MiB, file={} MiB, entries={})",
+            s_cacheSettings->root.string(),
+            config.weaponMotionSessionCacheMiB,
+            config.weaponMotionDiskCacheMiB,
+            config.weaponMotionMaximumFileMiB,
+            config.weaponMotionMaximumEntries);
+    }
+
+    bool requiresExactAnimationEvidence()
+    {
+        if (!s_cacheStore || !s_cacheStore->enabled()) {
+            return true;
+        }
+        if (!s_runtime) {
+            return false;
+        }
+        return s_runtime->cacheLookupState == CacheLookupState::Miss ||
+            s_runtime->cacheLookupState == CacheLookupState::Bypass;
+    }
+
+    void reset(const ResetReason reason)
     {
         s_runtime.reset();
+        if (reason == ResetReason::ProviderShutdown) {
+            if (s_cacheStore) {
+                s_cacheStore->shutdown();
+            }
+            s_cacheStore.reset();
+            s_cacheSettings.reset();
+        }
     }
 
     void completeFrame(
@@ -1598,9 +2287,14 @@ namespace paper::weapon_motion
         if (!synchronizeParts(state, context)) {
             return;
         }
+        pollCacheLookup(state);
         state.catalog.paperProviderGeneration = paperProviderGeneration;
         updateLearning(state, context.frameIndex);
-        processOneExactTrack(state);
+        if (state.cacheLookupState == CacheLookupState::Miss ||
+            state.cacheLookupState == CacheLookupState::Bypass) {
+            processOneExactTrack(state);
+        }
+        queueCompletedCacheRecord(state);
         refreshCatalogFlags(state);
         updateManipulation(state, rockApi, context, paperProviderGeneration);
     }

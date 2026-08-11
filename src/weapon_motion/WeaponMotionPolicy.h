@@ -288,13 +288,16 @@ namespace paper::weapon_motion_policy
     }
 
     template <std::size_t Capacity>
-    [[nodiscard]] inline float resamplePath(
+    [[nodiscard]] inline float resamplePathWithSourcePositions(
         const std::array<PaperReloadQsTransformV1, Capacity>& samples,
         const std::uint32_t first,
         const std::uint32_t last,
         std::array<
             PaperReloadQsTransformV1,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outKeys)
+            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outKeys,
+        std::array<
+            float,
+            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outSourcePositions)
     {
         if (first >= Capacity || last >= Capacity || first >= last) {
             return 0.0f;
@@ -326,8 +329,125 @@ namespace paper::weapon_motion_policy
                 0.0f;
             outKeys[key] = interpolate(
                 samples[lower], samples[upper], fraction);
+            outSourcePositions[key] =
+                static_cast<float>(lower) + fraction;
         }
         return total;
+    }
+
+    template <std::size_t Capacity>
+    [[nodiscard]] inline float resamplePath(
+        const std::array<PaperReloadQsTransformV1, Capacity>& samples,
+        const std::uint32_t first,
+        const std::uint32_t last,
+        std::array<
+            PaperReloadQsTransformV1,
+            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outKeys)
+    {
+        std::array<
+            float,
+            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1> sourcePositions{};
+        return resamplePathWithSourcePositions(
+            samples,
+            first,
+            last,
+            outKeys,
+            sourcePositions);
+    }
+
+    template <std::size_t Capacity, std::size_t PositionCount>
+    [[nodiscard]] inline bool sampleAtSourcePositions(
+        const std::array<PaperReloadQsTransformV1, Capacity>& samples,
+        const std::uint32_t sampleCount,
+        const std::array<float, PositionCount>& sourcePositions,
+        std::array<PaperReloadQsTransformV1, PositionCount>& outKeys)
+    {
+        if (sampleCount < 2 || sampleCount > Capacity) {
+            return false;
+        }
+        const auto maximum = static_cast<float>(sampleCount - 1);
+        for (std::size_t index = 0; index < sourcePositions.size(); ++index) {
+            const auto position = sourcePositions[index];
+            if (!std::isfinite(position) || position < 0.0f ||
+                position > maximum) {
+                return false;
+            }
+            const auto lower = static_cast<std::uint32_t>(position);
+            const auto upper = (std::min)(lower + 1, sampleCount - 1);
+            outKeys[index] = interpolate(
+                samples[lower],
+                samples[upper],
+                position - static_cast<float>(lower));
+        }
+        return true;
+    }
+
+    template <std::size_t KeyCount>
+    [[nodiscard]] inline float pathLength(
+        const std::array<PaperReloadQsTransformV1, KeyCount>& keys)
+    {
+        auto total = 0.0f;
+        for (std::size_t index = 1; index < keys.size(); ++index) {
+            total += poseDistance(keys[index - 1], keys[index]);
+        }
+        return total;
+    }
+
+    template <std::size_t KeyCount>
+    [[nodiscard]] inline float temporalMotionOverlap(
+        const std::array<PaperReloadQsTransformV1, KeyCount>& leader,
+        const std::array<PaperReloadQsTransformV1, KeyCount>& follower)
+    {
+        std::array<float, KeyCount> leaderActivity{};
+        std::array<float, KeyCount> followerActivity{};
+        auto leaderTotal = 0.0f;
+        auto followerTotal = 0.0f;
+        for (std::size_t index = 1; index < leader.size(); ++index) {
+            leaderActivity[index] = poseDistance(
+                leader[index - 1], leader[index]);
+            followerActivity[index] = poseDistance(
+                follower[index - 1], follower[index]);
+            leaderTotal += leaderActivity[index];
+            followerTotal += followerActivity[index];
+        }
+        if (leaderTotal < kMinimumExcursionGameUnits ||
+            followerTotal < kMinimumExcursionGameUnits) {
+            return 0.0f;
+        }
+        auto overlap = 0.0f;
+        for (std::size_t index = 1; index < leader.size(); ++index) {
+            overlap += (std::min)(
+                leaderActivity[index] / leaderTotal,
+                followerActivity[index] / followerTotal);
+        }
+        return clampUnit(overlap);
+    }
+
+    [[nodiscard]] inline bool relativeTransformStable(
+        const PaperReloadQsTransformV1& referenceLeader,
+        const PaperReloadQsTransformV1& referenceFollower,
+        const PaperReloadQsTransformV1& leader,
+        const PaperReloadQsTransformV1& follower,
+        const float translationTolerance,
+        const float rotationToleranceRadians,
+        const float scaleTolerance)
+    {
+        const auto referenceRelative = compose(
+            inverse(referenceLeader), referenceFollower);
+        const auto relative = compose(inverse(leader), follower);
+        if (translationDistance(referenceRelative, relative) >
+                translationTolerance ||
+            rotationDistanceRadians(referenceRelative, relative) >
+                rotationToleranceRadians) {
+            return false;
+        }
+        for (std::size_t axis = 0; axis < 3; ++axis) {
+            if (std::abs(referenceRelative.scale[axis] - relative.scale[axis]) >
+                scaleTolerance) {
+                return false;
+            }
+        }
+        return true;
     }
 
     template <std::size_t Capacity>

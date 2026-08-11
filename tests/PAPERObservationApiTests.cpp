@@ -203,6 +203,18 @@ int main()
     static_assert(sizeof(PaperWeaponMotionPartV1) == 524);
     static_assert(sizeof(PaperWeaponMotionStageV1) == 208);
     static_assert(sizeof(PaperWeaponMotionFollowerV1) == 128);
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperWeaponMotionStageFlagV1::HydratedFromCache) ==
+        (1u << 7));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperWeaponMotionFollowerFlagV1::HydratedFromCache) ==
+        (1u << 5));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperWeaponMotionStoreFlagV1::PersistentCacheHit) ==
+        (1u << 8));
     static_assert(sizeof(PaperWeaponMotionLearningStateV1) == 128);
     static_assert(sizeof(PaperWeaponMotionRecorderV1) == 168);
     static_assert(sizeof(PaperWeaponManipulationFrameStateV1) == 112);
@@ -307,6 +319,99 @@ int main()
             std::abs(motionKeys.front().translate[0]) < 0.0001f &&
             std::abs(motionKeys.back().translate[0] - 4.0f) < 0.0001f,
         "learned motion paths must retain endpoints and arc length");
+
+    std::array<
+        float,
+        PAPER_WEAPON_MOTION_KEY_COUNT_V1> leaderSourcePositions{};
+    const auto synchronizedLength =
+        paper::weapon_motion_policy::resamplePathWithSourcePositions(
+            motionSamples,
+            0,
+            4,
+            motionKeys,
+            leaderSourcePositions);
+    std::array<
+        PaperReloadQsTransformV1,
+        paper::weapon_motion_policy::kMaximumStrokeSamples> followerSamples{};
+    followerSamples[0].translate[1] = 0.0f;
+    followerSamples[1].translate[1] = 0.0f;
+    followerSamples[2].translate[1] = 3.0f;
+    followerSamples[3].translate[1] = 3.0f;
+    followerSamples[4].translate[1] = 6.0f;
+    std::array<
+        PaperReloadQsTransformV1,
+        PAPER_WEAPON_MOTION_KEY_COUNT_V1> synchronizedFollowerKeys{};
+    expect(
+        synchronizedLength == motionLength &&
+            paper::weapon_motion_policy::sampleAtSourcePositions(
+                followerSamples,
+                5,
+                leaderSourcePositions,
+                synchronizedFollowerKeys) &&
+            synchronizedFollowerKeys.front().translate[1] == 0.0f &&
+            synchronizedFollowerKeys.back().translate[1] == 6.0f,
+        "follower keys must use the leader's exact source-time positions");
+
+    auto makePose = [](const float x, const float y) {
+        PaperReloadQsTransformV1 value{};
+        value.translate[0] = x;
+        value.translate[1] = y;
+        value.rotate[3] = 1.0f;
+        value.scale[0] = 1.0f;
+        value.scale[1] = 1.0f;
+        value.scale[2] = 1.0f;
+        return value;
+    };
+    const auto relativeLeaderStart = makePose(0.0f, 0.0f);
+    const auto relativeFollowerStart = makePose(1.0f, 0.0f);
+    auto relativeLeaderEnd = makePose(0.0f, 0.0f);
+    const auto sine45 = std::sqrt(0.5f);
+    relativeLeaderEnd.rotate[2] = sine45;
+    relativeLeaderEnd.rotate[3] = sine45;
+    const auto relativeFollowerEnd = paper::weapon_motion_policy::compose(
+        relativeLeaderEnd, relativeFollowerStart);
+    expect(
+        paper::weapon_motion_policy::relativeTransformStable(
+            relativeLeaderStart,
+            relativeFollowerStart,
+            relativeLeaderEnd,
+            relativeFollowerEnd,
+            0.001f,
+            0.001f,
+            0.001f),
+        "rigid followers must preserve their full leader-relative transform");
+    expect(
+        !paper::weapon_motion_policy::relativeTransformStable(
+            relativeLeaderStart,
+            relativeFollowerStart,
+            relativeLeaderEnd,
+            relativeFollowerStart,
+            0.001f,
+            0.001f,
+            0.001f),
+        "translation-only coincidence must not qualify as full rigidity");
+
+    std::array<
+        PaperReloadQsTransformV1,
+        PAPER_WEAPON_MOTION_KEY_COUNT_V1> overlappingMotion{};
+    std::array<
+        PaperReloadQsTransformV1,
+        PAPER_WEAPON_MOTION_KEY_COUNT_V1> disjointMotion{};
+    for (std::size_t index = 0; index < motionKeys.size(); ++index) {
+        overlappingMotion[index] = makePose(
+            static_cast<float>((std::min)(index, motionKeys.size() / 2)),
+            0.0f);
+        disjointMotion[index] = makePose(
+            index < motionKeys.size() / 2 ? 0.0f :
+                static_cast<float>(index - motionKeys.size() / 2),
+            0.0f);
+    }
+    expect(
+        paper::weapon_motion_policy::temporalMotionOverlap(
+            overlappingMotion, overlappingMotion) > 0.99f &&
+            paper::weapon_motion_policy::temporalMotionOverlap(
+                overlappingMotion, disjointMotion) < 0.05f,
+        "co-timed follower admission must reject disjoint motion windows");
 
     PaperReloadQsTransformV1 projectedInput{};
     projectedInput.translate[0] = 2.0f;

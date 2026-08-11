@@ -734,6 +734,7 @@ namespace paper::api
         TravelExtremeValid = 1u << 4,
         FollowersTruncated = 1u << 5,
         LiveRebased = 1u << 6,
+        HydratedFromCache = 1u << 7,
     };
 
     enum class PaperWeaponMotionFollowerFlagV1 : std::uint32_t
@@ -744,6 +745,7 @@ namespace paper::api
         CoTimed = 1u << 2,
         EvidenceMapped = 1u << 3,
         LiveRebased = 1u << 4,
+        HydratedFromCache = 1u << 5,
     };
 
     enum class PaperWeaponMotionLearningFlagV1 : std::uint32_t
@@ -795,6 +797,10 @@ namespace paper::api
         PersistentStorageAvailable = 1u << 2,
         RawObservationEvidenceAvailable = 1u << 3,
         RawAnimationEvidenceAvailable = 1u << 4,
+        CompiledStageCacheEnabled = 1u << 5,
+        CacheLookupPending = 1u << 6,
+        SessionCacheHit = 1u << 7,
+        PersistentCacheHit = 1u << 8,
     };
 
     enum class PaperEventKindV1 : std::uint32_t
