@@ -12,6 +12,16 @@ namespace paper::provider
     void completeFrame();
     void resetRuntime();
 
+    void configureDevelopmentCapture(
+        api::PaperDevelopmentCaptureModeV1 mode,
+        api::PaperWeaponMotionCacheAccessV1 cacheAccess,
+        std::uint32_t configFlags,
+        std::uint64_t configRevision);
+    [[nodiscard]] std::uint32_t refreshDevelopmentCaptureDemand(
+        std::uint32_t legacyRequestedScopes);
+    void publishDevelopmentCaptureScopes(std::uint32_t activeScopes);
+    [[nodiscard]] std::uint32_t allowedDevelopmentCaptureScopes();
+
     void publishConfig(const api::PaperConfigStateV1& state);
     void publishRuntime(const api::PaperRuntimeStateV1& state);
     void publishNativePosePipeline(

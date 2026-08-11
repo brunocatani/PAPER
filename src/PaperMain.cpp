@@ -10,6 +10,7 @@
 #include "api/RockVisualAuthorityBridge.h"
 #include "compat/TacticalReloadBridge.h"
 #include "debug/NativeAnimationDebugVisualization.h"
+#include "development/DevelopmentCapturePolicy.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_control/ManualReloadOnly.h"
@@ -40,6 +41,7 @@ namespace
     bool s_reloadStageDemandActive{ false };
     bool s_nativePosePipelineDemandActive{ false };
     bool s_weaponMotionDemandActive{ false };
+    weapon_motion::RuntimeOptions s_weaponMotionOptions{};
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
     rock::provider::RockProviderEquippedWeaponHandlingStateV1
         s_handlingState{};
@@ -101,6 +103,7 @@ namespace
         bool reloadStages{ false };
         bool nativePosePipeline{ false };
         bool weaponMotion{ false };
+        weapon_motion::RuntimeOptions weaponMotionOptions{};
     };
 
     using PerformanceClock = std::chrono::steady_clock;
@@ -374,38 +377,95 @@ namespace
 
     [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
     {
-        const bool weaponMotion =
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::WeaponMotionCatalog) ||
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::WeaponMotionDiagnostics) ||
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::
-                    WeaponManipulationTelemetry);
+        const auto scope = [](const api::PaperDevelopmentCaptureScopeV1 value) {
+            return static_cast<std::uint32_t>(value);
+        };
+        std::uint32_t legacyScopes = 0;
+        const bool catalogConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::WeaponMotionCatalog);
+        const bool diagnosticsConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::WeaponMotionDiagnostics);
+        const bool manipulationConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::WeaponManipulationTelemetry);
+        const bool motionConsumer =
+            catalogConsumer || diagnosticsConsumer || manipulationConsumer;
+        if (motionConsumer) {
+            legacyScopes |=
+                scope(api::PaperDevelopmentCaptureScopeV1::
+                    PassiveObservation) |
+                scope(api::PaperDevelopmentCaptureScopeV1::
+                    WeaponMotionCompilation) |
+                scope(api::PaperDevelopmentCaptureScopeV1::
+                    CompiledCacheRead) |
+                scope(api::PaperDevelopmentCaptureScopeV1::
+                    CompiledCacheWrite);
+        }
+        if (diagnosticsConsumer) {
+            legacyScopes |= scope(
+                api::PaperDevelopmentCaptureScopeV1::LiveMotionLearning);
+        }
         const bool reloadStages = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::
                 ReloadStageIdentification);
+        const bool exactConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::ReloadAnimationEvidence);
+        const bool telemetryConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
+        const bool observationConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::ReloadObservations);
+        const bool geometryConsumer = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
+        if (reloadStages || exactConsumer || telemetryConsumer ||
+            observationConsumer || geometryConsumer) {
+            legacyScopes |= scope(
+                api::PaperDevelopmentCaptureScopeV1::PassiveObservation);
+        }
+        if (exactConsumer) {
+            legacyScopes |= scope(
+                api::PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest);
+        }
+
+        auto captureScopes =
+            provider::refreshDevelopmentCaptureDemand(legacyScopes);
+        const bool weaponMotion = (captureScopes & scope(
+            api::PaperDevelopmentCaptureScopeV1::
+                WeaponMotionCompilation)) != 0;
+        weapon_motion::RuntimeOptions motionOptions{
+            .cacheRead = (captureScopes & scope(
+                api::PaperDevelopmentCaptureScopeV1::CompiledCacheRead)) != 0,
+            .cacheWrite = (captureScopes & scope(
+                api::PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)) != 0,
+            .liveMotionLearning = (captureScopes & scope(
+                api::PaperDevelopmentCaptureScopeV1::LiveMotionLearning)) != 0,
+            .manipulationTelemetry = weaponMotion && manipulationConsumer,
+        };
         const bool exactAnimationEvidence =
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::ReloadAnimationEvidence) ||
+            (captureScopes & scope(
+                api::PaperDevelopmentCaptureScopeV1::
+                    ExactAnimationHarvest)) != 0 ||
             (weaponMotion &&
-                weapon_motion::requiresExactAnimationEvidence());
-        const bool animationTelemetry = reloadStages ||
-            exactAnimationEvidence ||
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
+                (provider::allowedDevelopmentCaptureScopes() & scope(
+                    api::PaperDevelopmentCaptureScopeV1::
+                        ExactAnimationHarvest)) != 0 &&
+                weapon_motion::requiresExactAnimationEvidence(
+                    motionOptions.cacheRead));
+        if (exactAnimationEvidence) {
+            captureScopes |= scope(
+                api::PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest) |
+                scope(api::PaperDevelopmentCaptureScopeV1::PassiveObservation);
+        }
+        const bool passiveObservation = (captureScopes & scope(
+            api::PaperDevelopmentCaptureScopeV1::PassiveObservation)) != 0;
+        const bool animationTelemetry = passiveObservation;
         const bool reloadEvidenceGeometry =
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
-        const bool reloadObservation = weaponMotion || reloadStages ||
-            animationTelemetry ||
-            provider::hasConsumerCapability(
-                api::PaperConsumerCapabilityV1::ReloadObservations) ||
-            reloadEvidenceGeometry;
+            passiveObservation && geometryConsumer;
+        const bool reloadObservation = passiveObservation;
+        const bool reloadStagesActive = passiveObservation && reloadStages;
         const bool nativePosePipeline = provider::hasConsumerCapability(
             api::PaperConsumerCapabilityV1::NativePosePipeline);
 
-        if (s_weaponMotionDemandActive && !weaponMotion) {
+        if (s_weaponMotionDemandActive &&
+            (!weaponMotion || s_weaponMotionOptions != motionOptions)) {
             weapon_motion::reset(
                 weapon_motion::ResetReason::DemandEnded);
         }
@@ -415,7 +475,7 @@ namespace
         if (s_reloadObservationDemandActive && !reloadObservation) {
             reload_observation::reset();
         }
-        if (s_reloadStageDemandActive && !reloadStages) {
+        if (s_reloadStageDemandActive && !reloadStagesActive) {
             reload_stages::reset();
         }
         if (s_nativePosePipelineDemandActive && !nativePosePipeline) {
@@ -423,17 +483,20 @@ namespace
         }
         s_reloadObservationDemandActive = reloadObservation;
         s_animationTelemetryDemandActive = animationTelemetry;
-        s_reloadStageDemandActive = reloadStages;
+        s_reloadStageDemandActive = reloadStagesActive;
         s_nativePosePipelineDemandActive = nativePosePipeline;
         s_weaponMotionDemandActive = weaponMotion;
+        s_weaponMotionOptions = motionOptions;
+        provider::publishDevelopmentCaptureScopes(captureScopes);
         return EnrichmentDemand{
             .reloadObservation = reloadObservation,
             .reloadEvidenceGeometry = reloadEvidenceGeometry,
             .animationTelemetry = animationTelemetry,
             .exactAnimationEvidence = exactAnimationEvidence,
-            .reloadStages = reloadStages,
+            .reloadStages = reloadStagesActive,
             .nativePosePipeline = nativePosePipeline,
             .weaponMotion = weaponMotion,
+            .weaponMotionOptions = motionOptions,
         };
     }
 
@@ -480,6 +543,30 @@ namespace
             g_config.nativeReloadAnimationPartialAuthorityTestEnabled ? 1u : 0u;
         state.logLevel = g_config.logLevel;
         state.revision = ++s_configRevision;
+        state.developmentCaptureMode = g_config.developmentCaptureMode;
+        state.weaponMotionCacheAccess = g_config.weaponMotionCacheAccess;
+        if (g_config.developmentCaptureAutoStart) {
+            state.developmentCaptureFlags |= static_cast<std::uint32_t>(
+                api::PaperDevelopmentCaptureConfigFlagV1::AutoStart);
+        }
+        if (g_config.developmentCaptureAllowApiActivation) {
+            state.developmentCaptureFlags |= static_cast<std::uint32_t>(
+                api::PaperDevelopmentCaptureConfigFlagV1::
+                    AllowApiActivation);
+        }
+        if (g_config.developmentCaptureHotReload) {
+            state.developmentCaptureFlags |= static_cast<std::uint32_t>(
+                api::PaperDevelopmentCaptureConfigFlagV1::HotReloadEnabled);
+        }
+        state.developmentCaptureAllowedScopes =
+            development_capture_policy::allowedScopes(
+                g_config.developmentCaptureMode,
+                g_config.weaponMotionCacheAccess);
+        provider::configureDevelopmentCapture(
+            state.developmentCaptureMode,
+            state.weaponMotionCacheAccess,
+            state.developmentCaptureFlags,
+            state.revision);
         provider::publishConfig(state);
         provider::dispatchEvent(api::PaperEventKindV1::ConfigReloaded);
     }
@@ -862,6 +949,14 @@ namespace
         beginPerformancePhase(context->frameIndex);
         const auto phaseStarted = PerformanceClock::now();
 
+        if (context->phase ==
+                rock::provider::RockProviderAnimationPhaseV1::BeforeRock &&
+            g_config.processPendingReload()) {
+            weapon_motion::setCacheAccess(g_config.weaponMotionCacheAccess);
+            publishConfigState();
+            configureManualReloadOnlyForSession();
+        }
+
         const bool rockEnabled = hasContextFlag(
             context->flags,
             rock::provider::RockProviderAnimationPhaseContextFlagV1::RockEnabled);
@@ -1058,7 +1153,8 @@ namespace
                 weapon_motion::completeFrame(
                     *context,
                     rockApiClient(),
-                    provider::generation());
+                    provider::generation(),
+                    enrichmentDemand.weaponMotionOptions);
             }
             if (enrichmentDemand.reloadStages) {
                 reload_stages::completeFrame(*context);
@@ -1136,6 +1232,7 @@ namespace
         s_reloadStageDemandActive = false;
         s_nativePosePipelineDemandActive = false;
         s_weaponMotionDemandActive = false;
+        s_weaponMotionOptions = {};
         weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
         s_reloadPerformance = {};
         provider::resetRuntime();
@@ -1151,6 +1248,7 @@ namespace
             (void)g_config.reload();
             weapon_motion::configureCache(g_config);
             publishConfigState();
+            g_config.startWatching();
             configureManualReloadOnlyForSession();
             tactical_reload_bridge::initializeSession();
             s_gameLoaded.store(true, std::memory_order_release);
@@ -1173,6 +1271,7 @@ namespace
             (void)g_config.reload();
             weapon_motion::configureCache(g_config);
             publishConfigState();
+            g_config.startWatching();
             configureManualReloadOnlyForSession();
             tactical_reload_bridge::initializeSession();
             s_gameLoaded.store(true, std::memory_order_release);

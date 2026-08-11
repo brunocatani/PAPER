@@ -42,7 +42,7 @@ int main()
         offsetof(PaperProviderApiV1, getReloadObservationLimitsV1) ==
         PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
-    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 376);
+    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 400);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES ==
         176);
@@ -72,7 +72,15 @@ int main()
         368);
     static_assert(
         PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES ==
+        376);
+    static_assert(
+        offsetof(PaperProviderApiV1, setDevelopmentCaptureV1) ==
+        PAPER_PROVIDER_API_V1_WEAPON_MOTION_DIAGNOSTICS_TABLE_BYTES);
+    static_assert(
+        PAPER_PROVIDER_API_V1_DEVELOPMENT_CAPTURE_TABLE_BYTES ==
         sizeof(PaperProviderApiV1));
+    static_assert(sizeof(PaperDevelopmentCaptureRequestV1) == 48);
+    static_assert(sizeof(PaperDevelopmentCaptureStateV1) == 144);
     static_assert(
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
             static_cast<std::uint32_t>(
@@ -97,6 +105,10 @@ int main()
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
             static_cast<std::uint32_t>(
                 PaperProviderFeatureBitV1::NativePosePipeline)) != 0);
+    static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::DevelopmentCaptureControl)) != 0);
     static_assert(
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
             static_cast<std::uint32_t>(

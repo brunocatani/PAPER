@@ -84,7 +84,8 @@ namespace paper::weapon_motion_cache
 
     struct Settings
     {
-        bool enabled{ true };
+        bool readEnabled{ false };
+        bool writeEnabled{ false };
         std::filesystem::path root{};
         std::filesystem::path dataRoot{};
         std::uint64_t maximumSessionBytes{ 64ull * 1024ull * 1024ull };
@@ -129,9 +130,12 @@ namespace paper::weapon_motion_cache
         Store& operator=(const Store&) = delete;
 
         void configure(Settings settings);
+        void setAccess(bool readEnabled, bool writeEnabled);
         void start();
         void shutdown();
         [[nodiscard]] bool enabled() const;
+        [[nodiscard]] bool readEnabled() const;
+        [[nodiscard]] bool writeEnabled() const;
         [[nodiscard]] bool requestLoad(std::uint64_t loadoutKey);
         [[nodiscard]] bool requestSave(std::unique_ptr<CompiledRecord> record);
         [[nodiscard]] bool tryTakeLoadResult(LoadResult& outResult);
@@ -181,6 +185,8 @@ namespace paper::weapon_motion_cache
         std::atomic<std::uint32_t> pendingWriteCount_{ 0 };
         std::atomic<std::uint64_t> droppedRequestCount_{ 0 };
         std::atomic_bool persistentStorageAvailable_{ false };
-        std::atomic_bool enabled_{ false };
+        std::atomic_bool configured_{ false };
+        std::atomic_bool readEnabled_{ false };
+        std::atomic_bool writeEnabled_{ false };
     };
 }

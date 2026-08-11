@@ -13,6 +13,16 @@ namespace paper
 
 namespace paper::weapon_motion
 {
+    struct RuntimeOptions
+    {
+        bool cacheRead{ false };
+        bool cacheWrite{ false };
+        bool liveMotionLearning{ false };
+        bool manipulationTelemetry{ false };
+
+        [[nodiscard]] bool operator==(const RuntimeOptions&) const = default;
+    };
+
     enum class ResetReason : std::uint32_t
     {
         RuntimeReset = 0,
@@ -20,14 +30,16 @@ namespace paper::weapon_motion
         ProviderShutdown = 2,
     };
 
-    void activate();
+    void activate(const RuntimeOptions& options);
     void configureCache(const PaperConfig& config);
-    [[nodiscard]] bool requiresExactAnimationEvidence();
+    void setCacheAccess(api::PaperWeaponMotionCacheAccessV1 access);
+    [[nodiscard]] bool requiresExactAnimationEvidence(bool cacheReadRequested);
     void reset(ResetReason reason);
     void completeFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,
         RockApiClient& rockApi,
-        std::uint32_t paperProviderGeneration);
+        std::uint32_t paperProviderGeneration,
+        const RuntimeOptions& options);
 
     [[nodiscard]] api::PaperResultV1 getLimits(
         api::PaperWeaponMotionLimitsV1& outLimits);

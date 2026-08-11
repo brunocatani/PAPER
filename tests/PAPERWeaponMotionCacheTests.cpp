@@ -173,6 +173,8 @@ int main()
             "payload corruption must fail closed");
 
         const Settings settings{
+            .readEnabled = true,
+            .writeEnabled = true,
             .root = cacheRoot,
             .dataRoot = dataRoot,
             .maximumSessionBytes = 8ull * 1024ull * 1024ull,
@@ -180,6 +182,48 @@ int main()
             .maximumFileBytes = 4ull * 1024ull * 1024ull,
             .maximumEntries = 16,
         };
+        {
+            auto disabledSettings = settings;
+            disabledSettings.readEnabled = false;
+            disabledSettings.writeEnabled = false;
+            Store store;
+            store.configure(disabledSettings);
+            store.start();
+            require(
+                !std::filesystem::exists(cacheRoot),
+                "off cache access must not create user storage");
+            require(
+                !store.requestLoad(key) &&
+                    !store.requestSave(
+                        std::make_unique<CompiledRecord>(source)),
+                "off cache access must reject read and write work");
+        }
+        {
+            auto readOnlySettings = settings;
+            readOnlySettings.root = root / "HotAccessCache";
+            readOnlySettings.writeEnabled = false;
+            Store store;
+            store.configure(readOnlySettings);
+            store.start();
+            require(
+                !std::filesystem::exists(readOnlySettings.root),
+                "read-only cache access must not create a missing root");
+            require(
+                !store.requestSave(std::make_unique<CompiledRecord>(source)),
+                "read-only cache access must reject writes");
+            require(store.requestLoad(key), "read-only miss must queue");
+            require(
+                waitForResult(store).status == LoadStatus::Unavailable,
+                "read-only access to a missing root must fail without mutation");
+            store.setAccess(true, true);
+            require(
+                store.requestSave(std::make_unique<CompiledRecord>(source)),
+                "hot transition to read-write must accept writes");
+            waitForWrites(store);
+            require(
+                std::filesystem::is_directory(readOnlySettings.root),
+                "hot transition to read-write must initialize persistent storage");
+        }
         {
             Store store;
             store.configure(settings);
@@ -208,6 +252,37 @@ int main()
             require(
                 result.status == LoadStatus::HitPersistent && result.record,
                 "new store instance must hydrate the persistent cache");
+        }
+        {
+            auto readOnlySettings = settings;
+            readOnlySettings.writeEnabled = false;
+            std::filesystem::path actualRecordPath{};
+            for (const auto& entry :
+                 std::filesystem::directory_iterator(cacheRoot)) {
+                if (entry.path().extension() == ".pwmc") {
+                    actualRecordPath = entry.path();
+                    break;
+                }
+            }
+            require(
+                !actualRecordPath.empty(),
+                "read-write cache must create a persistent record");
+            const auto before = std::filesystem::last_write_time(
+                actualRecordPath);
+            Store store;
+            store.configure(readOnlySettings);
+            store.start();
+            require(store.requestLoad(key), "read-only persistent lookup must queue");
+            const auto result = waitForResult(store);
+            require(
+                result.status == LoadStatus::HitPersistent && result.record,
+                "read-only access must hydrate an existing persistent record");
+            require(
+                std::filesystem::last_write_time(actualRecordPath) == before,
+                "read-only persistent hits must not touch file timestamps");
+            require(
+                !store.requestSave(std::make_unique<CompiledRecord>(source)),
+                "read-only access must continue rejecting writes");
         }
 
         writeFile(dataRoot / "TestWeapon.esp", "plugin-v2-with-new-size");

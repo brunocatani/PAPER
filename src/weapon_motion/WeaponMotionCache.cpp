@@ -688,12 +688,24 @@ namespace paper::weapon_motion_cache
     {
         shutdown();
         settings_ = std::move(settings);
-        if (!settings_.enabled || settings_.root.empty() ||
+        if (settings_.root.empty() ||
             settings_.dataRoot.empty() || settings_.maximumEntries == 0 ||
             settings_.maximumFileBytes < kHeaderBytes) {
             return;
         }
-        enabled_.store(true, std::memory_order_release);
+        configured_.store(true, std::memory_order_release);
+        setAccess(settings_.readEnabled, settings_.writeEnabled);
+    }
+
+    void Store::setAccess(
+        const bool readEnabled,
+        const bool writeEnabled)
+    {
+        const bool configured = configured_.load(std::memory_order_acquire);
+        const bool write = configured && writeEnabled;
+        writeEnabled_.store(write, std::memory_order_release);
+        readEnabled_.store(
+            configured && (readEnabled || write), std::memory_order_release);
     }
 
     void Store::start()
@@ -707,7 +719,9 @@ namespace paper::weapon_motion_cache
 
     void Store::shutdown()
     {
-        enabled_.store(false, std::memory_order_release);
+        configured_.store(false, std::memory_order_release);
+        readEnabled_.store(false, std::memory_order_release);
+        writeEnabled_.store(false, std::memory_order_release);
         if (worker_.joinable()) {
             worker_.request_stop();
             wake_.notify_all();
@@ -727,12 +741,23 @@ namespace paper::weapon_motion_cache
 
     bool Store::enabled() const
     {
-        return enabled_.load(std::memory_order_acquire);
+        return configured_.load(std::memory_order_acquire) &&
+            (readEnabled() || writeEnabled());
+    }
+
+    bool Store::readEnabled() const
+    {
+        return readEnabled_.load(std::memory_order_acquire);
+    }
+
+    bool Store::writeEnabled() const
+    {
+        return writeEnabled_.load(std::memory_order_acquire);
     }
 
     bool Store::requestLoad(const std::uint64_t loadoutKey)
     {
-        if (!enabled() || !worker_.joinable() || loadoutKey == 0) {
+        if (!readEnabled() || !worker_.joinable() || loadoutKey == 0) {
             return false;
         }
         std::unique_lock lock(mutex_, std::try_to_lock);
@@ -750,7 +775,7 @@ namespace paper::weapon_motion_cache
 
     bool Store::requestSave(std::unique_ptr<CompiledRecord> record)
     {
-        if (!enabled() || !worker_.joinable() || !record ||
+        if (!writeEnabled() || !worker_.joinable() || !record ||
             !validRecord(*record)) {
             return false;
         }
@@ -797,7 +822,9 @@ namespace paper::weapon_motion_cache
     void Store::run(const std::stop_token stopToken)
     {
         std::error_code error;
-        (void)std::filesystem::create_directories(settings_.root, error);
+        if (writeEnabled()) {
+            (void)std::filesystem::create_directories(settings_.root, error);
+        }
         const bool cacheRootAvailable = !error &&
             std::filesystem::is_directory(settings_.root, error) && !error;
         error.clear();
@@ -806,7 +833,9 @@ namespace paper::weapon_motion_cache
         persistentStorageAvailable_.store(
             cacheRootAvailable && dataRootAvailable,
             std::memory_order_release);
-        refreshPersistentStatisticsAndPrune();
+        if (cacheRootAvailable && dataRootAvailable) {
+            refreshPersistentStatisticsAndPrune();
+        }
         while (!stopToken.stop_requested()) {
             Command command{};
             {
@@ -829,6 +858,13 @@ namespace paper::weapon_motion_cache
 
     void Store::processLoad(const std::uint64_t loadoutKey)
     {
+        if (!readEnabled()) {
+            publishResult({
+                .loadoutKey = loadoutKey,
+                .status = LoadStatus::Unavailable,
+            });
+            return;
+        }
         if (auto session = copySessionRecord(loadoutKey)) {
             publishResult({
                 .loadoutKey = loadoutKey,
@@ -871,11 +907,13 @@ namespace paper::weapon_motion_cache
         }
         auto resultRecord = cloneRecord(*record);
         addSessionRecord(std::move(record));
-        std::error_code touchError;
-        std::filesystem::last_write_time(
-            path,
-            std::filesystem::file_time_type::clock::now(),
-            touchError);
+        if (writeEnabled()) {
+            std::error_code touchError;
+            std::filesystem::last_write_time(
+                path,
+                std::filesystem::file_time_type::clock::now(),
+                touchError);
+        }
         publishResult({
             .loadoutKey = loadoutKey,
             .status = LoadStatus::HitPersistent,
@@ -885,8 +923,24 @@ namespace paper::weapon_motion_cache
 
     void Store::processSave(std::unique_ptr<CompiledRecord> record)
     {
-        if (!record) {
+        if (!record || !writeEnabled()) {
             return;
+        }
+        if (!persistentStorageAvailable_.load(std::memory_order_acquire)) {
+            std::error_code error;
+            (void)std::filesystem::create_directories(settings_.root, error);
+            const bool cacheRootAvailable = !error &&
+                std::filesystem::is_directory(settings_.root, error) && !error;
+            error.clear();
+            const bool dataRootAvailable =
+                std::filesystem::is_directory(settings_.dataRoot, error) &&
+                !error;
+            persistentStorageAvailable_.store(
+                cacheRootAvailable && dataRootAvailable,
+                std::memory_order_release);
+            if (cacheRootAvailable && dataRootAvailable) {
+                refreshPersistentStatisticsAndPrune();
+            }
         }
         record->environmentFingerprint = environmentFingerprint(
             settings_, *record);
@@ -1024,7 +1078,7 @@ namespace paper::weapon_motion_cache
             [](const DiskEntry& left, const DiskEntry& right) {
                 return left.writeTime < right.writeTime;
             });
-        while (!entries.empty() &&
+        while (writeEnabled() && !entries.empty() &&
                (entries.size() > settings_.maximumEntries ||
                    totalBytes > settings_.maximumDiskBytes)) {
             const auto removedBytes = entries.front().bytes;

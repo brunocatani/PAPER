@@ -9,13 +9,26 @@
 #include <SimpleIni.h>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <memory>
+#include <optional>
+#include <string_view>
+#include <thread>
 
 namespace paper
 {
     namespace
     {
+        using namespace std::chrono_literals;
+
+        std::atomic<std::shared_ptr<const PaperConfig>> s_pendingConfig{};
+        std::atomic_bool s_watchEnabled{ false };
+        std::filesystem::path s_watchedPath{};
+        std::jthread s_watcher{};
+
         [[nodiscard]] std::string resolveActiveIniPath()
         {
             char documents[MAX_PATH]{};
@@ -30,16 +43,190 @@ namespace paper
             }
             return R"(Data\PAPER_Config\PAPER.ini)";
         }
+
+        [[nodiscard]] char asciiLower(const char value)
+        {
+            return value >= 'A' && value <= 'Z' ?
+                static_cast<char>(value + ('a' - 'A')) : value;
+        }
+
+        [[nodiscard]] std::string normalized(std::string_view value)
+        {
+            std::string result(value);
+            std::transform(
+                result.begin(), result.end(), result.begin(), asciiLower);
+            return result;
+        }
+
+        [[nodiscard]] api::PaperDevelopmentCaptureModeV1 readMode(
+            const CSimpleIniA& ini)
+        {
+            const auto value = normalized(ini.GetValue(
+                "DevelopmentCapture", "sMaximumMode", "User"));
+            if (value == "observe") {
+                return api::PaperDevelopmentCaptureModeV1::Observe;
+            }
+            if (value == "harvest") {
+                return api::PaperDevelopmentCaptureModeV1::Harvest;
+            }
+            if (value == "capture") {
+                return api::PaperDevelopmentCaptureModeV1::Capture;
+            }
+            return api::PaperDevelopmentCaptureModeV1::User;
+        }
+
+        [[nodiscard]] api::PaperWeaponMotionCacheAccessV1 readCacheAccess(
+            const CSimpleIniA& ini)
+        {
+            const auto value = normalized(ini.GetValue(
+                "WeaponMotionCache", "sAccess", "Off"));
+            if (value == "readonly" || value == "read-only") {
+                return api::PaperWeaponMotionCacheAccessV1::ReadOnly;
+            }
+            if (value == "readwrite" || value == "read-write") {
+                return api::PaperWeaponMotionCacheAccessV1::ReadWrite;
+            }
+            return api::PaperWeaponMotionCacheAccessV1::Off;
+        }
+
+        [[nodiscard]] std::optional<PaperConfig> loadConfig(
+            const std::filesystem::path& path)
+        {
+            CSimpleIniA ini;
+            ini.SetUnicode();
+            if (ini.LoadFile(path.string().c_str()) < 0) {
+                return std::nullopt;
+            }
+
+            PaperConfig config{};
+            config.activePath = path.string();
+            config.enabled = ini.GetBoolValue("Main", "bEnabled", config.enabled);
+            config.logLevel = static_cast<int>(
+                ini.GetLongValue("Main", "iLogLevel", config.logLevel));
+            config.manualReloadOnly = ini.GetBoolValue(
+                "Reload", "bManualReloadOnly", config.manualReloadOnly);
+            config.nativeReloadAnimationAuthorityTestEnabled = ini.GetBoolValue(
+                "NativeAnimation",
+                "bNativeReloadAnimationAuthorityTestEnabled",
+                config.nativeReloadAnimationAuthorityTestEnabled);
+            config.nativeReloadAnimationPartialAuthorityTestEnabled =
+                ini.GetBoolValue(
+                    "NativeAnimation",
+                    "bNativeReloadAnimationPartialAuthorityTestEnabled",
+                    config.nativeReloadAnimationPartialAuthorityTestEnabled);
+            config.debugDrawNativeAnimation = ini.GetBoolValue(
+                "Debug",
+                "bDebugDrawNativeAnimation",
+                config.debugDrawNativeAnimation);
+            config.debugDrawNativeAnimationText = ini.GetBoolValue(
+                "Debug",
+                "bDebugDrawNativeAnimationText",
+                config.debugDrawNativeAnimationText);
+            config.debugNativeAnimationAxisLength = static_cast<float>(
+                ini.GetDoubleValue(
+                    "Debug",
+                    "fDebugNativeAnimationAxisLength",
+                    config.debugNativeAnimationAxisLength));
+            config.debugNativeAnimationMarkerSize = static_cast<float>(
+                ini.GetDoubleValue(
+                    "Debug",
+                    "fDebugNativeAnimationMarkerSize",
+                    config.debugNativeAnimationMarkerSize));
+            config.developmentCaptureMode = readMode(ini);
+            config.developmentCaptureAutoStart = ini.GetBoolValue(
+                "DevelopmentCapture",
+                "bAutoStart",
+                config.developmentCaptureAutoStart);
+            config.developmentCaptureAllowApiActivation = ini.GetBoolValue(
+                "DevelopmentCapture",
+                "bAllowApiActivation",
+                config.developmentCaptureAllowApiActivation);
+            config.developmentCaptureHotReload = ini.GetBoolValue(
+                "DevelopmentCapture",
+                "bHotReload",
+                config.developmentCaptureHotReload);
+            config.weaponMotionCacheAccess = readCacheAccess(ini);
+            config.weaponMotionSessionCacheMiB = static_cast<std::uint32_t>(
+                std::clamp<long>(
+                    ini.GetLongValue(
+                        "WeaponMotionCache",
+                        "iSessionCacheMiB",
+                        config.weaponMotionSessionCacheMiB),
+                    8,
+                    256));
+            config.weaponMotionDiskCacheMiB = static_cast<std::uint32_t>(
+                std::clamp<long>(
+                    ini.GetLongValue(
+                        "WeaponMotionCache",
+                        "iDiskCacheMiB",
+                        config.weaponMotionDiskCacheMiB),
+                    32,
+                    2048));
+            config.weaponMotionMaximumFileMiB = static_cast<std::uint32_t>(
+                std::clamp<long>(
+                    ini.GetLongValue(
+                        "WeaponMotionCache",
+                        "iMaximumFileMiB",
+                        config.weaponMotionMaximumFileMiB),
+                    1,
+                    64));
+            config.weaponMotionMaximumFileMiB = (std::min)(
+                config.weaponMotionMaximumFileMiB,
+                config.weaponMotionDiskCacheMiB);
+            config.weaponMotionMaximumEntries = static_cast<std::uint32_t>(
+                std::clamp<long>(
+                    ini.GetLongValue(
+                        "WeaponMotionCache",
+                        "iMaximumEntries",
+                        config.weaponMotionMaximumEntries),
+                    16,
+                    2048));
+            if (!std::isfinite(config.debugNativeAnimationAxisLength)) {
+                config.debugNativeAnimationAxisLength = 5.0f;
+            }
+            if (!std::isfinite(config.debugNativeAnimationMarkerSize)) {
+                config.debugNativeAnimationMarkerSize = 1.5f;
+            }
+            config.debugNativeAnimationAxisLength = std::clamp(
+                config.debugNativeAnimationAxisLength, 1.0f, 20.0f);
+            config.debugNativeAnimationMarkerSize = std::clamp(
+                config.debugNativeAnimationMarkerSize, 0.25f, 5.0f);
+            return config;
+        }
+
+        void logLoadedConfig(const PaperConfig& config, const bool hotReload)
+        {
+            PAPER_LOG_INFO(
+                Config,
+                "{} '{}' enabled={} manualReloadOnly={} captureMode={} autoStart={} apiActivation={} hotReload={} cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                hotReload ? "Hot-reloaded" : "Loaded",
+                config.activePath,
+                config.enabled,
+                config.manualReloadOnly,
+                static_cast<std::uint32_t>(config.developmentCaptureMode),
+                config.developmentCaptureAutoStart,
+                config.developmentCaptureAllowApiActivation,
+                config.developmentCaptureHotReload,
+                static_cast<std::uint32_t>(config.weaponMotionCacheAccess),
+                config.weaponMotionSessionCacheMiB,
+                config.weaponMotionDiskCacheMiB,
+                config.weaponMotionMaximumFileMiB,
+                config.weaponMotionMaximumEntries);
+        }
     }
 
     PaperConfig g_config{};
 
     bool PaperConfig::reload()
     {
-        activePath = resolveActiveIniPath();
+        s_pendingConfig.store(
+            std::shared_ptr<const PaperConfig>{}, std::memory_order_release);
+        const auto resolvedPath = resolveActiveIniPath();
+        PaperConfig safeDefaults{};
+        safeDefaults.activePath = resolvedPath;
+        activePath = resolvedPath;
         const auto ensureResult = config_file::ensureFileExists(
-            std::filesystem::path(activePath),
-            config_defaults::kIni);
+            std::filesystem::path(activePath), config_defaults::kIni);
         if (ensureResult.status == config_file::EnsureStatus::Created) {
             PAPER_LOG_INFO(Config, "Created default INI at '{}'", activePath);
         } else if (ensureResult.status == config_file::EnsureStatus::Failed) {
@@ -50,118 +237,88 @@ namespace paper
                 ensureResult.error.message());
         }
 
-        CSimpleIniA ini;
-        ini.SetUnicode();
-        const SI_Error result = ini.LoadFile(activePath.c_str());
-        if (result < 0) {
+        auto loaded = loadConfig(activePath);
+        if (!loaded) {
             PAPER_LOG_WARN(
                 Config,
                 "Could not load '{}'; retaining safe compiled defaults",
                 activePath);
+            *this = std::move(safeDefaults);
             logger::setLevel(logLevel);
             return false;
         }
-
-        enabled = ini.GetBoolValue("Main", "bEnabled", enabled);
-        logLevel = static_cast<int>(
-            ini.GetLongValue("Main", "iLogLevel", logLevel));
-        manualReloadOnly = ini.GetBoolValue(
-            "Reload",
-            "bManualReloadOnly",
-            manualReloadOnly);
-        nativeReloadAnimationAuthorityTestEnabled = ini.GetBoolValue(
-            "NativeAnimation",
-            "bNativeReloadAnimationAuthorityTestEnabled",
-            nativeReloadAnimationAuthorityTestEnabled);
-        nativeReloadAnimationPartialAuthorityTestEnabled = ini.GetBoolValue(
-            "NativeAnimation",
-            "bNativeReloadAnimationPartialAuthorityTestEnabled",
-            nativeReloadAnimationPartialAuthorityTestEnabled);
-        debugDrawNativeAnimation = ini.GetBoolValue(
-            "Debug",
-            "bDebugDrawNativeAnimation",
-            debugDrawNativeAnimation);
-        debugDrawNativeAnimationText = ini.GetBoolValue(
-            "Debug",
-            "bDebugDrawNativeAnimationText",
-            debugDrawNativeAnimationText);
-        debugNativeAnimationAxisLength = static_cast<float>(ini.GetDoubleValue(
-            "Debug",
-            "fDebugNativeAnimationAxisLength",
-            debugNativeAnimationAxisLength));
-        debugNativeAnimationMarkerSize = static_cast<float>(ini.GetDoubleValue(
-            "Debug",
-            "fDebugNativeAnimationMarkerSize",
-            debugNativeAnimationMarkerSize));
-        weaponMotionCacheEnabled = ini.GetBoolValue(
-            "WeaponMotionCache",
-            "bEnabled",
-            weaponMotionCacheEnabled);
-        weaponMotionSessionCacheMiB = static_cast<std::uint32_t>(std::clamp<long>(
-            ini.GetLongValue(
-                "WeaponMotionCache",
-                "iSessionCacheMiB",
-                weaponMotionSessionCacheMiB),
-            8,
-            256));
-        weaponMotionDiskCacheMiB = static_cast<std::uint32_t>(std::clamp<long>(
-            ini.GetLongValue(
-                "WeaponMotionCache",
-                "iDiskCacheMiB",
-                weaponMotionDiskCacheMiB),
-            32,
-            2048));
-        weaponMotionMaximumFileMiB = static_cast<std::uint32_t>(
-            std::clamp<long>(
-                ini.GetLongValue(
-                    "WeaponMotionCache",
-                    "iMaximumFileMiB",
-                    weaponMotionMaximumFileMiB),
-                1,
-                64));
-        weaponMotionMaximumFileMiB = (std::min)(
-            weaponMotionMaximumFileMiB,
-            weaponMotionDiskCacheMiB);
-        weaponMotionMaximumEntries = static_cast<std::uint32_t>(
-            std::clamp<long>(
-                ini.GetLongValue(
-                    "WeaponMotionCache",
-                    "iMaximumEntries",
-                    weaponMotionMaximumEntries),
-                16,
-                2048));
-        if (!std::isfinite(debugNativeAnimationAxisLength)) {
-            debugNativeAnimationAxisLength = 5.0f;
-        }
-        if (!std::isfinite(debugNativeAnimationMarkerSize)) {
-            debugNativeAnimationMarkerSize = 1.5f;
-        }
-        debugNativeAnimationAxisLength = std::clamp(
-            debugNativeAnimationAxisLength,
-            1.0f,
-            20.0f);
-        debugNativeAnimationMarkerSize = std::clamp(
-            debugNativeAnimationMarkerSize,
-            0.25f,
-            5.0f);
+        *this = std::move(*loaded);
         logger::setLevel(logLevel);
-        PAPER_LOG_INFO(
-            Config,
-            "Loaded '{}' enabled={} manualReloadOnly={} nativeReload={} partialAuthority={} debugNativeAnimation={} debugText={} debugAxis={:.2f} debugMarker={:.2f} motionCache={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
-            activePath,
-            enabled,
-            manualReloadOnly,
-            nativeReloadAnimationAuthorityTestEnabled,
-            nativeReloadAnimationPartialAuthorityTestEnabled,
-            debugDrawNativeAnimation,
-            debugDrawNativeAnimationText,
-            debugNativeAnimationAxisLength,
-            debugNativeAnimationMarkerSize,
-            weaponMotionCacheEnabled,
-            weaponMotionSessionCacheMiB,
-            weaponMotionDiskCacheMiB,
-            weaponMotionMaximumFileMiB,
-            weaponMotionMaximumEntries);
+        logLoadedConfig(*this, false);
+        return true;
+    }
+
+    void PaperConfig::startWatching()
+    {
+        s_watchEnabled.store(developmentCaptureHotReload,
+            std::memory_order_release);
+        if (!developmentCaptureHotReload || s_watcher.joinable() ||
+            activePath.empty()) {
+            return;
+        }
+        s_watchedPath = activePath;
+        s_watcher = std::jthread([](const std::stop_token stopToken) {
+            std::error_code error;
+            auto observedWriteTime = std::filesystem::last_write_time(
+                s_watchedPath, error);
+            while (!stopToken.stop_requested()) {
+                std::this_thread::sleep_for(250ms);
+                if (!s_watchEnabled.load(std::memory_order_acquire)) {
+                    continue;
+                }
+                error.clear();
+                const auto writeTime = std::filesystem::last_write_time(
+                    s_watchedPath, error);
+                if (error || writeTime == observedWriteTime) {
+                    continue;
+                }
+                observedWriteTime = writeTime;
+                std::this_thread::sleep_for(250ms);
+                if (stopToken.stop_requested()) {
+                    break;
+                }
+                if (auto loaded = loadConfig(s_watchedPath)) {
+                    s_pendingConfig.store(
+                        std::make_shared<const PaperConfig>(std::move(*loaded)),
+                        std::memory_order_release);
+                }
+            }
+        });
+    }
+
+    bool PaperConfig::processPendingReload()
+    {
+        auto pending = s_pendingConfig.exchange(
+            std::shared_ptr<const PaperConfig>{}, std::memory_order_acq_rel);
+        if (!pending) {
+            return false;
+        }
+
+        auto next = *pending;
+        const bool storageBoundsChanged =
+            next.weaponMotionSessionCacheMiB != weaponMotionSessionCacheMiB ||
+            next.weaponMotionDiskCacheMiB != weaponMotionDiskCacheMiB ||
+            next.weaponMotionMaximumFileMiB != weaponMotionMaximumFileMiB ||
+            next.weaponMotionMaximumEntries != weaponMotionMaximumEntries;
+        next.weaponMotionSessionCacheMiB = weaponMotionSessionCacheMiB;
+        next.weaponMotionDiskCacheMiB = weaponMotionDiskCacheMiB;
+        next.weaponMotionMaximumFileMiB = weaponMotionMaximumFileMiB;
+        next.weaponMotionMaximumEntries = weaponMotionMaximumEntries;
+        *this = std::move(next);
+        s_watchEnabled.store(
+            developmentCaptureHotReload, std::memory_order_release);
+        logger::setLevel(logLevel);
+        if (storageBoundsChanged) {
+            PAPER_LOG_WARN(
+                Config,
+                "Weapon motion cache size limits changed during hot reload; the new limits will apply next session");
+        }
+        logLoadedConfig(*this, true);
         return true;
     }
 }

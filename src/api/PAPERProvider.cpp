@@ -4,6 +4,7 @@
 #include "animation/NativeAnimationAuthority.h"
 #include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
+#include "development/DevelopmentCapturePolicy.h"
 #include "PaperLog.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
@@ -32,6 +33,10 @@ namespace paper::provider
             std::uint32_t remainingFrames{ 0 };
             std::uint64_t authorityUpdatedFrame{ 0 };
             bool persistentAuthority{ false };
+            std::uint32_t captureScopes{ 0 };
+            std::uint32_t captureDeniedScopes{ 0 };
+            std::uint32_t captureRemainingFrames{ 0 };
+            std::uint64_t captureUpdatedFrame{ 0 };
             char modName[64]{};
         };
 
@@ -61,6 +66,18 @@ namespace paper::provider
         DWORD s_ownerThread{ 0 };
         std::uint64_t s_currentFrame{ 0 };
         std::uint32_t s_providerGeneration{ 0 };
+        PaperDevelopmentCaptureModeV1 s_captureMode{
+            PaperDevelopmentCaptureModeV1::User
+        };
+        PaperWeaponMotionCacheAccessV1 s_cacheAccess{
+            PaperWeaponMotionCacheAccessV1::Off
+        };
+        std::uint32_t s_captureConfigFlags{ 0 };
+        std::uint32_t s_captureAllowedScopes{ 0 };
+        std::uint32_t s_captureAutoStartScopes{ 0 };
+        std::uint32_t s_captureLegacyScopes{ 0 };
+        std::uint32_t s_captureActiveScopes{ 0 };
+        std::uint64_t s_captureConfigRevision{ 0 };
 
         PaperRuntimeStateV1 s_runtimeState{};
         PaperConfigStateV1 s_configState{};
@@ -120,6 +137,24 @@ namespace paper::provider
         {
             return (consumer.capabilities &
                        static_cast<std::uint32_t>(capability)) != 0;
+        }
+
+        [[nodiscard]] bool hasCaptureConfigFlag(
+            const PaperDevelopmentCaptureConfigFlagV1 flag)
+        {
+            return (s_captureConfigFlags &
+                       static_cast<std::uint32_t>(flag)) != 0;
+        }
+
+        [[nodiscard]] std::uint32_t aggregateCaptureScopes()
+        {
+            std::uint32_t scopes = 0;
+            for (const auto& consumer : s_consumers) {
+                if (consumer.ownerToken != 0) {
+                    scopes |= consumer.captureScopes;
+                }
+            }
+            return scopes & development_capture_policy::kAllScopes;
         }
 
         void removeCallbacksForOwner(const std::uint64_t ownerToken)
@@ -485,6 +520,194 @@ namespace paper::provider
             consumer->authorityFlags = 0;
             consumer->remainingFrames = 0;
             consumer->persistentAuthority = false;
+            return PaperResultV1::Ok;
+        }
+
+        PaperResultV1 PAPER_CALL setDevelopmentCaptureV1(
+            const std::uint64_t ownerToken,
+            const PaperDevelopmentCaptureRequestV1* request)
+        {
+            if (!request) {
+                return PaperResultV1::InvalidArgument;
+            }
+            if (request->size < sizeof(PaperDevelopmentCaptureRequestV1)) {
+                return PaperResultV1::InvalidSize;
+            }
+            if (request->version != PAPER_API_VERSION) {
+                return PaperResultV1::UnsupportedVersion;
+            }
+            if (!onOwnerThread()) {
+                return PaperResultV1::WrongThread;
+            }
+            auto* consumer = findConsumer(ownerToken);
+            if (!consumer) {
+                return PaperResultV1::UnknownOwner;
+            }
+            if (!hasCapability(
+                    *consumer,
+                    PaperConsumerCapabilityV1::DevelopmentCaptureControl)) {
+                return PaperResultV1::PermissionDenied;
+            }
+            if (request->scopes == 0 ||
+                (request->scopes & ~development_capture_policy::kAllScopes) != 0 ||
+                request->leaseFrames == 0 ||
+                request->leaseFrames >
+                    PAPER_MAX_DEVELOPMENT_CAPTURE_LEASE_FRAMES_V1) {
+                return PaperResultV1::InvalidArgument;
+            }
+
+            const auto requested =
+                development_capture_policy::expandDependencies(request->scopes);
+            const auto denied = requested & ~s_captureAllowedScopes;
+            if (!hasCaptureConfigFlag(
+                    PaperDevelopmentCaptureConfigFlagV1::
+                        AllowApiActivation) ||
+                denied != 0) {
+                consumer->captureDeniedScopes = hasCaptureConfigFlag(
+                        PaperDevelopmentCaptureConfigFlagV1::
+                            AllowApiActivation) ?
+                    denied : requested;
+                return PaperResultV1::PermissionDenied;
+            }
+
+            consumer->captureScopes = requested;
+            consumer->captureDeniedScopes = 0;
+            consumer->captureRemainingFrames = request->leaseFrames;
+            consumer->captureUpdatedFrame = s_currentFrame;
+            return PaperResultV1::Ok;
+        }
+
+        PaperResultV1 PAPER_CALL clearDevelopmentCaptureV1(
+            const std::uint64_t ownerToken)
+        {
+            if (!onOwnerThread()) {
+                return PaperResultV1::WrongThread;
+            }
+            auto* consumer = findConsumer(ownerToken);
+            if (!consumer) {
+                return PaperResultV1::UnknownOwner;
+            }
+            if (!hasCapability(
+                    *consumer,
+                    PaperConsumerCapabilityV1::DevelopmentCaptureControl)) {
+                return PaperResultV1::PermissionDenied;
+            }
+            consumer->captureScopes = 0;
+            consumer->captureDeniedScopes = 0;
+            consumer->captureRemainingFrames = 0;
+            return PaperResultV1::Ok;
+        }
+
+        PaperResultV1 PAPER_CALL getDevelopmentCaptureStateV1(
+            const std::uint64_t ownerToken,
+            PaperDevelopmentCaptureStateV1* outState)
+        {
+            if (!outState) {
+                return PaperResultV1::InvalidArgument;
+            }
+            if (outState->size < sizeof(PaperDevelopmentCaptureStateV1)) {
+                return PaperResultV1::InvalidSize;
+            }
+            if (outState->version != PAPER_API_VERSION) {
+                return PaperResultV1::UnsupportedVersion;
+            }
+            if (!onOwnerThread()) {
+                return PaperResultV1::WrongThread;
+            }
+            const auto* consumer = findConsumerConst(ownerToken);
+            if (!consumer) {
+                return PaperResultV1::UnknownOwner;
+            }
+            if (!hasCapability(
+                    *consumer,
+                    PaperConsumerCapabilityV1::DevelopmentCaptureControl)) {
+                return PaperResultV1::PermissionDenied;
+            }
+            PaperDevelopmentCaptureStateV1 state{};
+            state.mode = s_captureMode;
+            state.cacheAccess = s_cacheAccess;
+            state.allowedScopes = s_captureAllowedScopes;
+            state.autoStartScopes = s_captureAutoStartScopes;
+            state.ownerRequestedScopes = consumer->captureScopes;
+            state.aggregateRequestedScopes = aggregateCaptureScopes();
+            state.activeScopes = s_captureActiveScopes;
+            state.deniedScopes = consumer->captureDeniedScopes;
+            state.remainingLeaseFrames = consumer->captureRemainingFrames;
+            state.configRevision = s_captureConfigRevision;
+            if (s_captureAutoStartScopes != 0) {
+                state.stateFlags |= static_cast<std::uint32_t>(
+                    PaperDevelopmentCaptureStateFlagV1::AutoStartActive);
+            }
+            if (hasCaptureConfigFlag(
+                    PaperDevelopmentCaptureConfigFlagV1::
+                        AllowApiActivation)) {
+                state.stateFlags |= static_cast<std::uint32_t>(
+                    PaperDevelopmentCaptureStateFlagV1::ApiActivationAllowed);
+            }
+            if (consumer->captureScopes != 0) {
+                state.stateFlags |= static_cast<std::uint32_t>(
+                    PaperDevelopmentCaptureStateFlagV1::OwnerLeaseActive);
+            }
+            if (state.aggregateRequestedScopes != 0) {
+                state.stateFlags |= static_cast<std::uint32_t>(
+                    PaperDevelopmentCaptureStateFlagV1::AggregateLeaseActive);
+            }
+
+            PaperReloadAnimationCatalogStateV1 animation{};
+            if (animation_evidence::getCatalogState(animation) ==
+                PaperResultV1::Ok) {
+                state.weaponFormId = animation.weaponFormId;
+                state.weaponGenerationKey = animation.weaponGenerationKey;
+                state.storedSampleBytes = animation.storedSampleBytes;
+                state.sampleStorageBudgetBytes =
+                    animation.sampleStorageBudgetBytes;
+                state.exactPreharvestState = animation.exactPreharvestState;
+                state.animationStatusFlags = animation.statusFlags;
+                state.animationClipCount = animation.clipCount;
+                state.exactAnimationClipCount = animation.exactClipCount;
+                state.exactClipsSampled = animation.exactClipsSampled;
+                state.exactClipsRejected = animation.exactClipsRejected;
+                if (animation.exactPreharvestState ==
+                    PaperReloadAnimationPreharvestStateV1::Completed) {
+                    state.stateFlags |= static_cast<std::uint32_t>(
+                        PaperDevelopmentCaptureStateFlagV1::HarvestCompleted);
+                } else if (animation.exactPreharvestState ==
+                           PaperReloadAnimationPreharvestStateV1::Failed) {
+                    state.stateFlags |= static_cast<std::uint32_t>(
+                        PaperDevelopmentCaptureStateFlagV1::HarvestFailed);
+                }
+            }
+
+            PaperWeaponMotionStoreStateV1 store{};
+            if (weapon_motion::getStoreState(store) == PaperResultV1::Ok) {
+                state.motionStoreFlags = store.flags;
+                state.motionPartCount = store.inMemoryPartCount;
+                state.motionStageCount = store.inMemoryStageCount;
+                state.persistentRecordCount = store.persistentRecordCount;
+                state.pendingWriteCount = store.pendingWriteCount;
+                const auto hasStoreFlag = [&store](
+                    const PaperWeaponMotionStoreFlagV1 flag) {
+                    return (store.flags & static_cast<std::uint32_t>(flag)) != 0;
+                };
+                if (hasStoreFlag(
+                        PaperWeaponMotionStoreFlagV1::CacheLookupPending)) {
+                    state.stateFlags |= static_cast<std::uint32_t>(
+                        PaperDevelopmentCaptureStateFlagV1::
+                            CacheLookupPending);
+                }
+                if (hasStoreFlag(
+                        PaperWeaponMotionStoreFlagV1::SessionCacheHit)) {
+                    state.stateFlags |= static_cast<std::uint32_t>(
+                        PaperDevelopmentCaptureStateFlagV1::SessionCacheHit);
+                }
+                if (hasStoreFlag(
+                        PaperWeaponMotionStoreFlagV1::PersistentCacheHit)) {
+                    state.stateFlags |= static_cast<std::uint32_t>(
+                        PaperDevelopmentCaptureStateFlagV1::
+                            PersistentCacheHit);
+                }
+            }
+            *outState = state;
             return PaperResultV1::Ok;
         }
 
@@ -1316,6 +1539,9 @@ namespace paper::provider
             &getWeaponManipulationFrameStateV1,
             &getWeaponManipulationHandStateV1,
             &getWeaponMotionStoreStateV1,
+            &setDevelopmentCaptureV1,
+            &clearDevelopmentCaptureV1,
+            &getDevelopmentCaptureStateV1,
         };
 
         const PaperProviderDescriptorV1 s_descriptor{
@@ -1329,6 +1555,14 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
+        s_captureMode = PaperDevelopmentCaptureModeV1::User;
+        s_cacheAccess = PaperWeaponMotionCacheAccessV1::Off;
+        s_captureConfigFlags = 0;
+        s_captureAllowedScopes = 0;
+        s_captureAutoStartScopes = 0;
+        s_captureLegacyScopes = 0;
+        s_captureActiveScopes = 0;
+        s_captureConfigRevision = 0;
         s_nativePosePipeline = {};
         s_nativePosePipelineSequence.store(0, std::memory_order_release);
         s_nativePosePublicationSequence = 0;
@@ -1348,6 +1582,10 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
+        s_captureAllowedScopes = 0;
+        s_captureAutoStartScopes = 0;
+        s_captureLegacyScopes = 0;
+        s_captureActiveScopes = 0;
         s_nativePosePipeline = {};
         s_nativePosePipelineSequence.store(0, std::memory_order_release);
         s_nativePosePublicationSequence = 0;
@@ -1371,17 +1609,27 @@ namespace paper::provider
             return;
         }
         for (auto& consumer : s_consumers) {
-            if (consumer.ownerToken == 0 ||
-                consumer.authorityFlags == 0 ||
-                consumer.persistentAuthority ||
-                consumer.authorityUpdatedFrame == s_currentFrame) {
+            if (consumer.ownerToken == 0) {
                 continue;
             }
-            if (consumer.remainingFrames > 0) {
-                --consumer.remainingFrames;
+            if (consumer.authorityFlags != 0 &&
+                !consumer.persistentAuthority &&
+                consumer.authorityUpdatedFrame != s_currentFrame) {
+                if (consumer.remainingFrames > 0) {
+                    --consumer.remainingFrames;
+                }
+                if (consumer.remainingFrames == 0) {
+                    consumer.authorityFlags = 0;
+                }
             }
-            if (consumer.remainingFrames == 0) {
-                consumer.authorityFlags = 0;
+            if (consumer.captureScopes != 0 &&
+                consumer.captureUpdatedFrame != s_currentFrame) {
+                if (consumer.captureRemainingFrames > 0) {
+                    --consumer.captureRemainingFrames;
+                }
+                if (consumer.captureRemainingFrames == 0) {
+                    consumer.captureScopes = 0;
+                }
             }
         }
     }
@@ -1395,6 +1643,9 @@ namespace paper::provider
             consumer.authorityFlags = 0;
             consumer.remainingFrames = 0;
             consumer.persistentAuthority = false;
+            consumer.captureScopes = 0;
+            consumer.captureDeniedScopes = 0;
+            consumer.captureRemainingFrames = 0;
         }
         PaperRuntimeStateV1 state{};
         state.paperProviderGeneration = s_providerGeneration;
@@ -1402,6 +1653,8 @@ namespace paper::provider
         animation_evidence::reset();
         reload_stages::reset();
         weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
+        s_captureLegacyScopes = 0;
+        s_captureActiveScopes = 0;
         clearNativePosePipeline();
         publishRuntime(state);
         dispatchEvent(PaperEventKindV1::RuntimeReset);
@@ -1410,6 +1663,77 @@ namespace paper::provider
     void publishConfig(const PaperConfigStateV1& state)
     {
         publishSeqlocked(s_configState, s_configSequence, state);
+    }
+
+    void configureDevelopmentCapture(
+        const PaperDevelopmentCaptureModeV1 mode,
+        const PaperWeaponMotionCacheAccessV1 cacheAccess,
+        const std::uint32_t configFlags,
+        const std::uint64_t configRevision)
+    {
+        if (!onOwnerThread()) {
+            return;
+        }
+        s_captureMode = development_capture_policy::validMode(mode) ?
+            mode : PaperDevelopmentCaptureModeV1::User;
+        s_cacheAccess = development_capture_policy::validCacheAccess(cacheAccess) ?
+            cacheAccess : PaperWeaponMotionCacheAccessV1::Off;
+        constexpr auto allConfigFlags =
+            static_cast<std::uint32_t>(
+                PaperDevelopmentCaptureConfigFlagV1::AutoStart) |
+            static_cast<std::uint32_t>(
+                PaperDevelopmentCaptureConfigFlagV1::AllowApiActivation) |
+            static_cast<std::uint32_t>(
+                PaperDevelopmentCaptureConfigFlagV1::HotReloadEnabled);
+        s_captureConfigFlags = configFlags & allConfigFlags;
+        s_captureConfigRevision = configRevision;
+        s_captureAllowedScopes = development_capture_policy::allowedScopes(
+            s_captureMode, s_cacheAccess);
+        s_captureAutoStartScopes =
+            development_capture_policy::autoStartScopes(
+                s_captureMode,
+                s_cacheAccess,
+                hasCaptureConfigFlag(
+                    PaperDevelopmentCaptureConfigFlagV1::AutoStart));
+        s_captureLegacyScopes &= s_captureAllowedScopes;
+        s_captureActiveScopes &= s_captureAllowedScopes;
+        const bool apiAllowed = hasCaptureConfigFlag(
+            PaperDevelopmentCaptureConfigFlagV1::AllowApiActivation);
+        for (auto& consumer : s_consumers) {
+            if (!apiAllowed ||
+                (consumer.captureScopes & ~s_captureAllowedScopes) != 0) {
+                consumer.captureScopes = 0;
+                consumer.captureRemainingFrames = 0;
+            }
+        }
+    }
+
+    std::uint32_t refreshDevelopmentCaptureDemand(
+        const std::uint32_t legacyRequestedScopes)
+    {
+        if (!onOwnerThread()) {
+            return 0;
+        }
+        s_captureLegacyScopes =
+            development_capture_policy::expandDependencies(
+                legacyRequestedScopes) &
+            s_captureAllowedScopes;
+        return (s_captureAutoStartScopes | s_captureLegacyScopes |
+                   aggregateCaptureScopes()) &
+            s_captureAllowedScopes;
+    }
+
+    void publishDevelopmentCaptureScopes(const std::uint32_t activeScopes)
+    {
+        if (onOwnerThread()) {
+            s_captureActiveScopes =
+                activeScopes & s_captureAllowedScopes;
+        }
+    }
+
+    std::uint32_t allowedDevelopmentCaptureScopes()
+    {
+        return onOwnerThread() ? s_captureAllowedScopes : 0;
     }
 
     void publishRuntime(const PaperRuntimeStateV1& state)

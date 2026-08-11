@@ -234,6 +234,7 @@ namespace paper::weapon_motion
             std::uint64_t cacheLoadoutKey{ 0 };
             std::uint64_t lastQueuedAuthoredRevision{ 0 };
             CacheLookupState cacheLookupState{ CacheLookupState::Uninitialized };
+            RuntimeOptions options{};
         };
 
         std::unique_ptr<Runtime> s_runtime{};
@@ -748,8 +749,11 @@ namespace paper::weapon_motion
                 part.currentWeaponLocal = source.currentWeaponLocal;
                 ++state.partCount;
             }
-            state.catalog.flags = flag(PaperWeaponMotionCatalogFlagV1::Valid) |
-                flag(PaperWeaponMotionCatalogFlagV1::LearningActive);
+            state.catalog.flags = flag(PaperWeaponMotionCatalogFlagV1::Valid);
+            if (state.options.liveMotionLearning) {
+                state.catalog.flags |=
+                    flag(PaperWeaponMotionCatalogFlagV1::LearningActive);
+            }
             state.catalog.weaponFormId = catalog.weaponFormId;
             state.catalog.weaponGenerationKey = catalog.weaponGenerationKey;
             state.catalog.catalogSequence = nextSequence(s_nextCatalogSequence);
@@ -765,27 +769,36 @@ namespace paper::weapon_motion
                 state.catalog.flags |=
                     flag(PaperWeaponMotionCatalogFlagV1::PartsTruncated);
             }
-            state.recorderCount = (std::min)(
-                state.partCount,
-                static_cast<std::uint32_t>(state.recorders.size()));
+            state.recorderCount = state.options.liveMotionLearning ?
+                (std::min)(
+                    state.partCount,
+                    static_cast<std::uint32_t>(state.recorders.size())) :
+                0;
             for (std::uint32_t index = 0; index < state.recorderCount; ++index) {
                 state.recorders[index].value.recorderId = index;
                 state.recorders[index].value.partId = index;
                 state.recorders[index].value.flags =
                     flag(PaperWeaponMotionRecorderFlagV1::Valid);
             }
-            state.learning.flags =
+            state.learning.flags = state.options.liveMotionLearning ?
                 flag(PaperWeaponMotionLearningFlagV1::Active) |
-                flag(PaperWeaponMotionLearningFlagV1::NativeGraphObservations);
+                    flag(PaperWeaponMotionLearningFlagV1::
+                        NativeGraphObservations) :
+                0;
             state.learning.weaponFormId = catalog.weaponFormId;
             state.learning.weaponGenerationKey = catalog.weaponGenerationKey;
             state.learning.recorderCount = state.recorderCount;
             state.store.flags = flag(PaperWeaponMotionStoreFlagV1::Active) |
                 flag(PaperWeaponMotionStoreFlagV1::InMemoryCatalog) |
                 flag(PaperWeaponMotionStoreFlagV1::RawObservationEvidenceAvailable);
-            if (s_cacheStore && s_cacheStore->enabled()) {
+            if (s_cacheStore && s_cacheStore->readEnabled()) {
                 state.store.flags |= flag(
                     PaperWeaponMotionStoreFlagV1::CompiledStageCacheEnabled);
+            }
+            if (s_cacheStore && s_cacheStore->writeEnabled()) {
+                state.store.flags |= flag(
+                    PaperWeaponMotionStoreFlagV1::
+                        CompiledStageCacheWriteEnabled);
             }
             state.store.weaponFormId = catalog.weaponFormId;
             state.store.weaponGenerationKey = catalog.weaponGenerationKey;
@@ -797,7 +810,8 @@ namespace paper::weapon_motion
             if (state.cacheLookupState != CacheLookupState::Uninitialized) {
                 return;
             }
-            if (!s_cacheStore || !s_cacheStore->enabled()) {
+            if (!state.options.cacheRead || !s_cacheStore ||
+                !s_cacheStore->readEnabled()) {
                 state.cacheLookupState = CacheLookupState::Bypass;
                 return;
             }
@@ -1142,7 +1156,8 @@ namespace paper::weapon_motion
                 state.store.rawAnimationCatalogRevision = 0;
                 return;
             }
-            if (state.cacheLookupState != CacheLookupState::Miss ||
+            if (!state.options.cacheWrite ||
+                state.cacheLookupState != CacheLookupState::Miss ||
                 !s_cacheStore || state.cacheLoadoutKey == 0 ||
                 state.catalog.authoredRevision ==
                     state.lastQueuedAuthoredRevision) {
@@ -2200,9 +2215,9 @@ namespace paper::weapon_motion
         }
     }
 
-    void activate()
+    void activate(const RuntimeOptions& options)
     {
-        if (s_cacheStore) {
+        if (s_cacheStore && (options.cacheRead || options.cacheWrite)) {
             s_cacheStore->start();
         }
         if (!s_runtime) {
@@ -2212,16 +2227,12 @@ namespace paper::weapon_motion
 
     void configureCache(const PaperConfig& config)
     {
-        if (!config.weaponMotionCacheEnabled) {
-            if (s_cacheStore) {
-                s_cacheStore->shutdown();
-            }
-            s_cacheSettings.reset();
-            return;
-        }
         const auto iniPath = std::filesystem::path(config.activePath);
         weapon_motion_cache::Settings settings{
-            .enabled = true,
+            .readEnabled = config.weaponMotionCacheAccess !=
+                api::PaperWeaponMotionCacheAccessV1::Off,
+            .writeEnabled = config.weaponMotionCacheAccess ==
+                api::PaperWeaponMotionCacheAccessV1::ReadWrite,
             .root = iniPath.parent_path() / "MotionCache" / "v1",
             .dataRoot = std::filesystem::current_path() / "Data",
             .maximumSessionBytes =
@@ -2237,8 +2248,7 @@ namespace paper::weapon_motion
                 1024ull * 1024ull,
             .maximumEntries = config.weaponMotionMaximumEntries,
         };
-        if (s_cacheSettings && *s_cacheSettings == settings &&
-            s_cacheStore && s_cacheStore->enabled()) {
+        if (s_cacheSettings && *s_cacheSettings == settings && s_cacheStore) {
             return;
         }
         if (!s_cacheStore) {
@@ -2248,17 +2258,29 @@ namespace paper::weapon_motion
         s_cacheSettings = std::move(settings);
         PAPER_LOG_INFO(
             MotionCache,
-            "Configured compiled motion cache at '{}' (session={} MiB, disk={} MiB, file={} MiB, entries={})",
+            "Configured compiled motion cache at '{}' (access={} session={} MiB, disk={} MiB, file={} MiB, entries={})",
             s_cacheSettings->root.string(),
+            static_cast<std::uint32_t>(config.weaponMotionCacheAccess),
             config.weaponMotionSessionCacheMiB,
             config.weaponMotionDiskCacheMiB,
             config.weaponMotionMaximumFileMiB,
             config.weaponMotionMaximumEntries);
     }
 
-    bool requiresExactAnimationEvidence()
+    void setCacheAccess(const api::PaperWeaponMotionCacheAccessV1 access)
     {
-        if (!s_cacheStore || !s_cacheStore->enabled()) {
+        if (!s_cacheStore) {
+            return;
+        }
+        s_cacheStore->setAccess(
+            access != api::PaperWeaponMotionCacheAccessV1::Off,
+            access == api::PaperWeaponMotionCacheAccessV1::ReadWrite);
+    }
+
+    bool requiresExactAnimationEvidence(const bool cacheReadRequested)
+    {
+        if (!cacheReadRequested || !s_cacheStore ||
+            !s_cacheStore->readEnabled()) {
             return true;
         }
         if (!s_runtime) {
@@ -2283,23 +2305,29 @@ namespace paper::weapon_motion
     void completeFrame(
         const rock::provider::RockProviderAnimationPhaseContextV1& context,
         RockApiClient& rockApi,
-        const std::uint32_t paperProviderGeneration)
+        const std::uint32_t paperProviderGeneration,
+        const RuntimeOptions& options)
     {
-        activate();
+        activate(options);
         auto& state = *s_runtime;
+        state.options = options;
         if (!synchronizeParts(state, context)) {
             return;
         }
         pollCacheLookup(state);
         state.catalog.paperProviderGeneration = paperProviderGeneration;
-        updateLearning(state, context.frameIndex);
+        if (options.liveMotionLearning) {
+            updateLearning(state, context.frameIndex);
+        }
         if (state.cacheLookupState == CacheLookupState::Miss ||
             state.cacheLookupState == CacheLookupState::Bypass) {
             processOneExactTrack(state);
         }
         queueCompletedCacheRecord(state);
         refreshCatalogFlags(state);
-        updateManipulation(state, rockApi, context, paperProviderGeneration);
+        if (options.manipulationTelemetry) {
+            updateManipulation(state, rockApi, context, paperProviderGeneration);
+        }
     }
 
     PaperResultV1 getLimits(PaperWeaponMotionLimitsV1& outLimits)

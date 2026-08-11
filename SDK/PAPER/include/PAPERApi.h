@@ -30,6 +30,8 @@ namespace paper::api
     inline constexpr std::uint32_t PAPER_FINGER_TRANSFORM_COUNT_V1 = 15;
     inline constexpr std::uint32_t PAPER_TRANSFORM_NAME_CAPACITY_V1 = 64;
     inline constexpr std::uint32_t PAPER_MAX_AUTHORITY_LEASE_FRAMES_V1 = 1200;
+    inline constexpr std::uint32_t
+        PAPER_MAX_DEVELOPMENT_CAPTURE_LEASE_FRAMES_V1 = 1200;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_CATALOG_NODES_V1 = 2048;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_EVIDENCE_V1 = 100;
     inline constexpr std::uint32_t PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1 = 128;
@@ -110,7 +112,8 @@ namespace paper::api
         WeaponMotionCatalog = 1u << 11,
         WeaponMotionDiagnostics = 1u << 12,
         WeaponManipulationTelemetry = 1u << 13,
-        All = (1u << 14) - 1u,
+        DevelopmentCaptureControl = 1u << 14,
+        All = (1u << 15) - 1u,
     };
 
     enum class PaperProviderFeatureBitV1 : std::uint32_t
@@ -125,6 +128,56 @@ namespace paper::api
         WeaponMotionCatalog = 1u << 6,
         WeaponMotionDiagnostics = 1u << 7,
         WeaponManipulationTelemetry = 1u << 8,
+        DevelopmentCaptureControl = 1u << 9,
+    };
+
+    enum class PaperDevelopmentCaptureModeV1 : std::uint32_t
+    {
+        User = 0,
+        Observe = 1,
+        Harvest = 2,
+        Capture = 3,
+    };
+
+    enum class PaperWeaponMotionCacheAccessV1 : std::uint32_t
+    {
+        Off = 0,
+        ReadOnly = 1,
+        ReadWrite = 2,
+    };
+
+    enum class PaperDevelopmentCaptureScopeV1 : std::uint32_t
+    {
+        None = 0,
+        PassiveObservation = 1u << 0,
+        ExactAnimationHarvest = 1u << 1,
+        WeaponMotionCompilation = 1u << 2,
+        CompiledCacheRead = 1u << 3,
+        CompiledCacheWrite = 1u << 4,
+        LiveMotionLearning = 1u << 5,
+        All = (1u << 6) - 1u,
+    };
+
+    enum class PaperDevelopmentCaptureConfigFlagV1 : std::uint32_t
+    {
+        None = 0,
+        AutoStart = 1u << 0,
+        AllowApiActivation = 1u << 1,
+        HotReloadEnabled = 1u << 2,
+    };
+
+    enum class PaperDevelopmentCaptureStateFlagV1 : std::uint32_t
+    {
+        None = 0,
+        AutoStartActive = 1u << 0,
+        ApiActivationAllowed = 1u << 1,
+        OwnerLeaseActive = 1u << 2,
+        AggregateLeaseActive = 1u << 3,
+        CacheLookupPending = 1u << 4,
+        SessionCacheHit = 1u << 5,
+        PersistentCacheHit = 1u << 6,
+        HarvestCompleted = 1u << 7,
+        HarvestFailed = 1u << 8,
     };
 
     enum class PaperReloadAnimationAcquisitionV1 : std::uint32_t
@@ -801,6 +854,7 @@ namespace paper::api
         CacheLookupPending = 1u << 6,
         SessionCacheHit = 1u << 7,
         PersistentCacheHit = 1u << 8,
+        CompiledStageCacheWriteEnabled = 1u << 9,
     };
 
     enum class PaperEventKindV1 : std::uint32_t
@@ -863,7 +917,66 @@ namespace paper::api
         std::uint32_t partialReloadAuthorityEnabled{ 0 };
         std::int32_t logLevel{ 0 };
         std::uint64_t revision{ 0 };
+        PaperDevelopmentCaptureModeV1 developmentCaptureMode{
+            PaperDevelopmentCaptureModeV1::User
+        };
+        PaperWeaponMotionCacheAccessV1 weaponMotionCacheAccess{
+            PaperWeaponMotionCacheAccessV1::Off
+        };
+        std::uint32_t developmentCaptureFlags{ 0 };
+        std::uint32_t developmentCaptureAllowedScopes{ 0 };
+        std::uint32_t reserved[4]{};
+    };
+
+    struct PaperDevelopmentCaptureRequestV1
+    {
+        std::uint32_t size{ sizeof(PaperDevelopmentCaptureRequestV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t scopes{ 0 };
+        // Development capture is intentionally lease-only. A request must use
+        // 1..PAPER_MAX_DEVELOPMENT_CAPTURE_LEASE_FRAMES_V1 and be renewed by
+        // its owner while capture remains desired.
+        std::uint32_t leaseFrames{ 0 };
         std::uint32_t reserved[8]{};
+    };
+
+    struct PaperDevelopmentCaptureStateV1
+    {
+        std::uint32_t size{ sizeof(PaperDevelopmentCaptureStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        PaperDevelopmentCaptureModeV1 mode{
+            PaperDevelopmentCaptureModeV1::User
+        };
+        PaperWeaponMotionCacheAccessV1 cacheAccess{
+            PaperWeaponMotionCacheAccessV1::Off
+        };
+        std::uint32_t allowedScopes{ 0 };
+        std::uint32_t autoStartScopes{ 0 };
+        std::uint32_t ownerRequestedScopes{ 0 };
+        std::uint32_t aggregateRequestedScopes{ 0 };
+        std::uint32_t activeScopes{ 0 };
+        std::uint32_t deniedScopes{ 0 };
+        std::uint32_t remainingLeaseFrames{ 0 };
+        std::uint32_t stateFlags{ 0 };
+        std::uint64_t configRevision{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t storedSampleBytes{ 0 };
+        std::uint64_t sampleStorageBudgetBytes{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        PaperReloadAnimationPreharvestStateV1 exactPreharvestState{
+            PaperReloadAnimationPreharvestStateV1::Idle
+        };
+        std::uint32_t animationStatusFlags{ 0 };
+        std::uint32_t motionStoreFlags{ 0 };
+        std::uint32_t animationClipCount{ 0 };
+        std::uint32_t exactAnimationClipCount{ 0 };
+        std::uint32_t exactClipsSampled{ 0 };
+        std::uint32_t exactClipsRejected{ 0 };
+        std::uint32_t motionPartCount{ 0 };
+        std::uint32_t motionStageCount{ 0 };
+        std::uint32_t persistentRecordCount{ 0 };
+        std::uint32_t pendingWriteCount{ 0 };
+        std::uint32_t reserved[4]{};
     };
 
     struct PaperRuntimeStateV1
@@ -1942,6 +2055,14 @@ namespace paper::api
         PaperResultV1(PAPER_CALL* getWeaponMotionStoreStateV1)(
             std::uint64_t ownerToken,
             PaperWeaponMotionStoreStateV1* outState);
+        PaperResultV1(PAPER_CALL* setDevelopmentCaptureV1)(
+            std::uint64_t ownerToken,
+            const PaperDevelopmentCaptureRequestV1* request);
+        PaperResultV1(PAPER_CALL* clearDevelopmentCaptureV1)(
+            std::uint64_t ownerToken);
+        PaperResultV1(PAPER_CALL* getDevelopmentCaptureStateV1)(
+            std::uint64_t ownerToken,
+            PaperDevelopmentCaptureStateV1* outState);
     };
 
     inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES =
@@ -2005,6 +2126,14 @@ namespace paper::api
                     getWeaponManipulationHandStateV1) +
                 sizeof(decltype(
                     PaperProviderApiV1::getWeaponManipulationHandStateV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_DEVELOPMENT_CAPTURE_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    getDevelopmentCaptureStateV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::getDevelopmentCaptureStateV1)));
     inline constexpr std::uint32_t PAPER_PROVIDER_FEATURE_BITS_V1 =
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadObservations) |
@@ -2023,7 +2152,9 @@ namespace paper::api
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::WeaponMotionDiagnostics) |
         static_cast<std::uint32_t>(
-            PaperProviderFeatureBitV1::WeaponManipulationTelemetry);
+            PaperProviderFeatureBitV1::WeaponManipulationTelemetry) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::DevelopmentCaptureControl);
 
     struct PaperProviderDescriptorV1
     {
@@ -2055,6 +2186,14 @@ namespace paper::api
     static_assert(alignof(PaperConfigStateV1) == 8);
     static_assert(std::is_standard_layout_v<PaperConfigStateV1>);
     static_assert(std::is_trivially_copyable_v<PaperConfigStateV1>);
+    static_assert(sizeof(PaperDevelopmentCaptureRequestV1) == 48);
+    static_assert(alignof(PaperDevelopmentCaptureRequestV1) == 4);
+    static_assert(std::is_standard_layout_v<PaperDevelopmentCaptureRequestV1>);
+    static_assert(std::is_trivially_copyable_v<PaperDevelopmentCaptureRequestV1>);
+    static_assert(sizeof(PaperDevelopmentCaptureStateV1) == 144);
+    static_assert(alignof(PaperDevelopmentCaptureStateV1) == 8);
+    static_assert(std::is_standard_layout_v<PaperDevelopmentCaptureStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperDevelopmentCaptureStateV1>);
     static_assert(sizeof(PaperRuntimeStateV1) == 120);
     static_assert(alignof(PaperRuntimeStateV1) == 8);
     static_assert(std::is_standard_layout_v<PaperRuntimeStateV1>);
@@ -2144,7 +2283,7 @@ namespace paper::api
     static_assert(std::is_trivially_copyable_v<PaperReloadFrameStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadNodeObservationV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadNodeObservationV1>);
-    static_assert(sizeof(PaperProviderApiV1) == 376);
+    static_assert(sizeof(PaperProviderApiV1) == 400);
     static_assert(alignof(PaperProviderApiV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderApiV1>);
     static_assert(std::is_trivially_copyable_v<PaperProviderApiV1>);
@@ -2340,6 +2479,20 @@ namespace paper::api
                            WeaponManipulationTelemetry)) != 0 &&
                PaperApi::inst->getWeaponManipulationFrameStateV1 &&
                PaperApi::inst->getWeaponManipulationHandStateV1;
+    }
+
+    [[nodiscard]] inline bool supportsDevelopmentCaptureControlV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_DEVELOPMENT_CAPTURE_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::
+                           DevelopmentCaptureControl)) != 0 &&
+               PaperApi::inst->setDevelopmentCaptureV1 &&
+               PaperApi::inst->clearDevelopmentCaptureV1 &&
+               PaperApi::inst->getDevelopmentCaptureStateV1;
     }
 }
 

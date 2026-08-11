@@ -1,5 +1,6 @@
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "compat/TacticalReloadBridgePolicy.h"
+#include "development/DevelopmentCapturePolicy.h"
 #include "reload_observation/ReloadObservationPolicy.h"
 #include "reload_observation/WeaponClassificationPolicy.h"
 
@@ -12,6 +13,64 @@ int main()
         paper::tactical_reload_bridge_policy;
     namespace weapon_family =
         paper::weapon_classification_policy;
+    namespace capture = paper::development_capture_policy;
+
+    using paper::api::PaperDevelopmentCaptureModeV1;
+    using paper::api::PaperDevelopmentCaptureScopeV1;
+    using paper::api::PaperWeaponMotionCacheAccessV1;
+    constexpr auto captureFlag = [](const PaperDevelopmentCaptureScopeV1 scope) {
+        return static_cast<std::uint32_t>(scope);
+    };
+    static_assert(capture::allowedScopes(
+                      PaperDevelopmentCaptureModeV1::User,
+                      PaperWeaponMotionCacheAccessV1::ReadWrite) == 0);
+    static_assert(capture::allowedScopes(
+                      PaperDevelopmentCaptureModeV1::Observe,
+                      PaperWeaponMotionCacheAccessV1::Off) ==
+        captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation));
+    static_assert(capture::allowedScopes(
+                      PaperDevelopmentCaptureModeV1::Observe,
+                      PaperWeaponMotionCacheAccessV1::ReadWrite) ==
+        (captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation) |
+            captureFlag(
+                PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation) |
+            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheRead) |
+            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)));
+    static_assert(capture::allowedScopes(
+                      PaperDevelopmentCaptureModeV1::Harvest,
+                      PaperWeaponMotionCacheAccessV1::Off) ==
+        (captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation) |
+            captureFlag(
+                PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest)));
+    static_assert(capture::autoStartScopes(
+                      PaperDevelopmentCaptureModeV1::Harvest,
+                      PaperWeaponMotionCacheAccessV1::Off,
+                      true) ==
+        capture::allowedScopes(
+            PaperDevelopmentCaptureModeV1::Harvest,
+            PaperWeaponMotionCacheAccessV1::Off));
+    static_assert(capture::allowedScopes(
+                      PaperDevelopmentCaptureModeV1::Capture,
+                      PaperWeaponMotionCacheAccessV1::ReadWrite) ==
+        capture::kAllScopes);
+    static_assert(capture::autoStartScopes(
+                      PaperDevelopmentCaptureModeV1::Capture,
+                      PaperWeaponMotionCacheAccessV1::ReadWrite,
+                      true) ==
+        (capture::kAllScopes &
+            ~captureFlag(
+                PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest)));
+    static_assert(capture::autoStartScopes(
+                      PaperDevelopmentCaptureModeV1::Capture,
+                      PaperWeaponMotionCacheAccessV1::ReadWrite,
+                      false) == 0);
+    static_assert(capture::expandDependencies(captureFlag(
+                      PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)) ==
+        (captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation) |
+            captureFlag(
+                PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation) |
+            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheRead) |
+            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)));
 
     constexpr auto hasFamily = [](
                                    const weapon_family::
