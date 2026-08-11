@@ -32,6 +32,9 @@ namespace paper
             rock::provider::RockProviderWeaponPartGripStateV1& outState) const;
         [[nodiscard]] bool querySelectedAuthoredGripPose(
             rock::provider::RockProviderAuthoredGripPoseV1& outPose) const;
+        [[nodiscard]] bool queryPresentedHandPose(
+            rock::provider::RockProviderHand hand,
+            rock::provider::RockProviderPresentedHandPoseV1& outPose) const;
         [[nodiscard]] bool queryEquippedWeaponClassification(
             rock::provider::RockProviderWeaponClassificationV1& outClassification) const;
         [[nodiscard]] bool reloadObservationEvidenceReady() const;

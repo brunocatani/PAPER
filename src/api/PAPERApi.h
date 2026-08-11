@@ -23,7 +23,7 @@
 namespace paper::api
 {
     inline constexpr std::uint32_t PAPER_API_VERSION = 1;
-    inline constexpr std::uint32_t PAPER_MOD_VERSION = 300;
+    inline constexpr std::uint32_t PAPER_MOD_VERSION = 400;
     inline constexpr std::uint32_t PAPER_MAX_CONSUMERS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CALLBACKS_V1 = 16;
     inline constexpr std::uint32_t PAPER_MAX_CAPTURED_TRANSFORMS_V1 = 192;
@@ -97,7 +97,8 @@ namespace paper::api
         // Negotiating this bit must never start exact clip preharvest.
         ReloadAnimationTelemetry = 1u << 8,
         ReloadStageIdentification = 1u << 9,
-        All = (1u << 10) - 1u,
+        NativePosePipeline = 1u << 10,
+        All = (1u << 11) - 1u,
     };
 
     enum class PaperProviderFeatureBitV1 : std::uint32_t
@@ -108,6 +109,7 @@ namespace paper::api
         ReloadAnimationEvidence = 1u << 2,
         ReloadAnimationTelemetry = 1u << 3,
         ReloadStageIdentification = 1u << 4,
+        NativePosePipeline = 1u << 5,
     };
 
     enum class PaperReloadAnimationAcquisitionV1 : std::uint32_t
@@ -540,6 +542,90 @@ namespace paper::api
         Left = 1,
     };
 
+    enum class PaperNativePoseModeV1 : std::uint32_t
+    {
+        Inactive = 0,
+        FullReload = 1,
+        PartialReload = 2,
+        ManualCycle = 3,
+        ConsumerAuthority = 4,
+    };
+
+    enum class PaperNativePoseCompatibilityReasonV1 : std::uint32_t
+    {
+        None = 0,
+        HandlingStateUnavailable = 1,
+        LeftFiringHand = 2,
+        PartCarry = 3,
+        WeaponUnavailable = 4,
+        WeaponIdentityChanged = 5,
+        AnimationRequestResetRequired = 6,
+    };
+
+    enum class PaperNativePoseApplicationResultV1 : std::uint32_t
+    {
+        Inactive = 0,
+        WaitingForCapture = 1,
+        Applied = 2,
+        CompatibilityRejected = 3,
+        ApplyFailed = 4,
+        RuntimeUnavailable = 5,
+    };
+
+    enum class PaperNativePoseFrameFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        AuthorityRequested = 1u << 1,
+        RuntimeOperational = 1u << 2,
+        CapturePrepared = 1u << 3,
+        BeforeRockApplied = 1u << 4,
+        AfterRockApplied = 1u << 5,
+        FullPose = 1u << 6,
+        WeaponFixedHands = 1u << 7,
+        PartialReload = 1u << 8,
+        ManualCycle = 1u << 9,
+        CompatibilityRejected = 1u << 10,
+        ApplicationFailed = 1u << 11,
+        RockWeaponWorldValid = 1u << 12,
+        NativeWeaponBaselineWorldValid = 1u << 13,
+        ResolvedWeaponWorldValid = 1u << 14,
+        PresentedReadbackAvailable = 1u << 15,
+    };
+
+    enum class PaperNativeHandRoleV1 : std::uint32_t
+    {
+        Primary = 0,
+        Support = 1,
+    };
+
+    enum class PaperNativeHandTargetModeV1 : std::uint32_t
+    {
+        None = 0,
+        LiveGripDelta = 1,
+        NativeWeaponRelative = 2,
+    };
+
+    enum class PaperNativeHandSolutionFlagV1 : std::uint32_t
+    {
+        None = 0,
+        Valid = 1u << 0,
+        NativeHandInWeaponValid = 1u << 1,
+        NativeBaselineHandInWeaponValid = 1u << 2,
+        RockBaselineHandInWeaponValid = 1u << 3,
+        ResolvedTargetInWeaponValid = 1u << 4,
+        ResolvedTargetWorldValid = 1u << 5,
+        PresentedHandWorldValid = 1u << 6,
+        NativeFingerLocalsValid = 1u << 7,
+        PresentedFingerLocalsValid = 1u << 8,
+        MotionGateApplicable = 1u << 9,
+        MotionQualified = 1u << 10,
+        TargetPublished = 1u << 11,
+        TargetSuppressed = 1u << 12,
+        ResidualValid = 1u << 13,
+        PresentedPoseCoherent = 1u << 14,
+    };
+
     enum class PaperEventKindV1 : std::uint32_t
     {
         FrameComplete = 1,
@@ -641,6 +727,79 @@ namespace paper::api
         PaperTransformV1 fingerLocalTransforms[
             PAPER_FINGER_TRANSFORM_COUNT_V1]{};
         std::uint64_t captureSequence{ 0 };
+        std::uint32_t reserved[8]{};
+    };
+
+    /*
+     * Native-pose pipeline records are observational. They describe PAPER's
+     * native animation decision and ROCK's final presented pose for the same
+     * completed frame; they do not grant pose-write or IK authority.
+     */
+    struct PaperNativePoseFrameStateV1
+    {
+        std::uint32_t size{ sizeof(PaperNativePoseFrameStateV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        std::uint32_t flags{ 0 };
+        PaperNativePoseModeV1 mode{ PaperNativePoseModeV1::Inactive };
+        PaperNativePoseCompatibilityReasonV1 compatibilityReason{
+            PaperNativePoseCompatibilityReasonV1::None
+        };
+        PaperNativePoseApplicationResultV1 applicationResult{
+            PaperNativePoseApplicationResultV1::Inactive
+        };
+        std::uint32_t activeAuthorityFlags{ 0 };
+        std::uint32_t localAuthorityFlags{ 0 };
+        std::uint32_t consumerAuthorityFlags{ 0 };
+        std::uint32_t weaponFormId{ 0 };
+        std::uint64_t weaponGenerationKey{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t captureSequence{ 0 };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
+        PaperTransformV1 rockWeaponWorld{};
+        PaperTransformV1 nativeWeaponBaselineWorld{};
+        PaperTransformV1 resolvedWeaponWorld{};
+        std::uint32_t reserved[5]{};
+    };
+
+    struct PaperNativeHandSolutionV1
+    {
+        std::uint32_t size{ sizeof(PaperNativeHandSolutionV1) };
+        std::uint32_t version{ PAPER_API_VERSION };
+        PaperHandV1 hand{ PaperHandV1::Right };
+        std::uint32_t flags{ 0 };
+        PaperNativeHandRoleV1 role{ PaperNativeHandRoleV1::Primary };
+        PaperNativeHandTargetModeV1 targetMode{
+            PaperNativeHandTargetModeV1::None
+        };
+        std::uint16_t nativeFingerLocalTransformMask{ 0 };
+        std::uint16_t presentedFingerLocalTransformMask{ 0 };
+        std::uint32_t reserved0{ 0 };
+        std::uint64_t snapshotSequence{ 0 };
+        std::uint64_t frameIndex{ 0 };
+        std::uint64_t captureSequence{ 0 };
+        std::uint64_t presentationSequence{ 0 };
+        PaperTransformV1 nativeHandInWeapon{};
+        PaperTransformV1 nativeBaselineHandInWeapon{};
+        PaperTransformV1 rockBaselineHandInWeapon{};
+        PaperTransformV1 resolvedTargetInWeapon{};
+        PaperTransformV1 resolvedTargetWorld{};
+        PaperTransformV1 presentedHandWorld{};
+        PaperTransformV1 nativeFingerLocalTransforms[
+            PAPER_FINGER_TRANSFORM_COUNT_V1]{};
+        PaperTransformV1 presentedFingerLocalTransforms[
+            PAPER_FINGER_TRANSFORM_COUNT_V1]{};
+        float motionTranslationGameUnits{ 0.0f };
+        float motionRotationDegrees{ 0.0f };
+        float residualTranslationGameUnits{ 0.0f };
+        float residualRotationDegrees{ 0.0f };
+        std::uint32_t worldGeneration{ 0 };
+        std::uint32_t skeletonGeneration{ 0 };
+        std::uint32_t rockProviderGeneration{ 0 };
+        std::uint32_t paperProviderGeneration{ 0 };
         std::uint32_t reserved[8]{};
     };
 
@@ -1277,6 +1436,13 @@ namespace paper::api
             PaperReloadStagePartV1* outParts,
             std::uint32_t maxParts,
             std::uint32_t* outCopied);
+        PaperResultV1(PAPER_CALL* getNativePoseFrameStateV1)(
+            std::uint64_t ownerToken,
+            PaperNativePoseFrameStateV1* outState);
+        PaperResultV1(PAPER_CALL* getNativeHandSolutionV1)(
+            std::uint64_t ownerToken,
+            PaperHandV1 hand,
+            PaperNativeHandSolutionV1* outSolution);
     };
 
     inline constexpr std::uint32_t PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES =
@@ -1302,6 +1468,14 @@ namespace paper::api
                     PaperProviderApiV1::copyReloadAnimationSkeletonV1)));
     inline constexpr std::uint32_t
         PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES =
+            static_cast<std::uint32_t>(
+                offsetof(
+                    PaperProviderApiV1,
+                    copyReloadStagePartsV1) +
+                sizeof(decltype(
+                    PaperProviderApiV1::copyReloadStagePartsV1)));
+    inline constexpr std::uint32_t
+        PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES =
             static_cast<std::uint32_t>(sizeof(PaperProviderApiV1));
     inline constexpr std::uint32_t PAPER_PROVIDER_FEATURE_BITS_V1 =
         static_cast<std::uint32_t>(
@@ -1313,7 +1487,9 @@ namespace paper::api
         static_cast<std::uint32_t>(
             PaperProviderFeatureBitV1::ReloadAnimationTelemetry) |
         static_cast<std::uint32_t>(
-            PaperProviderFeatureBitV1::ReloadStageIdentification);
+            PaperProviderFeatureBitV1::ReloadStageIdentification) |
+        static_cast<std::uint32_t>(
+            PaperProviderFeatureBitV1::NativePosePipeline);
 
     struct PaperProviderDescriptorV1
     {
@@ -1357,6 +1533,14 @@ namespace paper::api
     static_assert(alignof(PaperNativeHandPoseV1) == 8);
     static_assert(std::is_standard_layout_v<PaperNativeHandPoseV1>);
     static_assert(std::is_trivially_copyable_v<PaperNativeHandPoseV1>);
+    static_assert(sizeof(PaperNativePoseFrameStateV1) == 264);
+    static_assert(alignof(PaperNativePoseFrameStateV1) == 8);
+    static_assert(std::is_standard_layout_v<PaperNativePoseFrameStateV1>);
+    static_assert(std::is_trivially_copyable_v<PaperNativePoseFrameStateV1>);
+    static_assert(sizeof(PaperNativeHandSolutionV1) == 2000);
+    static_assert(alignof(PaperNativeHandSolutionV1) == 8);
+    static_assert(std::is_standard_layout_v<PaperNativeHandSolutionV1>);
+    static_assert(std::is_trivially_copyable_v<PaperNativeHandSolutionV1>);
     static_assert(sizeof(PaperEventV1) == 168);
     static_assert(alignof(PaperEventV1) == 8);
     static_assert(std::is_standard_layout_v<PaperEventV1>);
@@ -1396,7 +1580,7 @@ namespace paper::api
     static_assert(std::is_trivially_copyable_v<PaperReloadFrameStateV1>);
     static_assert(std::is_standard_layout_v<PaperReloadNodeObservationV1>);
     static_assert(std::is_trivially_copyable_v<PaperReloadNodeObservationV1>);
-    static_assert(sizeof(PaperProviderApiV1) == 264);
+    static_assert(sizeof(PaperProviderApiV1) == 280);
     static_assert(alignof(PaperProviderApiV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderApiV1>);
     static_assert(std::is_trivially_copyable_v<PaperProviderApiV1>);
@@ -1404,6 +1588,7 @@ namespace paper::api
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES == 176);
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_ANIMATION_TABLE_BYTES == 248);
     static_assert(PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES == 264);
+    static_assert(PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES == 280);
     static_assert(sizeof(PaperProviderDescriptorV1) == 48);
     static_assert(alignof(PaperProviderDescriptorV1) == 8);
     static_assert(std::is_standard_layout_v<PaperProviderDescriptorV1>);
@@ -1533,6 +1718,18 @@ namespace paper::api
                            ReloadStageIdentification)) != 0 &&
                PaperApi::inst->getReloadStageStateV1 &&
                PaperApi::inst->copyReloadStagePartsV1;
+    }
+
+    [[nodiscard]] inline bool supportsNativePosePipelineV1()
+    {
+        return PaperApi::inst &&
+               PaperApi::negotiatedTableBytes >=
+                   PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES &&
+               (PaperApi::negotiatedFeatureBits &
+                   static_cast<std::uint32_t>(
+                       PaperProviderFeatureBitV1::NativePosePipeline)) != 0 &&
+               PaperApi::inst->getNativePoseFrameStateV1 &&
+               PaperApi::inst->getNativeHandSolutionV1;
     }
 }
 

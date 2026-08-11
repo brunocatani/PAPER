@@ -66,6 +66,20 @@ namespace paper::provider
         std::atomic<std::uint64_t> s_runtimeSequence{ 0 };
         std::atomic<std::uint64_t> s_configSequence{ 0 };
 
+        struct NativePosePipelineSnapshot
+        {
+            PaperNativePoseFrameStateV1 frame{};
+            PaperNativeHandSolutionV1 rightHand{};
+            PaperNativeHandSolutionV1 leftHand{
+                .hand = PaperHandV1::Left,
+                .role = PaperNativeHandRoleV1::Support,
+            };
+        };
+
+        NativePosePipelineSnapshot s_nativePosePipeline{};
+        std::atomic<std::uint64_t> s_nativePosePipelineSequence{ 0 };
+        std::uint64_t s_nativePosePublicationSequence{ 0 };
+
         [[nodiscard]] bool onOwnerThread()
         {
             return s_ownerThread != 0 && s_ownerThread == GetCurrentThreadId();
@@ -974,6 +988,58 @@ namespace paper::provider
                 validation;
         }
 
+        PaperResultV1 PAPER_CALL getNativePoseFrameStateV1(
+            const std::uint64_t ownerToken,
+            PaperNativePoseFrameStateV1* outState)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::NativePosePipeline,
+                outState);
+            if (validation != PaperResultV1::Ok) {
+                return validation;
+            }
+            NativePosePipelineSnapshot snapshot{};
+            if (!copySeqlocked(
+                    s_nativePosePipeline,
+                    s_nativePosePipelineSequence,
+                    snapshot) ||
+                snapshot.frame.snapshotSequence == 0) {
+                return PaperResultV1::NotReady;
+            }
+            *outState = snapshot.frame;
+            return PaperResultV1::Ok;
+        }
+
+        PaperResultV1 PAPER_CALL getNativeHandSolutionV1(
+            const std::uint64_t ownerToken,
+            const PaperHandV1 hand,
+            PaperNativeHandSolutionV1* outSolution)
+        {
+            const auto validation = validateReloadOutput(
+                ownerToken,
+                PaperConsumerCapabilityV1::NativePosePipeline,
+                outSolution);
+            if (validation != PaperResultV1::Ok) {
+                return validation;
+            }
+            if (hand != PaperHandV1::Right && hand != PaperHandV1::Left) {
+                return PaperResultV1::InvalidArgument;
+            }
+            NativePosePipelineSnapshot snapshot{};
+            if (!copySeqlocked(
+                    s_nativePosePipeline,
+                    s_nativePosePipelineSequence,
+                    snapshot) ||
+                snapshot.frame.snapshotSequence == 0) {
+                return PaperResultV1::NotReady;
+            }
+            *outSolution = hand == PaperHandV1::Left ?
+                snapshot.leftHand :
+                snapshot.rightHand;
+            return PaperResultV1::Ok;
+        }
+
         const PaperProviderApiV1 s_api{
             &getVersion,
             &getModVersion,
@@ -1008,6 +1074,8 @@ namespace paper::provider
             &copyReloadAnimationSkeletonV1,
             &getReloadStageStateV1,
             &copyReloadStagePartsV1,
+            &getNativePoseFrameStateV1,
+            &getNativeHandSolutionV1,
         };
 
         const PaperProviderDescriptorV1 s_descriptor{
@@ -1021,6 +1089,9 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
+        s_nativePosePipeline = {};
+        s_nativePosePipelineSequence.store(0, std::memory_order_release);
+        s_nativePosePublicationSequence = 0;
         if (++s_providerGeneration == 0) {
             s_providerGeneration = 1;
         }
@@ -1036,6 +1107,9 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
+        s_nativePosePipeline = {};
+        s_nativePosePipelineSequence.store(0, std::memory_order_release);
+        s_nativePosePublicationSequence = 0;
         reload_observation::reset();
         animation_evidence::reset();
         reload_stages::reset();
@@ -1085,6 +1159,7 @@ namespace paper::provider
         reload_observation::reset();
         animation_evidence::reset();
         reload_stages::reset();
+        clearNativePosePipeline();
         publishRuntime(state);
         dispatchEvent(PaperEventKindV1::RuntimeReset);
     }
@@ -1097,6 +1172,42 @@ namespace paper::provider
     void publishRuntime(const PaperRuntimeStateV1& state)
     {
         publishSeqlocked(s_runtimeState, s_runtimeSequence, state);
+    }
+
+    void publishNativePosePipeline(
+        const PaperNativePoseFrameStateV1& frame,
+        const PaperNativeHandSolutionV1& rightHand,
+        const PaperNativeHandSolutionV1& leftHand)
+    {
+        if (!onOwnerThread()) {
+            return;
+        }
+        if (++s_nativePosePublicationSequence == 0) {
+            ++s_nativePosePublicationSequence;
+        }
+        NativePosePipelineSnapshot snapshot{
+            .frame = frame,
+            .rightHand = rightHand,
+            .leftHand = leftHand,
+        };
+        snapshot.frame.snapshotSequence = s_nativePosePublicationSequence;
+        snapshot.rightHand.snapshotSequence = s_nativePosePublicationSequence;
+        snapshot.leftHand.snapshotSequence = s_nativePosePublicationSequence;
+        publishSeqlocked(
+            s_nativePosePipeline,
+            s_nativePosePipelineSequence,
+            snapshot);
+    }
+
+    void clearNativePosePipeline()
+    {
+        if (!onOwnerThread()) {
+            return;
+        }
+        publishSeqlocked(
+            s_nativePosePipeline,
+            s_nativePosePipelineSequence,
+            NativePosePipelineSnapshot{});
     }
 
     void dispatchEvent(const PaperEventKindV1 kind)

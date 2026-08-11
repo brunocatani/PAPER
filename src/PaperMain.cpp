@@ -2,6 +2,7 @@
 
 #include "animation/NativeAnimationAuthority.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
+#include "animation/NativePosePipeline.h"
 #include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
 #include "api/PAPERProvider.h"
@@ -35,6 +36,7 @@ namespace
     bool s_reloadObservationDemandActive{ false };
     bool s_animationTelemetryDemandActive{ false };
     bool s_reloadStageDemandActive{ false };
+    bool s_nativePosePipelineDemandActive{ false };
     rock::provider::RockProviderEquippedWeaponGripStateV1 s_gripState{};
     rock::provider::RockProviderEquippedWeaponHandlingStateV1
         s_handlingState{};
@@ -42,6 +44,11 @@ namespace
     bool s_handlingStateValid{ false };
     native_animation_authority_policy::NativeAnimationCompatibilityState
         s_animationCompatibilityState{};
+    native_animation_authority_policy::NativeAnimationCompatibilityReason
+        s_lastAnimationCompatibilityReason{
+            native_animation_authority_policy::
+                NativeAnimationCompatibilityReason::None
+        };
 
     struct CompatibilityLogSnapshot
     {
@@ -89,6 +96,7 @@ namespace
         bool animationTelemetry{ false };
         bool exactAnimationEvidence{ false };
         bool reloadStages{ false };
+        bool nativePosePipeline{ false };
     };
 
     using PerformanceClock = std::chrono::steady_clock;
@@ -379,6 +387,8 @@ namespace
             provider::hasConsumerCapability(
                 api::PaperConsumerCapabilityV1::ReloadObservations) ||
             reloadEvidenceGeometry;
+        const bool nativePosePipeline = provider::hasConsumerCapability(
+            api::PaperConsumerCapabilityV1::NativePosePipeline);
 
         if (s_animationTelemetryDemandActive && !animationTelemetry) {
             animation_evidence::reset();
@@ -389,15 +399,20 @@ namespace
         if (s_reloadStageDemandActive && !reloadStages) {
             reload_stages::reset();
         }
+        if (s_nativePosePipelineDemandActive && !nativePosePipeline) {
+            provider::clearNativePosePipeline();
+        }
         s_reloadObservationDemandActive = reloadObservation;
         s_animationTelemetryDemandActive = animationTelemetry;
         s_reloadStageDemandActive = reloadStages;
+        s_nativePosePipelineDemandActive = nativePosePipeline;
         return EnrichmentDemand{
             .reloadObservation = reloadObservation,
             .reloadEvidenceGeometry = reloadEvidenceGeometry,
             .animationTelemetry = animationTelemetry,
             .exactAnimationEvidence = exactAnimationEvidence,
             .reloadStages = reloadStages,
+            .nativePosePipeline = nativePosePipeline,
         };
     }
 
@@ -683,6 +698,7 @@ namespace
                 observation,
                 authority.requestedFlags() != 0);
         s_animationCompatibilityState = step.state;
+        s_lastAnimationCompatibilityReason = step.reason;
         observeAnimationCompatibility(
             context,
             observationPoint,
@@ -986,6 +1002,21 @@ namespace
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::Complete: {
+            if (enrichmentDemand.nativePosePipeline) {
+                const auto authority = currentPaperAnimationAuthority();
+                native_pose_pipeline::publishFrame(
+                    *context,
+                    s_lastAnimationCompatibilityReason,
+                    authority.localFlags,
+                    authority.consumerFlags,
+                    s_handlingStateValid ?
+                        s_handlingState.weaponFormId :
+                        s_gripState.weaponFormId,
+                    s_handlingStateValid ?
+                        s_handlingState.weaponGenerationKey :
+                        s_gripState.weaponGenerationKey,
+                    s_runtimeOperational);
+            }
             native_animation_authority::completeRockFrame();
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
             if (enrichmentDemand.reloadObservation) {
@@ -1055,6 +1086,9 @@ namespace
         s_gripStateValid = false;
         s_handlingStateValid = false;
         s_animationCompatibilityState = {};
+        s_lastAnimationCompatibilityReason =
+            native_animation_authority_policy::
+                NativeAnimationCompatibilityReason::None;
         s_lastCompatibilityLogSnapshot = {};
         s_hasCompatibilityLogSnapshot = false;
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
@@ -1062,6 +1096,7 @@ namespace
         s_reloadObservationDemandActive = false;
         s_animationTelemetryDemandActive = false;
         s_reloadStageDemandActive = false;
+        s_nativePosePipelineDemandActive = false;
         s_reloadPerformance = {};
         provider::resetRuntime();
     }

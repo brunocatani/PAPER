@@ -117,11 +117,18 @@ namespace paper::native_animation_authority
         {
             RE::NiTransform nativeBaselineHandInWeapon{};
             RE::NiTransform liveBaselineHandInWeapon{};
+            RE::NiTransform resolvedHandInWeapon{};
             RE::NiTransform resolvedHandWorld{};
+            native_animation_authority_policy::WeaponFixedHandTargetMode
+                targetMode{
+                    native_animation_authority_policy::
+                        WeaponFixedHandTargetMode::LiveGripDelta
+                };
             float motionTranslationGameUnits{ 0.0f };
             float motionRotationDegrees{ 0.0f };
             bool captured{ false };
             bool motionQualified{ false };
+            bool resolvedHandInWeaponValid{ false };
             bool resolvedHandWorldValid{ false };
         };
 
@@ -226,10 +233,15 @@ namespace paper::native_animation_authority
         native_animation_authority_policy::LocalReloadLeaseState s_localReloadLeaseState{};
         native_animation_authority_policy::LocalManualCycleLeaseState s_localManualCycleLeaseState{};
         bool s_frameCaptureReady{ false };
+        bool s_frameCapturePrepared{ false };
         bool s_frameWeaponFixedHandsExpected{ false };
         bool s_framePartialReloadExpected{ false };
         bool s_frameWeaponFixedHandsApplied{ false };
         bool s_frameWeaponFixedHandsCleanupPending{ false };
+        bool s_beforeRockApplicationAttempted{ false };
+        bool s_beforeRockApplicationSucceeded{ false };
+        bool s_afterRockApplicationAttempted{ false };
+        bool s_afterRockApplicationSucceeded{ false };
 
         [[nodiscard]] bool validTree(const BoneTree* tree)
         {
@@ -1289,6 +1301,7 @@ namespace paper::native_animation_authority
             auto& publication = s_manualCycleVisualPublications[handIndex];
             auto& handRebase =
                 s_sourceAimFrame.manualCycleHandRebases[handIndex];
+            handRebase.targetMode = targetMode;
             if (!handRebase.captured) {
                 const bool rockBaselineValid =
                     hand == frik_visual_authority::Hand::Left ?
@@ -1336,6 +1349,7 @@ namespace paper::native_animation_authority
             handRebase.motionTranslationGameUnits =
                 motion.translationGameUnits;
             handRebase.motionRotationDegrees = motion.rotationDegrees;
+            handRebase.resolvedHandInWeaponValid = false;
             handRebase.resolvedHandWorldValid = false;
             const bool wasMotionQualified = handRebase.motionQualified;
             handRebase.motionQualified =
@@ -1344,6 +1358,9 @@ namespace paper::native_animation_authority
                         handRebase.motionQualified,
                         motion);
             if (!handRebase.motionQualified) {
+                handRebase.resolvedHandInWeapon =
+                    handRebase.liveBaselineHandInWeapon;
+                handRebase.resolvedHandInWeaponValid = true;
                 handRebase.resolvedHandWorld =
                     transform_math::composeTransforms(
                         fixedWeaponWorld,
@@ -1407,6 +1424,8 @@ namespace paper::native_animation_authority
                 (void)clearManualCycleVisualForHand(hand);
                 return ManualCycleHandVisualResult::Failed;
             }
+            handRebase.resolvedHandInWeapon = targetHandInWeapon;
+            handRebase.resolvedHandInWeaponValid = true;
             handRebase.resolvedHandWorld = handWorld;
             handRebase.resolvedHandWorldValid = true;
 
@@ -2276,12 +2295,17 @@ namespace paper::native_animation_authority
         const bool localManualCycleRequestChanged =
             refreshLocalManualCycleTestLease(deltaSeconds);
         s_frameCaptureReady = false;
+        s_frameCapturePrepared = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
         s_frameWeaponFixedHandsExpected = false;
         s_framePartialReloadExpected = false;
         s_frameWeaponFixedHandsApplied = false;
         s_frameWeaponFixedHandsCleanupPending = false;
+        s_beforeRockApplicationAttempted = false;
+        s_beforeRockApplicationSucceeded = false;
+        s_afterRockApplicationAttempted = false;
+        s_afterRockApplicationSucceeded = false;
 
         const std::uint32_t currentFlags = effectiveRequestedFlags();
         const std::uint32_t previousFlags = s_lastLoggedEffectiveFlags;
@@ -2346,13 +2370,26 @@ namespace paper::native_animation_authority
 
         s_frameCaptureSequence = sequence;
         s_frameCaptureFlags = capturedFlags;
+        s_frameCapturePrepared = true;
         s_frameCaptureReady = true;
     }
 
     bool applyCapturedPose(const ApplyPhase phase)
     {
+        bool& attempted = phase == ApplyPhase::BeforeRock ?
+            s_beforeRockApplicationAttempted :
+            s_afterRockApplicationAttempted;
+        bool& succeeded = phase == ApplyPhase::BeforeRock ?
+            s_beforeRockApplicationSucceeded :
+            s_afterRockApplicationSucceeded;
+        attempted = true;
+        succeeded = false;
+        const auto finishApplication = [&](const bool result) {
+            succeeded = result;
+            return result;
+        };
         if (!s_frameCaptureReady || s_frameCaptureFlags == 0 || !claimOrValidateThread()) {
-            return false;
+            return finishApplication(false);
         }
 
         if (s_frameWeaponFixedHandsExpected) {
@@ -2361,7 +2398,7 @@ namespace paper::native_animation_authority
             // pass feeds the clip back into the weapon solve and rotates the
             // gun away from the controllers.
             if (phase == ApplyPhase::BeforeRock) {
-                return true;
+                return finishApplication(true);
             }
 
             const std::uint32_t currentFlags = effectiveRequestedFlags();
@@ -2377,7 +2414,7 @@ namespace paper::native_animation_authority
                 invalidateCapture();
                 s_frameCaptureReady = false;
                 s_frameWeaponFixedHandsApplied = true;
-                return false;
+                return finishApplication(false);
             }
 
             bool applied = false;
@@ -2394,10 +2431,10 @@ namespace paper::native_animation_authority
             if (!applied) {
                 s_frameCaptureReady = false;
                 invalidateCapture();
-                return false;
+                return finishApplication(false);
             }
             s_frameWeaponFixedHandsApplied = true;
-            return true;
+            return finishApplication(true);
         }
 
         bool sourceApplied = false;
@@ -2419,7 +2456,7 @@ namespace paper::native_animation_authority
             s_captureFault.store(true, std::memory_order_release);
             invalidateCapture();
             s_frameCaptureReady = false;
-            return false;
+            return finishApplication(false);
         }
 #else
         sourceApplied = applyToTree(
@@ -2437,9 +2474,9 @@ namespace paper::native_animation_authority
         if (!sourceApplied || !destinationApplied) {
             s_frameCaptureReady = false;
             invalidateCapture();
-            return false;
+            return finishApplication(false);
         }
-        return true;
+        return finishApplication(true);
     }
 
     void completeRockFrame()
@@ -2455,12 +2492,17 @@ namespace paper::native_animation_authority
             s_lastCompletedCaptureSequence = s_frameCaptureSequence;
         }
         s_frameCaptureReady = false;
+        s_frameCapturePrepared = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
         s_frameWeaponFixedHandsExpected = false;
         s_framePartialReloadExpected = false;
         s_frameWeaponFixedHandsApplied = false;
         s_frameWeaponFixedHandsCleanupPending = false;
+        s_beforeRockApplicationAttempted = false;
+        s_beforeRockApplicationSucceeded = false;
+        s_afterRockApplicationAttempted = false;
+        s_afterRockApplicationSucceeded = false;
     }
 
     void resetTransientState()
@@ -2490,12 +2532,17 @@ namespace paper::native_animation_authority
         invalidateCapture();
         resetHybridPoseState();
         s_frameCaptureReady = false;
+        s_frameCapturePrepared = false;
         s_frameCaptureFlags = 0;
         s_frameCaptureSequence = 0;
         s_frameWeaponFixedHandsExpected = false;
         s_framePartialReloadExpected = false;
         s_frameWeaponFixedHandsApplied = false;
         s_frameWeaponFixedHandsCleanupPending = false;
+        s_beforeRockApplicationAttempted = false;
+        s_beforeRockApplicationSucceeded = false;
+        s_afterRockApplicationAttempted = false;
+        s_afterRockApplicationSucceeded = false;
         s_lastCompletedCaptureSequence = s_captureSequence.load(std::memory_order_acquire);
         if (ownerThread == 0 || ownerThread == GetCurrentThreadId()) {
             s_cache = {};
@@ -2638,11 +2685,20 @@ namespace paper::native_animation_authority
         outSnapshot.runtime = queryRuntimeStatus();
         outSnapshot.frameCaptureSequence = s_frameCaptureSequence;
         outSnapshot.frameCaptureReady = s_frameCaptureReady;
+        outSnapshot.frameCapturePrepared = s_frameCapturePrepared;
         outSnapshot.weaponFixedHandsExpected =
             s_frameWeaponFixedHandsExpected;
         outSnapshot.partialReloadExpected = s_framePartialReloadExpected;
         outSnapshot.weaponFixedHandsApplied =
             s_frameWeaponFixedHandsApplied;
+        outSnapshot.beforeRockApplicationAttempted =
+            s_beforeRockApplicationAttempted;
+        outSnapshot.beforeRockApplicationSucceeded =
+            s_beforeRockApplicationSucceeded;
+        outSnapshot.afterRockApplicationAttempted =
+            s_afterRockApplicationAttempted;
+        outSnapshot.afterRockApplicationSucceeded =
+            s_afterRockApplicationSucceeded;
 
         const auto& aimFrame = s_sourceAimFrame;
         if (aimFrame.controlCaptured &&
@@ -2675,14 +2731,31 @@ namespace paper::native_animation_authority
                 destination.nativeHandInWeapon = pose;
                 destination.nativeHandValid = true;
             }
+            const auto& fingers = left ?
+                s_nativeHandPoseCapture.supportFingerLocals :
+                s_nativeHandPoseCapture.primaryFingerLocals;
+            destination.nativeFingerLocals = fingers.localTransforms;
+            destination.nativeFingerLocalMask = fingers.enabledMask;
 
             const auto handIndex = left ? 1u : 0u;
             const auto& rebase = aimFrame.manualCycleHandRebases[handIndex];
+            if (rebase.captured &&
+                finiteTransform(rebase.nativeBaselineHandInWeapon)) {
+                destination.nativeBaselineHandInWeapon =
+                    rebase.nativeBaselineHandInWeapon;
+                destination.nativeBaselineValid = true;
+            }
             if (rebase.captured &&
                 finiteTransform(rebase.liveBaselineHandInWeapon)) {
                 destination.liveBaselineHandInWeapon =
                     rebase.liveBaselineHandInWeapon;
                 destination.liveBaselineValid = true;
+            }
+            if (rebase.resolvedHandInWeaponValid &&
+                finiteTransform(rebase.resolvedHandInWeapon)) {
+                destination.resolvedHandInWeapon =
+                    rebase.resolvedHandInWeapon;
+                destination.resolvedHandInWeaponValid = true;
             }
             if (rebase.resolvedHandWorldValid &&
                 finiteTransform(rebase.resolvedHandWorld)) {
@@ -2693,7 +2766,16 @@ namespace paper::native_animation_authority
                 rebase.motionTranslationGameUnits;
             destination.motionRotationDegrees =
                 rebase.motionRotationDegrees;
+            destination.motionGateApplicable = rebase.captured;
             destination.motionQualified = rebase.motionQualified;
+            if (rebase.captured) {
+                destination.targetMode =
+                    rebase.targetMode == native_animation_authority_policy::
+                                             WeaponFixedHandTargetMode::
+                                                 NativeWeaponRelative ?
+                    DebugHandTargetMode::NativeWeaponRelative :
+                    DebugHandTargetMode::LiveGripDelta;
+            }
             destination.visualAuthorityPublished =
                 s_manualCycleVisualPublications[handIndex].worldPublished;
         };

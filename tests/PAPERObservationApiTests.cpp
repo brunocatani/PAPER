@@ -1,4 +1,5 @@
 #include "api/PAPERApi.h"
+#include "animation/NativePosePipelinePolicy.h"
 #include "animation_evidence/AnimationPreharvestPolicy.h"
 #include "animation_evidence/AnimationEvidencePolicy.h"
 #include "reload_observation/ReloadObservationPolicy.h"
@@ -32,14 +33,14 @@ int main()
     using namespace paper::reload_observation_policy;
 
     static_assert(PAPER_API_VERSION == 1);
-    static_assert(PAPER_MOD_VERSION == 300);
+    static_assert(PAPER_MOD_VERSION == 400);
     static_assert(PAPER_MAX_RELOAD_EVIDENCE_V1 == 100);
     static_assert(PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 == 25'200);
     static_assert(
         offsetof(PaperProviderApiV1, getReloadObservationLimitsV1) ==
         PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES);
     static_assert(PAPER_PROVIDER_API_V1_BASE_TABLE_BYTES == 120);
-    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 264);
+    static_assert(PAPER_PROVIDER_API_V1_TABLE_BYTES == 280);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_OBSERVATION_TABLE_BYTES ==
         176);
@@ -51,6 +52,12 @@ int main()
         248);
     static_assert(
         PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES ==
+        264);
+    static_assert(
+        offsetof(PaperProviderApiV1, getNativePoseFrameStateV1) ==
+        PAPER_PROVIDER_API_V1_RELOAD_STAGE_TABLE_BYTES);
+    static_assert(
+        PAPER_PROVIDER_API_V1_NATIVE_POSE_PIPELINE_TABLE_BYTES ==
         sizeof(PaperProviderApiV1));
     static_assert(
         (PAPER_PROVIDER_FEATURE_BITS_V1 &
@@ -73,6 +80,10 @@ int main()
             static_cast<std::uint32_t>(
                 PaperProviderFeatureBitV1::ReloadStageIdentification)) != 0);
     static_assert(
+        (PAPER_PROVIDER_FEATURE_BITS_V1 &
+            static_cast<std::uint32_t>(
+                PaperProviderFeatureBitV1::NativePosePipeline)) != 0);
+    static_assert(
         (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
             static_cast<std::uint32_t>(
                 PaperConsumerCapabilityV1::ReloadAnimationEvidence)) != 0);
@@ -92,6 +103,16 @@ int main()
         static_cast<std::uint32_t>(
             PaperConsumerCapabilityV1::ReloadStageIdentification) ==
         (1u << 9));
+    static_assert(
+        static_cast<std::uint32_t>(
+            PaperConsumerCapabilityV1::NativePosePipeline) ==
+        (1u << 10));
+    static_assert(
+        (static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All) &
+            static_cast<std::uint32_t>(
+                PaperConsumerCapabilityV1::NativePosePipeline)) != 0);
+    static_assert(sizeof(PaperNativePoseFrameStateV1) == 264);
+    static_assert(sizeof(PaperNativeHandSolutionV1) == 2000);
     static_assert(
         static_cast<std::uint32_t>(
             PaperReloadStageFlagV1::SlideForward) ==
@@ -140,6 +161,38 @@ int main()
     static_assert(
         PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1 ==
         128ull * 1024ull * 1024ull);
+
+    PaperTransformV1 identity{};
+    identity.rotate[0][0] = 1.0f;
+    identity.rotate[1][1] = 1.0f;
+    identity.rotate[2][2] = 1.0f;
+    PaperTransformV1 translated = identity;
+    translated.translate[0] = 3.0f;
+    translated.translate[1] = 4.0f;
+    const auto translationResidual =
+        paper::native_pose_pipeline_policy::measurePoseResidual(
+            identity,
+            translated);
+    expect(
+        translationResidual.valid &&
+            std::abs(translationResidual.translationGameUnits - 5.0f) <
+                0.0001f &&
+            std::abs(translationResidual.rotationDegrees) < 0.0001f,
+        "pose residual must preserve world translation distance");
+
+    PaperTransformV1 quarterTurn = identity;
+    quarterTurn.rotate[0][0] = 0.0f;
+    quarterTurn.rotate[0][1] = -1.0f;
+    quarterTurn.rotate[1][0] = 1.0f;
+    quarterTurn.rotate[1][1] = 0.0f;
+    const auto rotationResidual =
+        paper::native_pose_pipeline_policy::measurePoseResidual(
+            identity,
+            quarterTurn);
+    expect(
+        rotationResidual.valid &&
+            std::abs(rotationResidual.rotationDegrees - 90.0f) < 0.001f,
+        "pose residual must preserve target-to-presented rotation angle");
 
     expect(
         clipSampleCount(0.01f) == 24,

@@ -74,16 +74,32 @@ namespace paper::native_animation_authority
         bool valid{ false };
     };
 
+    enum class DebugHandTargetMode : std::uint8_t
+    {
+        None = 0,
+        LiveGripDelta,
+        NativeWeaponRelative,
+    };
+
     struct DebugHandSnapshot
     {
         RE::NiTransform nativeHandInWeapon{};
+        RE::NiTransform nativeBaselineHandInWeapon{};
         RE::NiTransform liveBaselineHandInWeapon{};
+        RE::NiTransform resolvedHandInWeapon{};
         RE::NiTransform resolvedHandWorld{};
+        std::array<RE::NiTransform, kFingerTransformCount>
+            nativeFingerLocals{};
+        std::uint16_t nativeFingerLocalMask{ 0 };
+        DebugHandTargetMode targetMode{ DebugHandTargetMode::None };
         float motionTranslationGameUnits{ 0.0f };
         float motionRotationDegrees{ 0.0f };
         bool nativeHandValid{ false };
+        bool nativeBaselineValid{ false };
         bool liveBaselineValid{ false };
+        bool resolvedHandInWeaponValid{ false };
         bool resolvedHandWorldValid{ false };
+        bool motionGateApplicable{ false };
         bool motionQualified{ false };
         bool visualAuthorityPublished{ false };
     };
@@ -101,9 +117,14 @@ namespace paper::native_animation_authority
         bool nativeBaselineWeaponValid{ false };
         bool desiredWeaponValid{ false };
         bool frameCaptureReady{ false };
+        bool frameCapturePrepared{ false };
         bool weaponFixedHandsExpected{ false };
         bool partialReloadExpected{ false };
         bool weaponFixedHandsApplied{ false };
+        bool beforeRockApplicationAttempted{ false };
+        bool beforeRockApplicationSucceeded{ false };
+        bool afterRockApplicationAttempted{ false };
+        bool afterRockApplicationSucceeded{ false };
     };
 
     // Install the verified reload lifecycle and WeaponFire hooks only after

@@ -54,4 +54,20 @@ namespace paper::api_transform
         target.translate[2] = source.translate.z;
         target.scale = source.scale;
     }
+
+    inline void fromRock(
+        const rock::provider::RockProviderTransform& source,
+        api::PaperTransformV1& target)
+    {
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                target.rotate[row][column] =
+                    source.rotate[row * 3 + column];
+            }
+        }
+        target.translate[0] = source.translate[0];
+        target.translate[1] = source.translate[1];
+        target.translate[2] = source.translate[2];
+        target.scale = source.scale;
+    }
 }

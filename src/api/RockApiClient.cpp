@@ -251,6 +251,19 @@ namespace paper
                    rock::provider::RockProviderResultV1::Ok;
     }
 
+    bool RockApiClient::queryPresentedHandPose(
+        const rock::provider::RockProviderHand hand,
+        rock::provider::RockProviderPresentedHandPoseV1& outPose) const
+    {
+        outPose = {};
+        return ready() && _api->getPresentedHandPoseV1 &&
+               _api->getPresentedHandPoseV1(
+                   _ownerToken,
+                   hand,
+                   &outPose) ==
+                   rock::provider::RockProviderResultV1::Ok;
+    }
+
     bool RockApiClient::queryEquippedWeaponClassification(
         rock::provider::RockProviderWeaponClassificationV1& outClassification) const
     {
