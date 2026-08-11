@@ -694,6 +694,13 @@ namespace paper::weapon_motion_cache
             return;
         }
         enabled_.store(true, std::memory_order_release);
+    }
+
+    void Store::start()
+    {
+        if (!enabled() || worker_.joinable()) {
+            return;
+        }
         worker_ = std::jthread(
             [this](const std::stop_token stopToken) { run(stopToken); });
     }
@@ -725,7 +732,7 @@ namespace paper::weapon_motion_cache
 
     bool Store::requestLoad(const std::uint64_t loadoutKey)
     {
-        if (!enabled() || loadoutKey == 0) {
+        if (!enabled() || !worker_.joinable() || loadoutKey == 0) {
             return false;
         }
         std::unique_lock lock(mutex_, std::try_to_lock);
@@ -743,7 +750,8 @@ namespace paper::weapon_motion_cache
 
     bool Store::requestSave(std::unique_ptr<CompiledRecord> record)
     {
-        if (!enabled() || !record || !validRecord(*record)) {
+        if (!enabled() || !worker_.joinable() || !record ||
+            !validRecord(*record)) {
             return false;
         }
         std::unique_lock lock(mutex_, std::try_to_lock);

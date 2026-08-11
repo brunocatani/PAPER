@@ -2202,6 +2202,9 @@ namespace paper::weapon_motion
 
     void activate()
     {
+        if (s_cacheStore) {
+            s_cacheStore->start();
+        }
         if (!s_runtime) {
             s_runtime = std::make_unique<Runtime>();
         }

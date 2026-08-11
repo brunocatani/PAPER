@@ -129,6 +129,7 @@ namespace paper::weapon_motion_cache
         Store& operator=(const Store&) = delete;
 
         void configure(Settings settings);
+        void start();
         void shutdown();
         [[nodiscard]] bool enabled() const;
         [[nodiscard]] bool requestLoad(std::uint64_t loadoutKey);

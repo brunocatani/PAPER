@@ -184,6 +184,10 @@ int main()
             Store store;
             store.configure(settings);
             require(
+                !std::filesystem::exists(cacheRoot),
+                "configuration without demand must not touch user storage");
+            store.start();
+            require(
                 store.requestSave(std::make_unique<CompiledRecord>(source)),
                 "valid compiled record must enter the bounded write queue");
             waitForWrites(store);
@@ -198,6 +202,7 @@ int main()
         {
             Store store;
             store.configure(settings);
+            store.start();
             require(store.requestLoad(key), "persistent lookup must queue");
             const auto result = waitForResult(store);
             require(
@@ -209,6 +214,7 @@ int main()
         {
             Store store;
             store.configure(settings);
+            store.start();
             require(store.requestLoad(key), "invalidated lookup must queue");
             const auto result = waitForResult(store);
             require(
