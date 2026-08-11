@@ -1714,10 +1714,12 @@ namespace paper::provider
         if (!onOwnerThread()) {
             return 0;
         }
-        s_captureLegacyScopes =
+        s_captureLegacyScopes = hasCaptureConfigFlag(
+                PaperDevelopmentCaptureConfigFlagV1::AllowApiActivation) ?
             development_capture_policy::expandDependencies(
                 legacyRequestedScopes) &
-            s_captureAllowedScopes;
+                s_captureAllowedScopes :
+            0;
         return (s_captureAutoStartScopes | s_captureLegacyScopes |
                    aggregateCaptureScopes()) &
             s_captureAllowedScopes;
