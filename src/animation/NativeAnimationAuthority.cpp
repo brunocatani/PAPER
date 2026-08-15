@@ -138,14 +138,14 @@ namespace paper::native_animation_authority
             RE::NiTransform leftHandInWeapon{};
             std::uint64_t weaponGenerationKey{ 0 };
             bool rightValid{ false };
-            bool authoredLeftActive{ false };
+            bool leftSupportActive{ false };
         };
 
-        struct LatchedManualCycleAuthoredSupportGrip
+        struct LatchedManualCycleSupportGrip
         {
             RE::NiTransform handInWeapon{};
             native_animation_authority_policy::
-                ManualCycleAuthoredSupportGripLatchState state{};
+                ManualCycleSupportGripLatchState state{};
         };
 
         enum class ManualCycleHandVisualResult : std::uint8_t
@@ -180,14 +180,13 @@ namespace paper::native_animation_authority
         NativeHandPoseCapture s_nativeHandPoseCapture{};
         std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
         // Current provider observation and the effective baselines are copied
-        // on the game thread. The effective left baseline may retain only the
-        // authored support grip latched at a manual cycle's entry.
+        // on the game thread. The effective left baseline may retain the exact
+        // authored or dynamic support grip latched at a manual cycle's entry.
         ResolvedManualCycleRockGripBaselines
             s_latestManualCycleRockGripBaselines{};
         ResolvedManualCycleRockGripBaselines
             s_manualCycleRockGripBaselines{};
-        LatchedManualCycleAuthoredSupportGrip
-            s_manualCycleAuthoredSupportGripLatch{};
+        LatchedManualCycleSupportGrip s_manualCycleSupportGripLatch{};
         ControllerAimFrame s_sourceAimFrame{};
         WeaponFireHandlerFn s_originalWeaponFire{ nullptr };
         ReloadStateChangeHandlerFn s_originalReloadStateChange{ nullptr };
@@ -319,22 +318,22 @@ namespace paper::native_animation_authority
             const bool weaponGenerationChanged =
                 s_manualCycleRockGripBaselines.weaponGenerationKey !=
                 resolved.weaponGenerationKey;
-            const bool authoredLeftStateChanged =
-                s_manualCycleRockGripBaselines.authoredLeftActive !=
-                resolved.authoredLeftActive;
+            const bool leftSupportStateChanged =
+                s_manualCycleRockGripBaselines.leftSupportActive !=
+                resolved.leftSupportActive;
             if (weaponGenerationChanged) {
                 s_sourceAimFrame.manualCycleHandRebases = {};
-            } else if (authoredLeftStateChanged) {
+            } else if (leftSupportStateChanged) {
                 s_sourceAimFrame.manualCycleHandRebases[
                     manualCycleHandIndex(
                         frik_visual_authority::Hand::Left)] = {};
             }
             s_manualCycleRockGripBaselines = resolved;
-            if ((weaponGenerationChanged || authoredLeftStateChanged) &&
-                resolved.authoredLeftActive) {
+            if ((weaponGenerationChanged || leftSupportStateChanged) &&
+                resolved.leftSupportActive) {
                 PAPER_LOG_INFO(
                     Animation,
-                    "Native fire-cycle authored support eligible weapon={:016X}",
+                    "Native fire-cycle support grip eligible weapon={:016X}",
                     resolved.weaponGenerationKey);
             }
         }
@@ -344,15 +343,14 @@ namespace paper::native_animation_authority
         {
             auto effective = s_latestManualCycleRockGripBaselines;
             if (manualCycleLeaseActive) {
-                effective.authoredLeftActive = false;
-                const auto& latch =
-                    s_manualCycleAuthoredSupportGripLatch;
+                effective.leftSupportActive = false;
+                const auto& latch = s_manualCycleSupportGripLatch;
                 if (latch.state.active &&
                     latch.state.weaponGenerationKey ==
                         effective.weaponGenerationKey) {
                     effective.leftHandInWeapon =
                         latch.handInWeapon;
-                    effective.authoredLeftActive = true;
+                    effective.leftSupportActive = true;
                 }
             }
             setEffectiveManualCycleRockGripBaselines(effective);
@@ -361,7 +359,7 @@ namespace paper::native_animation_authority
         void clearManualCycleRockGripState()
         {
             s_latestManualCycleRockGripBaselines = {};
-            s_manualCycleAuthoredSupportGripLatch = {};
+            s_manualCycleSupportGripLatch = {};
             setEffectiveManualCycleRockGripBaselines({});
         }
 
@@ -1305,7 +1303,7 @@ namespace paper::native_animation_authority
             if (!handRebase.captured) {
                 const bool rockBaselineValid =
                     hand == frik_visual_authority::Hand::Left ?
-                    s_manualCycleRockGripBaselines.authoredLeftActive :
+                    s_manualCycleRockGripBaselines.leftSupportActive :
                     s_manualCycleRockGripBaselines.rightValid;
                 const RE::NiTransform& rockBaselineHandInWeapon =
                     hand == frik_visual_authority::Hand::Left ?
@@ -1500,7 +1498,7 @@ namespace paper::native_animation_authority
                 native_animation_authority_policy::
                     shouldPublishWeaponFixedSupportHand(
                         s_framePartialReloadExpected,
-                        s_manualCycleRockGripBaselines.authoredLeftActive)) {
+                        s_manualCycleRockGripBaselines.leftSupportActive)) {
                 (void)publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_nativeHandPoseCapture.supportHandInWeapon,
@@ -1961,32 +1959,32 @@ namespace paper::native_animation_authority
                         std::memory_order_acquire);
                 const auto latchState =
                     native_animation_authority_policy::
-                        advanceManualCycleAuthoredSupportGripLatch(
+                        advanceManualCycleSupportGripLatch(
                             {},
                             native_animation_authority_policy::
-                                ManualCycleAuthoredSupportGripLatchObservation{
+                                ManualCycleSupportGripLatchObservation{
                                     .observedWeaponGenerationKey =
                                         s_latestManualCycleRockGripBaselines.
                                             weaponGenerationKey,
                                     .leaseActive = leaseActive,
                                     .leaseStarted = true,
-                                    .authoredSupportGripActive =
+                                    .supportGripActive =
                                         s_latestManualCycleRockGripBaselines.
-                                            authoredLeftActive,
+                                            leftSupportActive,
                                 });
-                s_manualCycleAuthoredSupportGripLatch = {};
+                s_manualCycleSupportGripLatch = {};
                 if (latchState.active) {
-                    s_manualCycleAuthoredSupportGripLatch.handInWeapon =
+                    s_manualCycleSupportGripLatch.handInWeapon =
                         s_latestManualCycleRockGripBaselines.
                             leftHandInWeapon;
-                    s_manualCycleAuthoredSupportGripLatch.state =
+                    s_manualCycleSupportGripLatch.state =
                         latchState;
                 }
                 refreshEffectiveManualCycleRockGripBaselines(leaseActive);
             }
 
             if (!s_localManualCycleTestLeaseActive.load(std::memory_order_acquire)) {
-                s_manualCycleAuthoredSupportGripLatch = {};
+                s_manualCycleSupportGripLatch = {};
                 refreshEffectiveManualCycleRockGripBaselines(false);
                 return requestChanged;
             }
@@ -2004,7 +2002,7 @@ namespace paper::native_animation_authority
             s_localManualCycleLeaseState = step.state;
             if (!step.active()) {
                 s_localManualCycleTestLeaseActive.store(false, std::memory_order_release);
-                s_manualCycleAuthoredSupportGripLatch = {};
+                s_manualCycleSupportGripLatch = {};
                 refreshEffectiveManualCycleRockGripBaselines(false);
                 PAPER_LOG_DEBUG(Animation,
                     "Native manual-cycle hand-only authority released: {}",
@@ -2246,11 +2244,10 @@ namespace paper::native_animation_authority
                 resolved.rightValid = true;
             }
             if (snapshot.leftSupportGripValid &&
-                snapshot.authoredLeftSupportGripActive &&
                 finiteTransform(snapshot.leftSupportHandInWeapon)) {
                 resolved.leftHandInWeapon =
                     snapshot.leftSupportHandInWeapon;
-                resolved.authoredLeftActive = true;
+                resolved.leftSupportActive = true;
             }
         }
 
@@ -2259,31 +2256,30 @@ namespace paper::native_animation_authority
             s_localManualCycleTestLeaseActive.load(
                 std::memory_order_acquire);
         if (manualCycleLeaseActive) {
-            const bool activeNonAuthoredGripObserved =
+            const bool activeNonSupportGripObserved =
                 snapshot.leftPartGripStateValid &&
                 snapshot.leftPartGripActive &&
-                (!snapshot.leftSupportGripValid ||
-                    !snapshot.authoredLeftSupportGripActive);
+                !snapshot.leftSupportGripValid;
             const auto latchState =
                 native_animation_authority_policy::
-                    advanceManualCycleAuthoredSupportGripLatch(
-                        s_manualCycleAuthoredSupportGripLatch.state,
+                    advanceManualCycleSupportGripLatch(
+                        s_manualCycleSupportGripLatch.state,
                         native_animation_authority_policy::
-                            ManualCycleAuthoredSupportGripLatchObservation{
+                            ManualCycleSupportGripLatchObservation{
                                 .observedWeaponGenerationKey =
                                     resolved.weaponGenerationKey,
                                 .leaseActive = true,
-                                .activeNonAuthoredGripObserved =
-                                    activeNonAuthoredGripObserved,
+                                .activeNonSupportGripObserved =
+                                    activeNonSupportGripObserved,
                             });
             if (latchState.active) {
-                s_manualCycleAuthoredSupportGripLatch.state =
+                s_manualCycleSupportGripLatch.state =
                     latchState;
             } else {
-                s_manualCycleAuthoredSupportGripLatch = {};
+                s_manualCycleSupportGripLatch = {};
             }
         } else {
-            s_manualCycleAuthoredSupportGripLatch = {};
+            s_manualCycleSupportGripLatch = {};
         }
         refreshEffectiveManualCycleRockGripBaselines(
             manualCycleLeaseActive);
