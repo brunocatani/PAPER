@@ -154,7 +154,7 @@ namespace rock::provider
      * loose-object grab. Limited mechanisms may name one live dynamic or
      * keyframed body. FixedAnchor may additionally match a bounded collision
      * layer/motion mask without changing that body's motion type; this is the
-     * observation/ownership primitive needed by future climbing consumers.
+     * hand-to-surface latch primitive used by climbing consumers.
      */
     enum class RockProviderTouchGrabKindV1 : std::uint32_t
     {
@@ -208,6 +208,16 @@ namespace rock::provider
         FixedAnchor = 1u << 3,
         OriginalMotionKeyframed = 1u << 4,
         OriginalMotionDynamic = 1u << 5,
+        MeshSurfaceAnchor = 1u << 6,
+        MeshFingerPose = 1u << 7,
+        MeshCollisionFallback = 1u << 8,
+    };
+
+    enum class RockProviderSurfaceGripModeV1 : std::uint32_t
+    {
+        CollisionAnchor = 0,
+        MeshAnchor = 1,
+        CollisionFallback = 2,
     };
 
     enum class RockProviderTouchGrabHandMaskV1 : std::uint32_t
@@ -516,6 +526,9 @@ namespace rock::provider
         // Replaces ROCK's configured radius while this authority lease lives;
         // the core VisualOnlySupport behavior itself remains always enabled.
         FiringGripProximitySupport = 1u << 5,
+        // Retained in V1 for source/ABI compatibility. Equipped-weapon
+        // shoulder sheath/retrieval is configured and owned by ROCK; this
+        // request bit is accepted for older consumers but has no behavior.
         EquippedWeaponShoulderStash = 1u << 6,
         PipboyTriggerHandEquip = 1u << 7,
         // Retained in V1 for source/ABI compatibility. The visual bridge and
@@ -891,6 +904,16 @@ namespace rock::provider
         CollisionAvailable = 1u << 9,
         TransitionSuppressed = 1u << 10,
         HeldBodyListTruncated = 1u << 11,
+        TouchGrab = 1u << 12,
+        FixedSurfaceLatch = 1u << 13,
+        GlobalSurfaceLatch = 1u << 14,
+        SurfaceAnchorValid = 1u << 15,
+        MeshSurfaceAnchor = 1u << 16,
+        MeshFingerPose = 1u << 17,
+        MeshCollisionFallback = 1u << 18,
+        DynamicOtherHandContact = 1u << 19,
+        DynamicWeaponContact = 1u << 20,
+        DynamicWeaponPairSuppressed = 1u << 21,
     };
 
     enum class RockProviderEventKindV1 : std::uint32_t
@@ -1110,6 +1133,11 @@ namespace rock::provider
         TransitionSuppressed = 1u << 4,
         MenuSuppressed = 1u << 5,
         HandDisabled = 1u << 6,
+        DynamicInteractionsEnabled = 1u << 7,
+        DynamicOtherHandContact = 1u << 8,
+        DynamicWeaponContact = 1u << 9,
+        DynamicWeaponPairSuppressed = 1u << 10,
+        DynamicPairFilterReady = 1u << 11,
     };
 
     enum class RockProviderInputAvailabilityReasonV1 : std::uint32_t
@@ -1852,9 +1880,10 @@ namespace rock::provider
     /*
      * Temporarily replaces ROCK's complete debug-overlay presentation with one
      * exact collider from the active equipped-weapon generation. The body ID
-     * must occur in the matching frame snapshot weaponBodyIds array. The
-     * optional partKind is descriptive metadata only; body identity remains
-     * the authoritative selection key. Refresh from ROCK's owner frame
+     * must occur in ROCK's complete matching-generation weapon body catalog;
+     * it is not restricted to the compact weaponBodyIds frame-snapshot array.
+     * The optional partKind is descriptive metadata only; body identity
+     * remains the authoritative selection key. Refresh from ROCK's owner frame
      * callback while focus is desired. Clearing or lease invalidation restores
      * the unchanged config-driven overlay on the next frame.
      */
@@ -2237,8 +2266,10 @@ namespace rock::provider
         RockProviderHandInteractionPhaseV1 phase{ RockProviderHandInteractionPhaseV1::Idle };
         RockProviderBodyContactTargetKind targetKind{ RockProviderBodyContactTargetKind::Unknown };
         std::uint32_t flags{ 0 };
+        // TouchGrab states zero-extend referenceNativeHandle here; zero means unavailable.
         std::uint64_t reservedTargetIdentity{ 0 };
         std::uint32_t targetFormId{ 0 };
+        // For TouchGrab, always identifies the target, including global world surfaces.
         std::uint32_t primaryBodyId{ 0x7FFF'FFFF };
         std::uint32_t heldBodyCount{ 0 };
         std::uint32_t heldBodyIds[ROCK_PROVIDER_MAX_HAND_HELD_BODIES_V1]{};
@@ -2252,7 +2283,10 @@ namespace rock::provider
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
         std::uint32_t collisionGeneration{ 0 };
-        std::uint32_t reserved[4]{};
+        RockProviderPoint3 surfaceAnchorGame{};
+        RockProviderSurfaceGripModeV1 surfaceGripMode{
+            RockProviderSurfaceGripModeV1::CollisionAnchor
+        };
     };
 
     struct RockProviderEventV1
@@ -2570,6 +2604,10 @@ namespace rock::provider
         std::uint32_t worldGeneration{ 0 };
         std::uint32_t skeletonGeneration{ 0 };
         std::uint32_t providerGeneration{ 0 };
+        // reserved[0] = contacted dynamic-twin slot mask for the other hand.
+        // reserved[1] = contacted dynamic-twin slot mask for the weapon proxy.
+        // reserved[2] = stable dynamic interaction collision layer (48/52).
+        // reserved[3] = active exact hand/weapon pair-suppression lease count.
         std::uint32_t reserved[6]{};
     };
 
@@ -2635,8 +2673,12 @@ namespace rock::provider
      * the original motion class before publishing Latched/Yielded/Invalidated.
      *
      * FixedAnchor either names one body or uses MatchAnyBody plus a nonzero
-     * allowedLayerMask. It records hand/contact ownership only: ROCK never
-     * changes, activates, constrains, or writes velocity to the matched body.
+     * allowedLayerMask. A dynamic palm/fingertip touch plus grip locks the
+     * rendered hand and its dynamic proxy bodies relative to the matched body
+     * until grip release. ROCK never changes, activates, constrains, or writes
+     * velocity to the matched body. Held state reports the resolved bodyId,
+     * active hand mask, and contact point/normal when the manifold supplies
+     * them; referenceFormId/referenceNativeHandle remain provider-authored.
      * Exact body registrations are resolved before wildcard registrations.
      * One wildcard descriptor owns at most one resolved body concurrently;
      * publish disjoint right/left wildcard descriptors when a consumer needs
@@ -2689,7 +2731,9 @@ namespace rock::provider
         std::uint32_t referenceNativeHandle{ 0 };
         std::uint32_t activeHandMask{ 0 };
         std::uint32_t flags{ 0 };
-        std::uint32_t reserved0{ 0 };
+        RockProviderSurfaceGripModeV1 surfaceGripMode{
+            RockProviderSurfaceGripModeV1::CollisionAnchor
+        };
         float currentCoordinate{ 0.0f };
         float coordinateVelocity{ 0.0f };
         RockProviderPoint3 contactPointGame{};
