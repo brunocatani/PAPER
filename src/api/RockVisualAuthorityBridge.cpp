@@ -20,6 +20,7 @@ namespace paper::frik_visual_authority
 
         std::array<Publication, 2> s_publications{};
         std::atomic<bool> s_skeletonReady{ false };
+        std::atomic<bool> s_weaponCoupledWorldTransformSupported{ false };
 
         [[nodiscard]] constexpr std::size_t handIndex(const Hand hand)
         {
@@ -48,6 +49,12 @@ namespace paper::frik_visual_authority
             if (source.worldValid) {
                 request.flags |= static_cast<std::uint32_t>(
                     rock::provider::RockProviderHandVisualAuthorityFlagV1::WorldTransform);
+                if (s_weaponCoupledWorldTransformSupported.load(
+                        std::memory_order_acquire)) {
+                    request.flags |= static_cast<std::uint32_t>(
+                        rock::provider::RockProviderHandVisualAuthorityFlagV1::
+                            WeaponCoupledWorldTransform);
+                }
                 api_transform::fromNi(source.world, request.worldTransform);
             }
             if (source.fingersValid && source.fingers.enabledMask != 0) {
@@ -67,10 +74,15 @@ namespace paper::frik_visual_authority
         }
     }
 
-    void setSkeletonReadyHint(const bool ready)
+    void setRuntimeHints(
+        const bool skeletonReady,
+        const bool weaponCoupledWorldTransformSupported)
     {
-        s_skeletonReady.store(ready, std::memory_order_release);
-        if (!ready) {
+        s_weaponCoupledWorldTransformSupported.store(
+            weaponCoupledWorldTransformSupported,
+            std::memory_order_release);
+        s_skeletonReady.store(skeletonReady, std::memory_order_release);
+        if (!skeletonReady) {
             for (auto& publication : s_publications) {
                 publication = {};
             }

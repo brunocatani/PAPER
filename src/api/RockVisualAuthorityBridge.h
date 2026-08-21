@@ -22,7 +22,9 @@ namespace paper::frik_visual_authority
         std::array<RE::NiTransform, 15> localTransforms{};
     };
 
-    void setSkeletonReadyHint(bool ready);
+    void setRuntimeHints(
+        bool skeletonReady,
+        bool weaponCoupledWorldTransformSupported);
     [[nodiscard]] bool isSkeletonReadyHint();
     [[nodiscard]] bool clearHandPose(const char* tag, Hand hand);
     [[nodiscard]] bool setHandPoseCustomWithPriority(

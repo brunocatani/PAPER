@@ -966,7 +966,13 @@ namespace
         const bool skeletonReady = hasContextFlag(
             context->flags,
             rock::provider::RockProviderAnimationPhaseContextFlagV1::SkeletonReady);
-        frik_visual_authority::setSkeletonReadyHint(skeletonReady);
+        const bool weaponCoupledWorldTransformSupported = hasContextFlag(
+            context->flags,
+            rock::provider::RockProviderAnimationPhaseContextFlagV1::
+                WeaponCoupledWorldTransformSupported);
+        frik_visual_authority::setRuntimeHints(
+            skeletonReady,
+            weaponCoupledWorldTransformSupported);
 
         const bool operational =
             g_config.enabled && rockEnabled && rockReady && skeletonReady;
@@ -1214,7 +1220,7 @@ namespace
         debug_visualization::clear();
         rockApiClient().clearNativeAnimationAuthority();
         native_animation_authority::resetTransientState();
-        frik_visual_authority::setSkeletonReadyHint(false);
+        frik_visual_authority::setRuntimeHints(false, false);
         s_gripState = {};
         s_handlingState = {};
         s_gripStateValid = false;
