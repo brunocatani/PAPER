@@ -85,7 +85,7 @@ namespace paper::native_animation_authority_policy
     };
 
     /*
-     * Fire-triggered hand motion remains rebased onto each exact live
+     * Fire-triggered authored-hand motion remains rebased onto each exact live
      * ROCK grip. During a partial reload, however, the native support hand
      * must target its authored Weapon-relative pose directly. Rebasing that
      * hand onto an arbitrary dynamic support grab carries the grab offset all
@@ -103,9 +103,9 @@ namespace paper::native_animation_authority_policy
 
     [[nodiscard]] inline constexpr bool shouldPublishWeaponFixedSupportHand(
         const bool partialReload,
-        const bool supportGripActive)
+        const bool authoredSupportGripActive)
     {
-        return partialReload || supportGripActive;
+        return partialReload || authoredSupportGripActive;
     }
 
     enum class LocalManualCycleLeaseEndReason : std::uint32_t
@@ -310,39 +310,38 @@ namespace paper::native_animation_authority_policy
                !observation.partCarryActive;
     }
 
-    struct ManualCycleSupportGripLatchState
+    struct ManualCycleAuthoredSupportGripLatchState
     {
         std::uint64_t weaponGenerationKey{ 0 };
         bool active{ false };
     };
 
-    struct ManualCycleSupportGripLatchObservation
+    struct ManualCycleAuthoredSupportGripLatchObservation
     {
         std::uint64_t observedWeaponGenerationKey{ 0 };
         bool leaseActive{ false };
         bool leaseStarted{ false };
-        bool supportGripActive{ false };
-        bool activeNonSupportGripObserved{ false };
+        bool authoredSupportGripActive{ false };
+        bool activeNonAuthoredGripObserved{ false };
     };
 
     /*
      * ROCK can clear its support-grip report after Paper publishes the
      * higher-priority hand authority needed for a native manual cycle. Latch
-     * the exact authored or dynamic support grip observed at that cycle's
-     * entry, then retain it across an absent post-ROCK report. A weapon
-     * change, lease end, or a positively observed non-support part grip
-     * invalidates the latch.
+     * only the authored grip observed at that cycle's entry, then retain it
+     * across an absent post-ROCK report. A weapon change, lease end, or a
+     * positively observed non-authored grip invalidates the latch.
      */
-    [[nodiscard]] inline constexpr ManualCycleSupportGripLatchState
-        advanceManualCycleSupportGripLatch(
-            const ManualCycleSupportGripLatchState state,
-            const ManualCycleSupportGripLatchObservation& observation)
+    [[nodiscard]] inline constexpr ManualCycleAuthoredSupportGripLatchState
+        advanceManualCycleAuthoredSupportGripLatch(
+            const ManualCycleAuthoredSupportGripLatchState state,
+            const ManualCycleAuthoredSupportGripLatchObservation& observation)
     {
         if (!observation.leaseActive) {
             return {};
         }
         if (observation.leaseStarted) {
-            if (!observation.supportGripActive ||
+            if (!observation.authoredSupportGripActive ||
                 observation.observedWeaponGenerationKey == 0) {
                 return {};
             }
@@ -356,7 +355,7 @@ namespace paper::native_animation_authority_policy
             observation.observedWeaponGenerationKey == 0 ||
             observation.observedWeaponGenerationKey !=
                 state.weaponGenerationKey ||
-            observation.activeNonSupportGripObserved) {
+            observation.activeNonAuthoredGripObserved) {
             return {};
         }
         return state;

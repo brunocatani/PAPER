@@ -669,6 +669,8 @@ namespace
             snapshot.leftSupportHandInWeapon =
                 api_transform::toNi(leftPartGrip.handPartLocal);
             snapshot.leftSupportGripValid = true;
+            snapshot.authoredLeftSupportGripActive =
+                leftPartGrip.authoredSupportGrip != 0;
         }
         native_animation_authority::setManualCycleRockGripSnapshot(snapshot);
         return native_animation_authority_policy::

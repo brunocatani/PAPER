@@ -754,53 +754,53 @@ int main()
             NativeAnimationCompatibilityReason::PartCarry) ==
         "part-carry");
 
-    constexpr auto supportGripLatch =
-        advanceManualCycleSupportGripLatch(
+    constexpr auto authoredSupportGripLatch =
+        advanceManualCycleAuthoredSupportGripLatch(
             {},
-            ManualCycleSupportGripLatchObservation{
+            ManualCycleAuthoredSupportGripLatchObservation{
                 .observedWeaponGenerationKey = 42,
                 .leaseActive = true,
                 .leaseStarted = true,
-                .supportGripActive = true,
+                .authoredSupportGripActive = true,
             });
-    static_assert(supportGripLatch.active);
+    static_assert(authoredSupportGripLatch.active);
     static_assert(
-        supportGripLatch.weaponGenerationKey == 42);
+        authoredSupportGripLatch.weaponGenerationKey == 42);
     static_assert(
-        advanceManualCycleSupportGripLatch(
-            supportGripLatch,
-            ManualCycleSupportGripLatchObservation{
+        advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
                 .observedWeaponGenerationKey = 42,
                 .leaseActive = true,
             }).active);
     static_assert(
-        !advanceManualCycleSupportGripLatch(
+        !advanceManualCycleAuthoredSupportGripLatch(
             {},
-            ManualCycleSupportGripLatchObservation{
+            ManualCycleAuthoredSupportGripLatchObservation{
                 .observedWeaponGenerationKey = 42,
                 .leaseActive = true,
                 .leaseStarted = true,
-                .supportGripActive = false,
+                .authoredSupportGripActive = false,
             }).active);
     static_assert(
-        !advanceManualCycleSupportGripLatch(
-            supportGripLatch,
-            ManualCycleSupportGripLatchObservation{
+        !advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
                 .observedWeaponGenerationKey = 42,
                 .leaseActive = true,
-                .activeNonSupportGripObserved = true,
+                .activeNonAuthoredGripObserved = true,
             }).active);
     static_assert(
-        !advanceManualCycleSupportGripLatch(
-            supportGripLatch,
-            ManualCycleSupportGripLatchObservation{
+        !advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
                 .observedWeaponGenerationKey = 43,
                 .leaseActive = true,
             }).active);
     static_assert(
-        !advanceManualCycleSupportGripLatch(
-            supportGripLatch,
-            ManualCycleSupportGripLatchObservation{
+        !advanceManualCycleAuthoredSupportGripLatch(
+            authoredSupportGripLatch,
+            ManualCycleAuthoredSupportGripLatchObservation{
                 .observedWeaponGenerationKey = 42,
                 .leaseActive = false,
             }).active);

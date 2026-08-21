@@ -53,6 +53,7 @@ namespace paper::native_animation_authority
         bool leftPartGripStateValid{ false };
         bool leftPartGripActive{ false };
         bool leftSupportGripValid{ false };
+        bool authoredLeftSupportGripActive{ false };
     };
 
     struct CapturedTransform
