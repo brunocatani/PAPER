@@ -1516,10 +1516,17 @@ namespace paper::native_animation_authority
                     frik_visual_authority::Hand::Left);
             }
 
-            // hFRIK's external-hand solver deliberately excludes the Weapon
-            // child while moving an arm. Recompute the Weapon local anyway so
-            // its scene hierarchy remains coherent with the controller-fixed
-            // world before the next engine transform propagation.
+            /*
+             * hFRIK's deferred external-hand solve moves the whole hand
+             * subtree, and the Weapon child moves with it. So the weapon does
+             * NOT hold still while an arm is solved, and this restore is what
+             * puts it back on its controller-fixed world.
+             *
+             * This runs in ROCK's AfterRock phase, which is safe: ROCK
+             * publishes its generated weapon colliders and muzzle authority
+             * after AfterRock, so those consumers sample the weapon pose this
+             * restore leaves behind rather than the pose before it.
+             */
             if (!restoreFixedVisibleWeaponTarget(fixedWeaponWorld)) {
                 clearManualCycleVisualAuthority();
                 (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
