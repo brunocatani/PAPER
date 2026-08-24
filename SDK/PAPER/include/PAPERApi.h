@@ -296,8 +296,11 @@ namespace paper::api
     {
         None = 0,
         Keyword = 1,
+        // Legacy ROCK V1 value. Current ROCK builds never emit it.
         WeightFallback = 2,
         Default = 3,
+        WeaponData = 4,
+        EquipSlot = 5,
     };
 
     enum class PaperWeaponKeywordFlagV1 : std::uint64_t
