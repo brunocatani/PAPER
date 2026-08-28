@@ -27,6 +27,9 @@ namespace paper
             rock::provider::RockProviderEquippedWeaponGripStateV1& outState) const;
         [[nodiscard]] bool queryEquippedWeaponHandlingState(
             rock::provider::RockProviderEquippedWeaponHandlingStateV1& outState) const;
+        [[nodiscard]] bool queryHandInteractionState(
+            rock::provider::RockProviderHand hand,
+            rock::provider::RockProviderHandInteractionStateV1& outState) const;
         [[nodiscard]] bool queryWeaponPartGripState(
             rock::provider::RockProviderHand hand,
             rock::provider::RockProviderWeaponPartGripStateV1& outState) const;

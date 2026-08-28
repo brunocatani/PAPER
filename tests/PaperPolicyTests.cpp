@@ -515,6 +515,28 @@ int main()
                       }) == kWeaponFixedHandsPose);
     static_assert((kWeaponFixedHandsPose & kWeapon) == 0);
 
+    static_assert(!shouldSuppressAnimationForClimbing(
+        ClimbingAnimationSuppressionObservation{
+            .rightStateValid = true,
+            .leftStateValid = true,
+        }));
+    static_assert(shouldSuppressAnimationForClimbing(
+        ClimbingAnimationSuppressionObservation{
+            .rightStateValid = true,
+            .leftStateValid = true,
+            .rightFixedSurfaceLatch = true,
+        }));
+    static_assert(shouldSuppressAnimationForClimbing(
+        ClimbingAnimationSuppressionObservation{
+            .rightStateValid = true,
+            .leftStateValid = true,
+            .leftFixedSurfaceLatch = true,
+        }));
+    static_assert(shouldSuppressAnimationForClimbing(
+        ClimbingAnimationSuppressionObservation{
+            .rightStateValid = true,
+        }));
+
     static_assert(resolveWeaponFixedHandTargetMode(
                       false,
                       WeaponFixedHandRole::Primary) ==

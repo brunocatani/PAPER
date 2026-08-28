@@ -36,6 +36,7 @@ namespace
     std::uint64_t s_configRevision{ 0 };
     std::uint32_t s_lastAuthorityPublishFailureFlags{ UINT32_MAX };
     bool s_runtimeOperational{ false };
+    bool s_climbingAnimationSuppressed{ false };
     bool s_reloadObservationDemandActive{ false };
     bool s_animationTelemetryDemandActive{ false };
     bool s_reloadStageDemandActive{ false };
@@ -522,6 +523,74 @@ namespace
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
+    [[nodiscard]] bool hasHandInteractionFlag(
+        const std::uint32_t flags,
+        const rock::provider::RockProviderHandInteractionFlagV1 flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    [[nodiscard]] bool isFixedSurfaceClimb(
+        const rock::provider::RockProviderHandInteractionStateV1& state)
+    {
+        return state.phase ==
+                   rock::provider::RockProviderHandInteractionPhaseV1::
+                       Holding &&
+               hasHandInteractionFlag(
+                   state.flags,
+                   rock::provider::RockProviderHandInteractionFlagV1::
+                       TouchGrab) &&
+               hasHandInteractionFlag(
+                   state.flags,
+                   rock::provider::RockProviderHandInteractionFlagV1::
+                       FixedSurfaceLatch);
+    }
+
+    [[nodiscard]] bool refreshClimbingAnimationSuppression()
+    {
+        rock::provider::RockProviderHandInteractionStateV1 rightState{};
+        rock::provider::RockProviderHandInteractionStateV1 leftState{};
+        const bool rightStateValid =
+            rockApiClient().queryHandInteractionState(
+                rock::provider::RockProviderHand::Right,
+                rightState) &&
+            rightState.hand == rock::provider::RockProviderHand::Right &&
+            hasHandInteractionFlag(
+                rightState.flags,
+                rock::provider::RockProviderHandInteractionFlagV1::Valid);
+        const bool leftStateValid =
+            rockApiClient().queryHandInteractionState(
+                rock::provider::RockProviderHand::Left,
+                leftState) &&
+            leftState.hand == rock::provider::RockProviderHand::Left &&
+            hasHandInteractionFlag(
+                leftState.flags,
+                rock::provider::RockProviderHandInteractionFlagV1::Valid);
+        const bool rightFixedSurfaceLatch =
+            rightStateValid && isFixedSurfaceClimb(rightState);
+        const bool leftFixedSurfaceLatch =
+            leftStateValid && isFixedSurfaceClimb(leftState);
+        const bool suppress = native_animation_authority_policy::
+            shouldSuppressAnimationForClimbing({
+                .rightStateValid = rightStateValid,
+                .leftStateValid = leftStateValid,
+                .rightFixedSurfaceLatch = rightFixedSurfaceLatch,
+                .leftFixedSurfaceLatch = leftFixedSurfaceLatch,
+            });
+        if (suppress != s_climbingAnimationSuppressed) {
+            PAPER_LOG_INFO(
+                Animation,
+                "Climbing animation suppression {} rightState={} rightLatch={} leftState={} leftLatch={}",
+                suppress ? "active" : "released",
+                rightStateValid ? "valid" : "unavailable",
+                rightFixedSurfaceLatch ? "held" : "clear",
+                leftStateValid ? "valid" : "unavailable",
+                leftFixedSurfaceLatch ? "held" : "clear");
+            s_climbingAnimationSuppressed = suppress;
+        }
+        return suppress;
+    }
+
     [[nodiscard]] bool isSupportGripKind(
         const rock::provider::RockProviderWeaponPartGripKindV1 kind)
     {
@@ -973,8 +1042,11 @@ namespace
         const auto enrichmentDemand = refreshEnrichmentDemand();
         switch (context->phase) {
         case rock::provider::RockProviderAnimationPhaseV1::NativeGraphOutput: {
+            const bool climbingAnimationSuppressed =
+                operational && refreshClimbingAnimationSuppression();
             const bool runtimeOperational =
-                operational && s_runtimeOperational;
+                operational && s_runtimeOperational &&
+                !climbingAnimationSuppressed;
             // Publish before capture so ROCK's local authored-grip reader can
             // yield at this same graph sample when Paper owns authority.
             publishRockAuthority(runtimeOperational);
@@ -1025,6 +1097,8 @@ namespace
             // just-ended local lease cannot keep itself alive through ROCK's
             // aggregate state.
             rockApiClient().clearNativeAnimationAuthority();
+            const bool climbingAnimationSuppressed =
+                operational && refreshClimbingAnimationSuppression();
             const auto weaponObservation = refreshWeaponState();
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
@@ -1056,6 +1130,7 @@ namespace
                     currentPaperAnimationAuthority());
             bool runtimeOperational =
                 operational && native_animation_authority::isHookInstalled() &&
+                !climbingAnimationSuppressed &&
                 preLifecycleCompatibility.compatible();
             configureRuntime(runtimeOperational);
             applyManualCycleEligibility(weaponObservation);
@@ -1087,15 +1162,21 @@ namespace
             break;
         }
         case rock::provider::RockProviderAnimationPhaseV1::AfterRock: {
+            const bool climbingAnimationSuppressed =
+                operational && refreshClimbingAnimationSuppression();
             const auto weaponObservation = refreshWeaponState();
             const auto compatibility = evaluateAnimationCompatibility(
                 *context,
                 "after-rock",
                 weaponObservation,
                 currentPaperAnimationAuthority());
-            if ((!operational || !compatibility.compatible()) &&
+            if ((!operational || climbingAnimationSuppressed ||
+                    !compatibility.compatible()) &&
                 s_runtimeOperational) {
                 configureRuntime(false);
+                publishRockAuthorityFlags(0);
+            }
+            if (climbingAnimationSuppressed) {
                 publishRockAuthorityFlags(0);
             }
             applyManualCycleEligibility(weaponObservation);
@@ -1227,6 +1308,7 @@ namespace
         s_hasCompatibilityLogSnapshot = false;
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
+        s_climbingAnimationSuppressed = false;
         s_reloadObservationDemandActive = false;
         s_animationTelemetryDemandActive = false;
         s_reloadStageDemandActive = false;

@@ -22,7 +22,9 @@ namespace paper
             static_cast<std::uint32_t>(
                 rock::provider::RockProviderConsumerCapabilityV1::DebugOverlayPublication) |
             static_cast<std::uint32_t>(
-                rock::provider::RockProviderConsumerCapabilityV1::PoseReadback);
+                rock::provider::RockProviderConsumerCapabilityV1::PoseReadback) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderConsumerCapabilityV1::HandInteractionState);
         constexpr std::uint32_t kRollingLeaseFrames = 3;
     }
 
@@ -64,6 +66,7 @@ namespace paper
             !rock::provider::supportsDebugOverlayPublicationV1(limits) ||
             !rock::provider::supportsPresentedHandFramesV1(limits) ||
             !rock::provider::supportsWeaponPartGripStateV1(limits) ||
+            !rock::provider::supportsHandInteractionStateV1() ||
             !rock::provider::supportsPoseReadbackV1() ||
             !rock::provider::supportsNativeAnimationAuthorityV1(limits)) {
             PAPER_LOG_ERROR(
@@ -230,6 +233,19 @@ namespace paper
         outState = {};
         return ready() &&
                _api->getEquippedWeaponHandlingStateV1(&outState);
+    }
+
+    bool RockApiClient::queryHandInteractionState(
+        const rock::provider::RockProviderHand hand,
+        rock::provider::RockProviderHandInteractionStateV1& outState) const
+    {
+        outState = {};
+        return ready() && _api->getHandInteractionStateV1 &&
+               _api->getHandInteractionStateV1(
+                   _ownerToken,
+                   hand,
+                   &outState) ==
+                   rock::provider::RockProviderResultV1::Ok;
     }
 
     bool RockApiClient::queryWeaponPartGripState(

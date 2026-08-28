@@ -14,6 +14,28 @@ namespace paper::native_animation_authority_policy
     inline constexpr float kManualCycleHandMotionTranslationThresholdGameUnits = 0.75f;
     inline constexpr float kManualCycleHandMotionRotationThresholdDegrees = 5.0f;
 
+    struct ClimbingAnimationSuppressionObservation
+    {
+        bool rightStateValid{ false };
+        bool leftStateValid{ false };
+        bool rightFixedSurfaceLatch{ false };
+        bool leftFixedSurfaceLatch{ false };
+    };
+
+    /*
+     * A fixed-surface latch owns the physical hand while the player climbs.
+     * Missing ROCK hand state cannot prove that the latch ended, so animation
+     * authority remains suppressed until both hand snapshots are valid.
+     */
+    [[nodiscard]] inline constexpr bool shouldSuppressAnimationForClimbing(
+        const ClimbingAnimationSuppressionObservation& observation)
+    {
+        return !observation.rightStateValid ||
+               !observation.leftStateValid ||
+               observation.rightFixedSurfaceLatch ||
+               observation.leftFixedSurfaceLatch;
+    }
+
     enum class LocalReloadLeaseEndReason : std::uint32_t
     {
         None = 0,
