@@ -6,6 +6,7 @@
 #include "compat/TacticalReloadBridge.h"
 #include "native/NativeOffsets.h"
 #include "PaperLog.h"
+#include "reload_control/ManualReloadOnly.h"
 #include "support/TransformMath.h"
 #include "api/RockVisualAuthorityBridge.h"
 
@@ -1041,6 +1042,7 @@ namespace paper::native_animation_authority
 
             const auto* startToken = nativeReloadStartStateToken();
             if (startToken && *stateToken == *startToken) {
+                manual_reload_only::observePlayerReloadStart();
                 cancelLocalManualCycleTestLease();
                 s_playerReloadEventActive.store(true, std::memory_order_release);
                 s_playerReloadStartSequence.fetch_add(1, std::memory_order_acq_rel);

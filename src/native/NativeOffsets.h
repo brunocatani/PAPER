@@ -5,6 +5,8 @@
 namespace paper::offsets
 {
     inline constexpr std::uintptr_t kFunc_PlayerControls_DoAction = 0x0FC07E0;
+    inline constexpr std::uintptr_t kFunc_PlayerControls_ExecuteAction = 0x0F1EAA0;
+    inline constexpr std::uintptr_t kCallsite_PlayerControls_ExecuteAction = 0x0FC0C39;
     inline constexpr std::uintptr_t kSignature_PlayerControls_AutomaticReload = 0x0FC0D18;
     inline constexpr std::uintptr_t kCallsite_PlayerControls_AutomaticReload = 0x0FC0D4F;
     inline constexpr std::uintptr_t kFunc_ReadyWeaponHandler_ShouldHandleEvent = 0x0FCE650;
