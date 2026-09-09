@@ -128,6 +128,7 @@ namespace paper::native_animation_authority
             float motionTranslationGameUnits{ 0.0f };
             float motionRotationDegrees{ 0.0f };
             bool captured{ false };
+            bool baselineUnavailableLogged{ false };
             bool motionQualified{ false };
             bool resolvedHandInWeaponValid{ false };
             bool resolvedHandWorldValid{ false };
@@ -1313,17 +1314,27 @@ namespace paper::native_animation_authority
                     hand == frik_visual_authority::Hand::Left ?
                     s_manualCycleRockGripBaselines.leftHandInWeapon :
                     s_manualCycleRockGripBaselines.rightHandInWeapon;
-                if (rockBaselineValid &&
-                    finiteTransform(rockBaselineHandInWeapon)) {
+                const bool useRockBaseline = rockBaselineValid &&
+                    finiteTransform(rockBaselineHandInWeapon);
+                if (useRockBaseline) {
                     // Use ROCK's exact requested grip target, not the solved
                     // hand-bone readback. The latter retains a small hFRIK IK
                     // residual that made cycle motion sit behind the handle.
                     handRebase.liveBaselineHandInWeapon =
                         rockBaselineHandInWeapon;
                 } else {
-                    const RE::NiTransform liveHandWorld =
-                        frik_visual_authority::getHandWorldTransform(hand);
-                    if (!finiteTransform(liveHandWorld)) {
+                    RE::NiTransform liveHandWorld{};
+                    if (!frik_visual_authority::tryGetPresentedHandWorldTransform(
+                            hand,
+                            liveHandWorld) ||
+                        !finiteTransform(liveHandWorld)) {
+                        if (!handRebase.baselineUnavailableLogged) {
+                            PAPER_LOG_WARN(Animation,
+                                "Native weapon-fixed hand baseline unavailable hand={} weapon={:016X}; waiting for a valid presented grip",
+                                hand == frik_visual_authority::Hand::Left ? "left" : "right",
+                                s_manualCycleRockGripBaselines.weaponGenerationKey);
+                            handRebase.baselineUnavailableLogged = true;
+                        }
                         (void)clearManualCycleVisualForHand(hand);
                         return ManualCycleHandVisualResult::Failed;
                     }
@@ -1343,6 +1354,18 @@ namespace paper::native_animation_authority
                     return ManualCycleHandVisualResult::Failed;
                 }
                 handRebase.captured = true;
+                if (s_framePartialReloadExpected) {
+                    const auto& live = handRebase.liveBaselineHandInWeapon.translate;
+                    const auto& native = handRebase.nativeBaselineHandInWeapon.translate;
+                    PAPER_LOG_INFO(Animation,
+                        "Native reload grip baseline hand={} source={} weapon={:016X} capture={} liveT=({:.3f},{:.3f},{:.3f}) nativeT=({:.3f},{:.3f},{:.3f})",
+                        hand == frik_visual_authority::Hand::Left ? "left" : "right",
+                        useRockBaseline ? "rock-grip-target" : "presented-hand",
+                        s_manualCycleRockGripBaselines.weaponGenerationKey,
+                        s_frameCaptureSequence,
+                        live.x, live.y, live.z,
+                        native.x, native.y, native.z);
+                }
             }
 
             const auto motion = measureManualCycleHandMotion(

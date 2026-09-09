@@ -654,7 +654,8 @@ namespace
 
     [[nodiscard]] native_animation_authority_policy::
         NativeAnimationCompatibilityObservation
-    refreshWeaponState()
+    refreshWeaponState(
+        const rock::provider::RockProviderAnimationPhaseContextV1& context)
     {
         s_handlingState = {};
         s_handlingStateValid =
@@ -710,6 +711,32 @@ namespace
             snapshot.rightHandInWeapon =
                 api_transform::toNi(s_gripState.rightHandInWeapon);
             snapshot.rightValid = true;
+        }
+        if (!snapshot.rightValid && s_gripStateValid &&
+            weaponIdentityCoherent && !gripFiringHandIsLeft &&
+            !handlingFiringHandIsLeft && !partCarryActive) {
+            // The paired grip query is limited to the full two-hand solver.
+            // One-hand and visual-only support grips use ROCK's canonical
+            // firing seat. Its requested pose is current even though ROCK
+            // presents deferred hand claims after PAPER's AfterRock phase.
+            rock::provider::RockProviderAuthoredGripPoseV1 authored{};
+            constexpr auto requiredFlags =
+                static_cast<std::uint32_t>(
+                    rock::provider::RockProviderAuthoredGripPoseFlagV1::Valid) |
+                static_cast<std::uint32_t>(
+                    rock::provider::RockProviderAuthoredGripPoseFlagV1::RightHandValid);
+            if (rockApiClient().querySelectedAuthoredGripPose(authored) &&
+                (authored.flags & requiredFlags) == requiredFlags &&
+                authored.weaponFormId == s_gripState.weaponFormId &&
+                authored.weaponGenerationKey != 0 &&
+                authored.weaponGenerationKey == snapshot.weaponGenerationKey &&
+                authored.worldGeneration == context.worldGeneration &&
+                authored.skeletonGeneration == context.skeletonGeneration &&
+                authored.providerGeneration == context.providerGeneration) {
+                snapshot.rightHandInWeapon =
+                    api_transform::toNi(authored.rightHandInWeapon);
+                snapshot.rightValid = true;
+            }
         }
 
         rock::provider::RockProviderWeaponPartGripStateV1 leftPartGrip{};
@@ -1099,7 +1126,7 @@ namespace
             rockApiClient().clearNativeAnimationAuthority();
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
-            const auto weaponObservation = refreshWeaponState();
+            const auto weaponObservation = refreshWeaponState(*context);
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
                 reload_observation::advanceFrame(
@@ -1164,7 +1191,7 @@ namespace
         case rock::provider::RockProviderAnimationPhaseV1::AfterRock: {
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
-            const auto weaponObservation = refreshWeaponState();
+            const auto weaponObservation = refreshWeaponState(*context);
             const auto compatibility = evaluateAnimationCompatibility(
                 *context,
                 "after-rock",

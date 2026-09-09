@@ -41,5 +41,7 @@ namespace paper::frik_visual_authority
         const RE::NiTransform& worldTarget,
         int priority);
     [[nodiscard]] bool clearExternalHandWorldTransform(const char* tag, Hand hand);
-    [[nodiscard]] RE::NiTransform getHandWorldTransform(Hand hand);
+    [[nodiscard]] bool tryGetPresentedHandWorldTransform(
+        Hand hand,
+        RE::NiTransform& outWorld);
 }

@@ -139,17 +139,33 @@ namespace paper::frik_visual_authority
         return publish(hand);
     }
 
-    RE::NiTransform getHandWorldTransform(const Hand hand)
+    bool tryGetPresentedHandWorldTransform(
+        const Hand hand,
+        RE::NiTransform& outWorld)
     {
-        RE::NiTransform result{};
+        outWorld = {};
         const auto* api = rockApiClient().api();
-        if (!api || !api->getHandFrameV1) {
-            return result;
+        if (!rockApiClient().ready() || !isSkeletonReadyHint() ||
+            !api || !api->getPresentedHandFrameV1) {
+            return false;
         }
+
+        // A reload rebases the visible wrist, which ROCK can seat separately
+        // from its controller/physics hand. getHandFrameV1 reports the latter.
+        // Requested ROCK grip targets take precedence at the caller; this
+        // readback serves hands without an available explicit grip target.
         rock::provider::RockProviderHandFrameV1 frame{};
-        if (api->getHandFrameV1(providerHand(hand), &frame)) {
-            result = api_transform::toNi(frame.transform);
+        constexpr auto requiredFlags =
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderHandFrameFlagV1::Valid) |
+            static_cast<std::uint32_t>(
+                rock::provider::RockProviderHandFrameFlagV1::PresentedVisual);
+        if (!api->getPresentedHandFrameV1(providerHand(hand), &frame) ||
+            frame.hand != providerHand(hand) ||
+            (frame.flags & requiredFlags) != requiredFlags) {
+            return false;
         }
-        return result;
+        outWorld = api_transform::toNi(frame.transform);
+        return true;
     }
 }
