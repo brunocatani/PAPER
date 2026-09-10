@@ -703,6 +703,7 @@ namespace
                         s_gripState.weaponGenerationKey));
 
         native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
+        snapshot.weaponFormId = s_gripStateValid ? s_gripState.weaponFormId : 0;
         snapshot.weaponGenerationKey =
             s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
         if (s_gripStateValid && hasGripFlag(

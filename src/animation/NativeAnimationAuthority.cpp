@@ -139,6 +139,7 @@ namespace paper::native_animation_authority
             RE::NiTransform rightHandInWeapon{};
             RE::NiTransform leftHandInWeapon{};
             std::uint64_t weaponGenerationKey{ 0 };
+            std::uint32_t weaponFormId{ 0 };
             bool rightValid{ false };
             bool authoredLeftActive{ false };
         };
@@ -1436,6 +1437,25 @@ namespace paper::native_animation_authority
                 targetHandInWeapon = transform_math::composeTransforms(
                     handInWeaponCorrection,
                     handInWeapon);
+            } else if (s_manualCycleRockGripBaselines.weaponFormId == 0x0015B043) {
+                const auto& primary = s_sourceAimFrame.manualCycleHandRebases[
+                    manualCycleHandIndex(frik_visual_authority::Hand::Right)];
+                if (!primary.captured || !s_manualCycleRockGripBaselines.rightValid) {
+                    if (!handRebase.baselineUnavailableLogged) {
+                        PAPER_LOG_WARN(Animation, "SMG reload model frame unavailable: no matching ROCK primary baseline");
+                        handRebase.baselineUnavailableLogged = true;
+                    }
+                    (void)clearManualCycleVisualForHand(hand);
+                    return ManualCycleHandVisualResult::Failed;
+                }
+                targetHandInWeapon = native_animation_authority_policy::resolveNativeWeaponRelativeHand(
+                    s_manualCycleRockGripBaselines.weaponFormId, handInWeapon,
+                    primary.liveBaselineHandInWeapon, primary.nativeBaselineHandInWeapon);
+                if (!wasMotionQualified) {
+                    const auto delta = targetHandInWeapon.translate - handInWeapon.translate;
+                    PAPER_LOG_INFO(Animation, "SMG reload support model translation applied weapon={:016X} deltaT=({:.3f},{:.3f},{:.3f})",
+                        s_manualCycleRockGripBaselines.weaponGenerationKey, delta.x, delta.y, delta.z);
+                }
             }
             const RE::NiTransform handWorld =
                 native_animation_authority_policy::resolveNativeHandWorld(
@@ -2263,6 +2283,7 @@ namespace paper::native_animation_authority
     {
         ResolvedManualCycleRockGripBaselines resolved{};
         resolved.weaponGenerationKey = snapshot.weaponGenerationKey;
+        resolved.weaponFormId = snapshot.weaponFormId;
         if (s_manualCycleHandAnimationEligible.load(
                 std::memory_order_acquire)) {
             if (snapshot.rightValid &&

@@ -49,6 +49,7 @@ namespace paper::native_animation_authority
         RE::NiTransform rightHandInWeapon{};
         RE::NiTransform leftSupportHandInWeapon{};
         std::uint64_t weaponGenerationKey{ 0 };
+        std::uint32_t weaponFormId{ 0 };
         bool rightValid{ false };
         bool leftPartGripStateValid{ false };
         bool leftPartGripActive{ false };

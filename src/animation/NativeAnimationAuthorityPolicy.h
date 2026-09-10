@@ -106,6 +106,24 @@ namespace paper::native_animation_authority_policy
         NativeWeaponRelative,
     };
 
+    // The vanilla SMG's model registration is absent from native animation
+    // coordinates. Its stationary primary baseline provides the translation
+    // into ROCK's corrected model frame. Do not use an arbitrary support grab
+    // as that origin, and do not rotate or scale the authored reload trajectory.
+    template <class Transform>
+    [[nodiscard]] constexpr Transform resolveNativeWeaponRelativeHand(
+        const std::uint32_t formId, const Transform& animatedHand,
+        const Transform& livePrimaryBaseline, const Transform& nativePrimaryBaseline)
+    {
+        auto result = animatedHand;
+        if (formId == 0x0015B043) {
+            result.translate.x += livePrimaryBaseline.translate.x - nativePrimaryBaseline.translate.x;
+            result.translate.y += livePrimaryBaseline.translate.y - nativePrimaryBaseline.translate.y;
+            result.translate.z += livePrimaryBaseline.translate.z - nativePrimaryBaseline.translate.z;
+        }
+        return result;
+    }
+
     /*
      * Fire-triggered authored-hand motion remains rebased onto each exact live
      * ROCK grip. During a partial reload, however, the native support hand

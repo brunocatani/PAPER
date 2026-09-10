@@ -5,6 +5,7 @@
 #include "reload_observation/WeaponClassificationPolicy.h"
 
 #include <cassert>
+#include <cmath>
 
 int main()
 {
@@ -988,5 +989,26 @@ int main()
     assert(!isRequested(classifyBone("LArm_Finger11"), kArms));
     assert(!isRequested(classifyBone("RArm_UpperArm"), kHands));
     assert(isRequested(classifyBone("WeaponLeft"), kReloadPose));
+
+    struct Point { float x, y, z; };
+    struct Hand { float rotation; Point translate; float scale; };
+    constexpr Hand rawPrimary{7, {3.124f, 7.724f, -3.221f}, 1};
+    constexpr Hand livePrimary{7, {3.124f, -6.298f, -3.221f}, 1};
+    constexpr Hand reloadHand{83, {-4, 30, -2}, 0.9f};
+    constexpr auto smgReload = resolveNativeWeaponRelativeHand(0x0015B043, reloadHand, livePrimary, rawPrimary);
+    static_assert(smgReload.rotation == reloadHand.rotation && smgReload.scale == reloadHand.scale);
+    if (std::abs(smgReload.translate.y - 15.978f) > 0.00001f) return 20;
+    constexpr Hand movingReloadHand{105, {-2, 38, -1}, 0.8f};
+    constexpr auto movingSmg = resolveNativeWeaponRelativeHand(0x0015B043, movingReloadHand, livePrimary, rawPrimary);
+    if (std::abs((movingSmg.translate.y - smgReload.translate.y) - 8.0f) > 0.00001f) return 21;
+    static_assert(movingSmg.rotation == 105 && movingSmg.scale == 0.8f);
+    constexpr Hand customNative{15, {2, 6, -4}, 1};
+    constexpr Hand customLive{15, {2, -8.022f, -4}, 1};
+    constexpr auto customReload = resolveNativeWeaponRelativeHand(0x0015B043, movingReloadHand, customLive, customNative);
+    if (std::abs(customReload.translate.y - movingSmg.translate.y) > 0.00001f) return 22;
+    constexpr auto otherGun = resolveNativeWeaponRelativeHand(0x0115B043, reloadHand, livePrimary, rawPrimary);
+    static_assert(otherGun.translate.y == reloadHand.translate.y);
+    constexpr auto pipeGun = resolveNativeWeaponRelativeHand(0x00024F55, reloadHand, livePrimary, rawPrimary);
+    static_assert(pipeGun.translate.y == reloadHand.translate.y);
     return 0;
 }
