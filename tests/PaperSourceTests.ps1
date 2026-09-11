@@ -79,16 +79,16 @@ Require-Text 'src/animation/NativeAnimationAuthority.cpp' 'activeNonAuthoredGrip
 Reject-Text 'src/animation/NativeAnimationAuthority.cpp' 'kExpectedPostFrikPrefix|kFunc_PlayerPostUpdateAnimationGraphManager|entry_trampoline_hook' 'Paper must not install a competing PostUpdateAnimationGraphManager detour.'
 Reject-Text 'src/native/NativeOffsets.h' 'PostUpdateAnimationGraphManager|UpdateFirstPersonArm' 'Paper native offsets must be limited to its reload/manual-cycle lifecycle ownership.'
 
-Require-Text 'data/config/PAPER.ini' '\[Debug\][\s\S]*bDebugDrawNativeAnimation\s*=\s*false[\s\S]*bDebugDrawNativeAnimationText\s*=\s*true[\s\S]*fDebugNativeAnimationAxisLength[\s\S]*fDebugNativeAnimationMarkerSize' 'Paper must retain bounded, opt-in native animation visualization controls.'
-Require-Text 'data/config/PAPER.ini' '\[DevelopmentCapture\][\s\S]*sMaximumMode\s*=\s*User[\s\S]*bAutoStart\s*=\s*false[\s\S]*bAllowApiActivation\s*=\s*false[\s\S]*\[WeaponMotionCache\][\s\S]*sAccess\s*=\s*Off[\s\S]*iSessionCacheMiB\s*=\s*64[\s\S]*iDiskCacheMiB\s*=\s*256[\s\S]*iMaximumFileMiB\s*=\s*16[\s\S]*iMaximumEntries\s*=\s*256' 'Development capture and compiled storage must remain dormant by default while retaining conservative storage bounds.'
-Reject-Text 'data/config/PAPER.ini' 'AuthoredPrimaryFiringGrip|Offhand|EquippedWeaponGrab' 'ROCK-owned equipped-weapon grip settings must not migrate to Paper.'
-Require-Text 'CMakeLists.txt' 'file\(READ\s+"\$\{PAPER_DEFAULT_INI_SOURCE\}"\s+PAPER_DEFAULT_INI_CONTENT\)[\s\S]*PaperDefaultIni\.h\.in' 'Paper must compile its canonical reference INI into the plugin for first-run creation.'
-Require-Text 'src/PaperConfig.cpp' 'ensureFileExists\([\s\S]*config_defaults::kIni[\s\S]*loadConfig\(activePath\)' 'Paper must create a missing production INI before attempting to load it.'
+Require-Text 'data/config/PAPER_example.ini' '\[Debug\][\s\S]*bDebugDrawNativeAnimation\s*=\s*false[\s\S]*bDebugDrawNativeAnimationText\s*=\s*true[\s\S]*fDebugNativeAnimationAxisLength[\s\S]*fDebugNativeAnimationMarkerSize' 'Paper must retain bounded, opt-in native animation visualization controls.'
+Require-Text 'data/config/PAPER_example.ini' '\[DevelopmentCapture\][\s\S]*sMaximumMode\s*=\s*User[\s\S]*bAutoStart\s*=\s*false[\s\S]*bAllowApiActivation\s*=\s*false[\s\S]*\[WeaponMotionCache\][\s\S]*sAccess\s*=\s*Off[\s\S]*iSessionCacheMiB\s*=\s*64[\s\S]*iDiskCacheMiB\s*=\s*256[\s\S]*iMaximumFileMiB\s*=\s*16[\s\S]*iMaximumEntries\s*=\s*256' 'Development capture and compiled storage must remain dormant by default while retaining conservative storage bounds.'
+Reject-Text 'data/config/PAPER_example.ini' 'AuthoredPrimaryFiringGrip|Offhand|EquippedWeaponGrab' 'ROCK-owned equipped-weapon grip settings must not migrate to Paper.'
+Reject-Text 'CMakeLists.txt' 'PAPER_DEFAULT_INI_SOURCE|PaperDefaultIni\.h|copy_directory[^\r\n]*data/mod' 'PAPER must not embed an example INI or deploy a packaged configuration directory.'
+Require-Text 'src/PaperConfig.cpp' 'ensureFileExists\([\s\S]*config_defaults::makeDefaultIni\(\)[\s\S]*loadConfig\(activePath\)' 'Paper must create a missing production INI from compiled defaults before attempting to load it.'
 
-$referenceIni = [System.IO.File]::ReadAllBytes((Join-Path $Root 'data/config/PAPER.ini'))
-$deployedIni = [System.IO.File]::ReadAllBytes((Join-Path $Root 'data/mod/PAPER_Config/PAPER.ini'))
-if (-not [System.Linq.Enumerable]::SequenceEqual[byte]($referenceIni, $deployedIni)) {
-    $failures.Add('Paper reference and deployed default INIs must remain byte-for-byte synchronized.')
+$runtimeInis = @(Get-ChildItem -LiteralPath (Join-Path $Root 'data') -Recurse -File -Filter '*.ini' |
+    Where-Object { $_.Name -notlike '*_example.ini' })
+if ($runtimeInis.Count -ne 0) {
+    $failures.Add('PAPER data must contain only documentation examples, never runtime INIs: ' + ($runtimeInis.Name -join ', '))
 }
 
 Require-Text 'src/api/RockApiClient.cpp' 'DebugOverlayPublication[\s\S]*ROCK_PROVIDER_API_V1_NATIVE_ANIMATION_RUNTIME_CLEAR_TABLE_BYTES[\s\S]*supportsDebugOverlayPublicationV1[\s\S]*supportsPresentedHandFramesV1' 'Paper must negotiate ROCK''s complete V1 debug and final presented-hand surfaces.'

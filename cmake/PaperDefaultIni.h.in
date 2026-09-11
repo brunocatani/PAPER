@@ -1,8 +1,0 @@
-#pragma once
-
-#include <string_view>
-
-namespace paper::config_defaults
-{
-    inline constexpr std::string_view kIni = R"PAPER_INI(@PAPER_DEFAULT_INI_CONTENT@)PAPER_INI";
-}

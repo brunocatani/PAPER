@@ -1,7 +1,7 @@
 #include "PaperConfig.h"
 
 #include "PaperConfigFile.h"
-#include "PaperDefaultIni.h"
+#include "PaperConfigDefaults.h"
 #include "PaperLog.h"
 
 #include <Windows.h>
@@ -217,7 +217,7 @@ namespace paper
             return false;
         }
         const auto ensureResult = config_file::ensureFileExists(
-            std::filesystem::path(activePath), config_defaults::kIni);
+            std::filesystem::path(activePath), config_defaults::makeDefaultIni());
         if (ensureResult.status == config_file::EnsureStatus::Created) {
             PAPER_LOG_INFO(Config, "Created default INI at '{}'", activePath);
         } else if (ensureResult.status == config_file::EnsureStatus::Failed) {

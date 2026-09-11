@@ -1,11 +1,13 @@
 #include "PaperConfigFile.h"
-#include "PaperDefaultIni.h"
+#include "PaperConfigDefaults.h"
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <map>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -36,6 +38,35 @@ namespace
         require(stream.is_open(), "Could not open test file for writing");
         stream.write(contents.data(), static_cast<std::streamsize>(contents.size()));
         require(stream.good(), "Could not write test file");
+    }
+
+    [[nodiscard]] auto iniValues(const std::string& contents)
+    {
+        std::map<std::string, std::string> values;
+        std::istringstream stream(contents);
+        std::string section;
+        std::string line;
+        const auto trim = [](const std::string& text) {
+            const auto first = text.find_first_not_of(" \t\r");
+            return first == std::string::npos ? std::string{} :
+                text.substr(first, text.find_last_not_of(" \t\r") - first + 1);
+        };
+        while (std::getline(stream, line)) {
+            line = trim(line);
+            if (line.empty() || line.front() == ';') {
+                continue;
+            }
+            if (line.front() == '[' && line.back() == ']') {
+                section = line.substr(1, line.size() - 2);
+                continue;
+            }
+            const auto equals = line.find('=');
+            require(equals != std::string::npos && !section.empty(), "Invalid INI entry");
+            require(values.emplace(section + "/" + trim(line.substr(0, equals)),
+                        trim(line.substr(equals + 1))).second,
+                "Duplicate INI key");
+        }
+        return values;
     }
 
     class TestDirectory
@@ -72,29 +103,33 @@ namespace
     };
 }
 
-int main()
+int main(int argc, char** argv)
 {
     try {
         TestDirectory testDirectory;
         const auto iniPath = testDirectory.root / "config" / "PAPER.ini";
+        const auto compiledDefaults = paper::config_defaults::makeDefaultIni();
 
         const auto created = paper::config_file::ensureFileExists(
             iniPath,
-            paper::config_defaults::kIni);
+            compiledDefaults);
         require(
             created.status == paper::config_file::EnsureStatus::Created,
             "A missing PAPER INI must be created");
         require(!created.error, "Successful creation must not return an error");
         require(
-            readAll(iniPath) == paper::config_defaults::kIni,
-            "The created PAPER INI must exactly match the configured default");
+            readAll(iniPath) == compiledDefaults,
+            "The created PAPER INI must exactly match the compiled defaults");
+        require(argc == 2, "Expected the documentation example path");
+        require(iniValues(readAll(iniPath)) == iniValues(readAll(argv[1])),
+            "Example key coverage and values must agree with compiled first-run defaults");
 
         constexpr std::string_view customContents =
             "[Main]\r\nbEnabled = false\r\n";
         writeAll(iniPath, customContents);
         const auto existing = paper::config_file::ensureFileExists(
             iniPath,
-            paper::config_defaults::kIni);
+            compiledDefaults);
         require(
             existing.status == paper::config_file::EnsureStatus::Existing,
             "An existing PAPER INI must be preserved");
@@ -107,7 +142,7 @@ int main()
         writeAll(blockedParent, "not a directory");
         const auto failed = paper::config_file::ensureFileExists(
             blockedParent / "PAPER.ini",
-            paper::config_defaults::kIni);
+            compiledDefaults);
         require(
             failed.status == paper::config_file::EnsureStatus::Failed,
             "A path-creation failure must be reported");

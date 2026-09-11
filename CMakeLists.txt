@@ -51,14 +51,6 @@ add_subdirectory("${COMMON_LIB_F4VR_PATH_SELECTED}" "CommonLibF4" EXCLUDE_FROM_A
 
 configure_file("${ROOT_DIR}/cmake/version.rc.in" "${BUILD_DIR}/version.rc" @ONLY)
 configure_file("${ROOT_DIR}/cmake/Version.h.in" "${BUILD_DIR}/include/Version.h" @ONLY)
-set(PAPER_DEFAULT_INI_SOURCE "${ROOT_DIR}/data/config/PAPER.ini")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PAPER_DEFAULT_INI_SOURCE}")
-file(READ "${PAPER_DEFAULT_INI_SOURCE}" PAPER_DEFAULT_INI_CONTENT)
-configure_file(
-  "${ROOT_DIR}/cmake/PaperDefaultIni.h.in"
-  "${BUILD_DIR}/include/PaperDefaultIni.h"
-  @ONLY
-)
 
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${SOURCE_DIR}/*.h")
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${SOURCE_DIR}/*.cpp")
@@ -70,7 +62,6 @@ add_library(${PROJECT_NAME} SHARED
   ${sources}
   ${inls}
   "${BUILD_DIR}/include/Version.h"
-  "${BUILD_DIR}/include/PaperDefaultIni.h"
   "${BUILD_DIR}/version.rc"
 )
 
@@ -125,7 +116,7 @@ add_custom_target(PAPERSourceBoundary
 )
 add_dependencies(${PROJECT_NAME} PAPERSourceBoundary)
 
-option(POST_BUILD_COPY_PLUGIN "Copy PAPER and packaged data to a mod root." OFF)
+option(POST_BUILD_COPY_PLUGIN "Copy only PAPER.dll and PAPER.pdb to a mod root." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots containing F4SE/Plugins.")
 if(POST_BUILD_COPY_PLUGIN)
   if(COPY_PLUGIN_BASE_PATH STREQUAL "")
@@ -134,7 +125,6 @@ if(POST_BUILD_COPY_PLUGIN)
   foreach(copy_path IN LISTS COPY_PLUGIN_BASE_PATH)
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory "${copy_path}/F4SE/Plugins"
-      COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}"
       COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${PROJECT_NAME}>" "${copy_path}/F4SE/Plugins/"
       COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_PDB_FILE:${PROJECT_NAME}>" "${copy_path}/F4SE/Plugins/"
       COMMENT "Deploying ${PROJECT_NAME} to '${copy_path}'"
@@ -171,6 +161,7 @@ if(BUILD_PAPER_TESTS)
   add_executable(PAPERConfigFileTests
     "${ROOT_DIR}/tests/PaperConfigFileTests.cpp"
     "${SOURCE_DIR}/PaperConfigFile.cpp"
+    "${SOURCE_DIR}/PaperConfigDefaults.cpp"
   )
   target_compile_features(PAPERConfigFileTests PRIVATE cxx_std_23)
   target_compile_definitions(PAPERConfigFileTests PRIVATE
@@ -191,7 +182,8 @@ if(BUILD_PAPER_TESTS)
     "${BUILD_DIR}/include"
     "${SOURCE_DIR}"
   )
-  add_test(NAME PAPERConfigFileTests COMMAND "$<TARGET_FILE:PAPERConfigFileTests>")
+  add_test(NAME PAPERConfigFileTests COMMAND "$<TARGET_FILE:PAPERConfigFileTests>"
+    "${ROOT_DIR}/data/config/PAPER_example.ini")
 
   add_executable(PAPERWeaponMotionCacheTests
     "${ROOT_DIR}/tests/PAPERWeaponMotionCacheTests.cpp"
