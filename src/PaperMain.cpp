@@ -607,8 +607,7 @@ namespace
         api::PaperConfigStateV1 state{};
         state.enabled = g_config.enabled ? 1u : 0u;
         state.nativeReloadAuthorityEnabled = 1u;
-        state.partialReloadAuthorityEnabled =
-            g_config.nativeReloadAnimationPartialAuthorityTestEnabled ? 1u : 0u;
+        state.partialReloadAuthorityEnabled = 1u;
         state.logLevel = g_config.logLevel;
         state.revision = ++s_configRevision;
         state.developmentCaptureMode = g_config.developmentCaptureMode;
@@ -798,9 +797,6 @@ namespace
             operational);
         native_animation_authority::setLocalReloadTestEnabled(
             operational);
-        native_animation_authority::setLocalReloadPartialAuthorityEnabled(
-            operational &&
-            g_config.nativeReloadAnimationPartialAuthorityTestEnabled);
         s_runtimeOperational = operational;
     }
 

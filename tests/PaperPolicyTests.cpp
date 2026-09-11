@@ -503,17 +503,8 @@ int main()
         };
     };
 
-    static_assert(resolveLocalReloadAuthorityFlags(
-                      LocalReloadAuthoritySelection{}) == 0);
-    static_assert(resolveLocalReloadAuthorityFlags(
-                      LocalReloadAuthoritySelection{
-                          .leaseActive = true,
-                      }) == kReloadPose);
-    static_assert(resolveLocalReloadAuthorityFlags(
-                      LocalReloadAuthoritySelection{
-                          .leaseActive = true,
-                          .partialAuthorityEnabled = true,
-                      }) == kWeaponFixedHandsPose);
+    static_assert(resolveLocalReloadAuthorityFlags(false) == 0);
+    static_assert(resolveLocalReloadAuthorityFlags(true) == kWeaponFixedHandsPose);
     static_assert((kWeaponFixedHandsPose & kWeapon) == 0);
 
     static_assert(!shouldSuppressAnimationForClimbing(

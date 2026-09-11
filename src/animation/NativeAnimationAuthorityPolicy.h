@@ -69,29 +69,16 @@ namespace paper::native_animation_authority_policy
         }
     };
 
-    struct LocalReloadAuthoritySelection
-    {
-        bool leaseActive{ false };
-        bool partialAuthorityEnabled{ false };
-    };
-
     /*
-     * Full authority preserves the existing arms/hands/Weapon composition.
-     * Partial reload authority excludes Weapon regardless of support-grip
+     * Local reload authority always excludes Weapon regardless of support-grip
      * topology. The post-ROCK publication path restores the visible Weapon to
      * its controller-owned world after moving either hand. Reloads and manual
      * cycles do not require a two-hand grip.
      */
     [[nodiscard]] inline constexpr std::uint32_t resolveLocalReloadAuthorityFlags(
-        const LocalReloadAuthoritySelection& selection)
+        const bool leaseActive)
     {
-        if (!selection.leaseActive) {
-            return 0;
-        }
-        if (!selection.partialAuthorityEnabled) {
-            return kReloadPose;
-        }
-        return kWeaponFixedHandsPose;
+        return leaseActive ? kWeaponFixedHandsPose : 0;
     }
 
     enum class WeaponFixedHandRole : std::uint8_t

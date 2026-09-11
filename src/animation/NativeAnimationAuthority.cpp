@@ -202,8 +202,6 @@ namespace paper::native_animation_authority
         std::atomic<bool> s_runtimeEnabled{ false };
         std::atomic<bool> s_localManualCycleTestEnabled{ false };
         std::atomic<bool> s_localReloadTestEnabled{ false };
-        std::atomic<bool> s_localReloadPartialAuthorityEnabled{ false };
-        std::atomic<bool> s_localReloadLeasePartialAuthority{ false };
         std::atomic<bool> s_manualCycleHandAnimationEligible{ false };
         std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
         std::atomic<bool> s_captureValid{ false };
@@ -432,12 +430,10 @@ namespace paper::native_animation_authority
             return false;
         }
 
-        [[nodiscard]] bool localPartialReloadLeaseActive()
+        [[nodiscard]] bool localReloadLeaseActive()
         {
             return s_localReloadTestLeaseFrames.load(
-                       std::memory_order_acquire) > 0 &&
-                   s_localReloadLeasePartialAuthority.load(
-                       std::memory_order_acquire);
+                       std::memory_order_acquire) > 0;
         }
 
         [[nodiscard]] std::uint32_t localRequestedFlags()
@@ -448,14 +444,7 @@ namespace paper::native_animation_authority
 
             std::uint32_t localFlags =
                 native_animation_authority_policy::resolveLocalReloadAuthorityFlags(
-                    native_animation_authority_policy::LocalReloadAuthoritySelection{
-                        .leaseActive =
-                            s_localReloadTestLeaseFrames.load(
-                                std::memory_order_acquire) > 0,
-                        .partialAuthorityEnabled =
-                            s_localReloadLeasePartialAuthority.load(
-                                std::memory_order_acquire),
-                    });
+                    localReloadLeaseActive());
             if (s_localManualCycleTestLeaseActive.load(std::memory_order_acquire) &&
                 s_manualCycleHandAnimationEligible.load(std::memory_order_acquire)) {
                 localFlags |= native_animation_authority_policy::kManualCyclePose;
@@ -924,14 +913,6 @@ namespace paper::native_animation_authority
                 return;
             }
 
-            const bool partialAuthority =
-                s_localReloadPartialAuthorityEnabled.load(
-                    std::memory_order_acquire);
-            // Publish the latched mode before the frame count and request
-            // sequence make this lease visible to the graph/frame hooks.
-            s_localReloadLeasePartialAuthority.store(
-                partialAuthority,
-                std::memory_order_release);
             s_localReloadTestLeaseFrames.store(
                 kLocalReloadTestLeaseFrames,
                 std::memory_order_release);
@@ -940,11 +921,7 @@ namespace paper::native_animation_authority
                 std::memory_order_acq_rel);
 
             PAPER_LOG_INFO(Animation,
-                "Native reload {}-authority local test lease armed from Bethesda player reload-start; composition={} watchdog={} ROCK frames",
-                partialAuthority ? "partial" : "full",
-                partialAuthority ?
-                    "weapon-fixed-hands" :
-                    "arms-hands-weapon",
+                "Native reload partial-authority local test lease armed from Bethesda player reload-start; composition=weapon-fixed-hands watchdog={} ROCK frames",
                 kLocalReloadTestLeaseFrames);
         }
 
@@ -1953,7 +1930,6 @@ namespace paper::native_animation_authority
                 s_localReloadTestLeaseFrames.store(step.state.watchdogFramesRemaining, std::memory_order_release);
             } else {
                 s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
-                s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
                 PAPER_LOG_INFO(Animation,
                     "Native reload animation authority local test lease released: {}",
                     localReloadLeaseEndReasonName(step.endReason));
@@ -2246,17 +2222,7 @@ namespace paper::native_animation_authority
             std::memory_order_acq_rel);
         if (!effectiveEnabled && wasEnabled) {
             s_localReloadTestLeaseFrames.store(0, std::memory_order_release);
-            s_localReloadLeasePartialAuthority.store(
-                false,
-                std::memory_order_release);
         }
-    }
-
-    void setLocalReloadPartialAuthorityEnabled(const bool enabled)
-    {
-        s_localReloadPartialAuthorityEnabled.store(
-            enabled,
-            std::memory_order_release);
     }
 
     void setManualCycleHandAnimationEligible(const bool eligible)
@@ -2384,7 +2350,7 @@ namespace paper::native_animation_authority
         }
         s_frameWeaponFixedHandsExpected = weaponFixedHandsRequested;
         s_framePartialReloadExpected =
-            weaponFixedHandsRequested && localPartialReloadLeaseActive();
+            weaponFixedHandsRequested && localReloadLeaseActive();
         if (currentFlags != s_lastLoggedEffectiveFlags) {
             const char* composition = s_frameWeaponFixedHandsExpected ?
                 "post-rock-weapon-anchored-hand-ik" :
@@ -2556,8 +2522,6 @@ namespace paper::native_animation_authority
         s_runtimeEnabled.store(false, std::memory_order_release);
         s_localManualCycleTestEnabled.store(false, std::memory_order_release);
         s_localReloadTestEnabled.store(false, std::memory_order_release);
-        s_localReloadPartialAuthorityEnabled.store(false, std::memory_order_release);
-        s_localReloadLeasePartialAuthority.store(false, std::memory_order_release);
         s_manualCycleHandAnimationEligible.store(false, std::memory_order_release);
         clearManualCycleRockGripState();
         s_localReloadTestLeaseFrames.store(0, std::memory_order_release);

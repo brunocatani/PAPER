@@ -11,7 +11,6 @@ namespace paper
     {
         bool enabled{ true };
         bool manualReloadOnly{ true };
-        bool nativeReloadAnimationPartialAuthorityTestEnabled{ true };
         bool debugDrawNativeAnimation{ false };
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };

@@ -137,7 +137,6 @@ namespace paper::native_animation_authority
     void setRuntimeEnabled(bool enabled);
     void setLocalManualCycleTestEnabled(bool enabled);
     void setLocalReloadTestEnabled(bool enabled);
-    void setLocalReloadPartialAuthorityEnabled(bool enabled);
     void setManualCycleHandAnimationEligible(bool eligible);
     void setManualCycleRockGripSnapshot(
         const ManualCycleRockGripSnapshot& snapshot);

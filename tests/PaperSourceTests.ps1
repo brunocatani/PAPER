@@ -79,7 +79,6 @@ Require-Text 'src/animation/NativeAnimationAuthority.cpp' 'activeNonAuthoredGrip
 Reject-Text 'src/animation/NativeAnimationAuthority.cpp' 'kExpectedPostFrikPrefix|kFunc_PlayerPostUpdateAnimationGraphManager|entry_trampoline_hook' 'Paper must not install a competing PostUpdateAnimationGraphManager detour.'
 Reject-Text 'src/native/NativeOffsets.h' 'PostUpdateAnimationGraphManager|UpdateFirstPersonArm' 'Paper native offsets must be limited to its reload/manual-cycle lifecycle ownership.'
 
-Require-Text 'data/config/PAPER.ini' 'bNativeReloadAnimationPartialAuthorityTestEnabled\s*=\s*true' 'Partial reload authority must default true in Paper.'
 Require-Text 'data/config/PAPER.ini' '\[Debug\][\s\S]*bDebugDrawNativeAnimation\s*=\s*false[\s\S]*bDebugDrawNativeAnimationText\s*=\s*true[\s\S]*fDebugNativeAnimationAxisLength[\s\S]*fDebugNativeAnimationMarkerSize' 'Paper must retain bounded, opt-in native animation visualization controls.'
 Require-Text 'data/config/PAPER.ini' '\[DevelopmentCapture\][\s\S]*sMaximumMode\s*=\s*User[\s\S]*bAutoStart\s*=\s*false[\s\S]*bAllowApiActivation\s*=\s*false[\s\S]*\[WeaponMotionCache\][\s\S]*sAccess\s*=\s*Off[\s\S]*iSessionCacheMiB\s*=\s*64[\s\S]*iDiskCacheMiB\s*=\s*256[\s\S]*iMaximumFileMiB\s*=\s*16[\s\S]*iMaximumEntries\s*=\s*256' 'Development capture and compiled storage must remain dormant by default while retaining conservative storage bounds.'
 Reject-Text 'data/config/PAPER.ini' 'AuthoredPrimaryFiringGrip|Offhand|EquippedWeaponGrab' 'ROCK-owned equipped-weapon grip settings must not migrate to Paper.'
