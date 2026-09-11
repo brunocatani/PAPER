@@ -39,9 +39,9 @@ namespace paper
                     0,
                     documents))) {
                 return std::string(documents) +
-                    R"(\My Games\Fallout4VR\PAPER_Config\PAPER.ini)";
+                    R"(\My Games\Fallout4VR\Mods_Config\PAPER\PAPER.ini)";
             }
-            return R"(Data\PAPER_Config\PAPER.ini)";
+            return {};
         }
 
         [[nodiscard]] char asciiLower(const char value)
@@ -225,6 +225,12 @@ namespace paper
         PaperConfig safeDefaults{};
         safeDefaults.activePath = resolvedPath;
         activePath = resolvedPath;
+        if (activePath.empty()) {
+            PAPER_LOG_WARN(Config, "Could not resolve Documents; retaining compiled defaults without configuration I/O");
+            *this = std::move(safeDefaults);
+            logger::setLevel(logLevel);
+            return false;
+        }
         const auto ensureResult = config_file::ensureFileExists(
             std::filesystem::path(activePath), config_defaults::kIni);
         if (ensureResult.status == config_file::EnsureStatus::Created) {
