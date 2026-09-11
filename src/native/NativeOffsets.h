@@ -9,6 +9,11 @@ namespace paper::offsets
     inline constexpr std::uintptr_t kCallsite_PlayerControls_ExecuteAction = 0x0FC0C39;
     inline constexpr std::uintptr_t kSignature_PlayerControls_AutomaticReload = 0x0FC0D18;
     inline constexpr std::uintptr_t kCallsite_PlayerControls_AutomaticReload = 0x0FC0D4F;
+    inline constexpr std::uintptr_t kFunc_TESActionData_Process = 0x0F9BEF0;
+    inline constexpr std::uintptr_t kSignature_PlayerCharacter_ImmediateAutomaticReload = 0x0F7A4A5;
+    inline constexpr std::uintptr_t kCallsite_PlayerCharacter_ImmediateAutomaticReload = 0x0F7A579;
+    inline constexpr std::uintptr_t kSignature_PlayerCharacter_DelayedAutomaticReload = 0x0F07335;
+    inline constexpr std::uintptr_t kCallsite_PlayerCharacter_DelayedAutomaticReload = 0x0F073E8;
     inline constexpr std::uintptr_t kFunc_ReadyWeaponHandler_ShouldHandleEvent = 0x0FCE650;
     inline constexpr std::uintptr_t kFunc_WeaponFireHandler_Handle = 0x0FF2A40;
     inline constexpr std::uintptr_t kFunc_ReloadStateChangeHandler_Handle = 0x0FF2B90;
