@@ -24,7 +24,6 @@ namespace paper
         };
         bool developmentCaptureAutoStart{ false };
         bool developmentCaptureAllowApiActivation{ false };
-        bool developmentCaptureHotReload{ false };
         std::uint32_t weaponMotionSessionCacheMiB{ 64 };
         std::uint32_t weaponMotionDiskCacheMiB{ 256 };
         std::uint32_t weaponMotionMaximumFileMiB{ 16 };

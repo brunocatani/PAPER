@@ -25,7 +25,6 @@ namespace paper
         using namespace std::chrono_literals;
 
         std::atomic<std::shared_ptr<const PaperConfig>> s_pendingConfig{};
-        std::atomic_bool s_watchEnabled{ false };
         std::filesystem::path s_watchedPath{};
         std::jthread s_watcher{};
 
@@ -137,10 +136,6 @@ namespace paper
                 "DevelopmentCapture",
                 "bAllowApiActivation",
                 config.developmentCaptureAllowApiActivation);
-            config.developmentCaptureHotReload = ini.GetBoolValue(
-                "DevelopmentCapture",
-                "bHotReload",
-                config.developmentCaptureHotReload);
             config.weaponMotionCacheAccess = readCacheAccess(ini);
             config.weaponMotionSessionCacheMiB = static_cast<std::uint32_t>(
                 std::clamp<long>(
@@ -194,7 +189,7 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} captureMode={} autoStart={} apiActivation={} hotReload={} cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                "{} '{}' enabled={} manualReloadOnly={} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
                 config.enabled,
@@ -202,7 +197,6 @@ namespace paper
                 static_cast<std::uint32_t>(config.developmentCaptureMode),
                 config.developmentCaptureAutoStart,
                 config.developmentCaptureAllowApiActivation,
-                config.developmentCaptureHotReload,
                 static_cast<std::uint32_t>(config.weaponMotionCacheAccess),
                 config.weaponMotionSessionCacheMiB,
                 config.weaponMotionDiskCacheMiB,
@@ -257,10 +251,7 @@ namespace paper
 
     void PaperConfig::startWatching()
     {
-        s_watchEnabled.store(developmentCaptureHotReload,
-            std::memory_order_release);
-        if (!developmentCaptureHotReload || s_watcher.joinable() ||
-            activePath.empty()) {
+        if (s_watcher.joinable() || activePath.empty()) {
             return;
         }
         s_watchedPath = activePath;
@@ -270,9 +261,6 @@ namespace paper
                 s_watchedPath, error);
             while (!stopToken.stop_requested()) {
                 std::this_thread::sleep_for(250ms);
-                if (!s_watchEnabled.load(std::memory_order_acquire)) {
-                    continue;
-                }
                 error.clear();
                 const auto writeTime = std::filesystem::last_write_time(
                     s_watchedPath, error);
@@ -312,8 +300,6 @@ namespace paper
         next.weaponMotionMaximumFileMiB = weaponMotionMaximumFileMiB;
         next.weaponMotionMaximumEntries = weaponMotionMaximumEntries;
         *this = std::move(next);
-        s_watchEnabled.store(
-            developmentCaptureHotReload, std::memory_order_release);
         logger::setLevel(logLevel);
         if (storageBoundsChanged) {
             PAPER_LOG_WARN(

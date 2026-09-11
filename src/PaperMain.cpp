@@ -622,10 +622,9 @@ namespace
                 api::PaperDevelopmentCaptureConfigFlagV1::
                     AllowApiActivation);
         }
-        if (g_config.developmentCaptureHotReload) {
-            state.developmentCaptureFlags |= static_cast<std::uint32_t>(
-                api::PaperDevelopmentCaptureConfigFlagV1::HotReloadEnabled);
-        }
+        // Hot reload is mandatory, independent of development capture permissions.
+        state.developmentCaptureFlags |= static_cast<std::uint32_t>(
+            api::PaperDevelopmentCaptureConfigFlagV1::HotReloadEnabled);
         state.developmentCaptureAllowedScopes =
             development_capture_policy::allowedScopes(
                 g_config.developmentCaptureMode,
