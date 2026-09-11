@@ -105,10 +105,6 @@ namespace paper
                 ini.GetLongValue("Main", "iLogLevel", config.logLevel));
             config.manualReloadOnly = ini.GetBoolValue(
                 "Reload", "bManualReloadOnly", config.manualReloadOnly);
-            config.nativeReloadAnimationAuthorityTestEnabled = ini.GetBoolValue(
-                "NativeAnimation",
-                "bNativeReloadAnimationAuthorityTestEnabled",
-                config.nativeReloadAnimationAuthorityTestEnabled);
             config.nativeReloadAnimationPartialAuthorityTestEnabled =
                 ini.GetBoolValue(
                     "NativeAnimation",

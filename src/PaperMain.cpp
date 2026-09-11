@@ -606,8 +606,7 @@ namespace
     {
         api::PaperConfigStateV1 state{};
         state.enabled = g_config.enabled ? 1u : 0u;
-        state.nativeReloadAuthorityEnabled =
-            g_config.nativeReloadAnimationAuthorityTestEnabled ? 1u : 0u;
+        state.nativeReloadAuthorityEnabled = 1u;
         state.partialReloadAuthorityEnabled =
             g_config.nativeReloadAnimationPartialAuthorityTestEnabled ? 1u : 0u;
         state.logLevel = g_config.logLevel;
@@ -797,14 +796,11 @@ namespace
         tactical_reload_bridge::setRuntimeEnabled(operational);
         native_animation_authority::setRuntimeEnabled(operational);
         native_animation_authority::setLocalManualCycleTestEnabled(
-            operational &&
-            g_config.nativeReloadAnimationAuthorityTestEnabled);
+            operational);
         native_animation_authority::setLocalReloadTestEnabled(
-            operational &&
-            g_config.nativeReloadAnimationAuthorityTestEnabled);
+            operational);
         native_animation_authority::setLocalReloadPartialAuthorityEnabled(
             operational &&
-            g_config.nativeReloadAnimationAuthorityTestEnabled &&
             g_config.nativeReloadAnimationPartialAuthorityTestEnabled);
         s_runtimeOperational = operational;
     }

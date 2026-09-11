@@ -79,8 +79,8 @@ namespace paper::native_animation_authority_policy
      * Full authority preserves the existing arms/hands/Weapon composition.
      * Partial reload authority excludes Weapon regardless of support-grip
      * topology. The post-ROCK publication path restores the visible Weapon to
-     * its controller-owned world after moving either hand, so pistols and
-     * one-hand reloads do not need the manual-cycle two-hand solver gate.
+     * its controller-owned world after moving either hand. Reloads and manual
+     * cycles do not require a two-hand grip.
      */
     [[nodiscard]] inline constexpr std::uint32_t resolveLocalReloadAuthorityFlags(
         const LocalReloadAuthoritySelection& selection)
