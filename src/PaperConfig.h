@@ -10,7 +10,7 @@ namespace paper
     struct PaperConfig
     {
         bool enabled{ true };
-        bool manualReloadOnly{ true };
+        bool manualReloadOnly{ false };
         bool debugDrawNativeAnimation{ false };
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };

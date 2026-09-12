@@ -32,9 +32,10 @@ bEnabled = {}
 iLogLevel = {}
 
 [Reload]
-; Blocks native automatic reload after ammunition reaches zero, including
-; immediate, delayed, and post-fire requests. Manual reload input, ROCK reload
-; dispatch, Tactical Reload, and reload resumption remain available.
+; true blocks automatic reload when ammunition reaches zero, including
+; immediate, delayed, and post-fire requests. false (default) allows normal
+; automatic reload. Manual input, ROCK reload dispatch, Tactical Reload,
+; and reload resumption remain available with either value.
 bManualReloadOnly = {}
 
 [Debug]
