@@ -335,7 +335,7 @@ namespace paper::native_animation_authority
                 resolved.authoredLeftActive) {
                 PAPER_LOG_INFO(
                     Animation,
-                    "Native fire-cycle authored support eligible weapon={:016X}",
+                    "Native fire-cycle authored support baseline available weapon={:016X}",
                     resolved.weaponGenerationKey);
             }
         }
@@ -1517,12 +1517,9 @@ namespace paper::native_animation_authority
                         resolveWeaponFixedHandTargetMode(
                             s_framePartialReloadExpected,
                             native_animation_authority_policy::
-                                WeaponFixedHandRole::Primary));
-            if (s_nativeHandPoseCapture.supportHandValid &&
-                native_animation_authority_policy::
-                    shouldPublishWeaponFixedSupportHand(
-                        s_framePartialReloadExpected,
-                        s_manualCycleRockGripBaselines.authoredLeftActive)) {
+                                WeaponFixedHandRole::Primary,
+                            s_manualCycleRockGripBaselines.authoredLeftActive));
+            if (s_nativeHandPoseCapture.supportHandValid) {
                 (void)publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_nativeHandPoseCapture.supportHandInWeapon,
@@ -1532,7 +1529,8 @@ namespace paper::native_animation_authority
                         resolveWeaponFixedHandTargetMode(
                             s_framePartialReloadExpected,
                             native_animation_authority_policy::
-                                WeaponFixedHandRole::Support));
+                                WeaponFixedHandRole::Support,
+                            s_manualCycleRockGripBaselines.authoredLeftActive));
             } else {
                 (void)clearManualCycleVisualForHand(
                     frik_visual_authority::Hand::Left);

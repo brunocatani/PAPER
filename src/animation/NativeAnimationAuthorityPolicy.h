@@ -112,27 +112,22 @@ namespace paper::native_animation_authority_policy
     }
 
     /*
-     * Fire-triggered authored-hand motion remains rebased onto each exact live
-     * ROCK grip. During a partial reload, however, the native support hand
-     * must target its authored Weapon-relative pose directly. Rebasing that
-     * hand onto an arbitrary dynamic support grab carries the grab offset all
-     * the way to the magazine and bolt nodes.
+     * Fire-triggered motion retains an existing authored ROCK grip as its
+     * baseline. A free or dynamically grabbed support hand instead follows
+     * the native Weapon-relative trajectory, as it does during a reload.
+     * Applying animation deltas at an arbitrary controller/grab position would
+     * carry that offset to the bolt instead of reaching the weapon.
      */
     [[nodiscard]] inline constexpr WeaponFixedHandTargetMode
         resolveWeaponFixedHandTargetMode(
             const bool partialReload,
-            const WeaponFixedHandRole role)
+            const WeaponFixedHandRole role,
+            const bool authoredSupportGripActive)
     {
-        return partialReload && role == WeaponFixedHandRole::Support ?
+        return role == WeaponFixedHandRole::Support &&
+                       (partialReload || !authoredSupportGripActive) ?
             WeaponFixedHandTargetMode::NativeWeaponRelative :
             WeaponFixedHandTargetMode::LiveGripDelta;
-    }
-
-    [[nodiscard]] inline constexpr bool shouldPublishWeaponFixedSupportHand(
-        const bool partialReload,
-        const bool authoredSupportGripActive)
-    {
-        return partialReload || authoredSupportGripActive;
     }
 
     enum class LocalManualCycleLeaseEndReason : std::uint32_t

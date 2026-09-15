@@ -531,29 +531,44 @@ int main()
 
     static_assert(resolveWeaponFixedHandTargetMode(
                       false,
-                      WeaponFixedHandRole::Primary) ==
+                      WeaponFixedHandRole::Primary,
+                      false) ==
                   WeaponFixedHandTargetMode::LiveGripDelta);
     static_assert(resolveWeaponFixedHandTargetMode(
                       false,
-                      WeaponFixedHandRole::Support) ==
+                      WeaponFixedHandRole::Primary,
+                      true) ==
                   WeaponFixedHandTargetMode::LiveGripDelta);
     static_assert(resolveWeaponFixedHandTargetMode(
-                      true,
-                      WeaponFixedHandRole::Primary) ==
-                  WeaponFixedHandTargetMode::LiveGripDelta);
-    static_assert(resolveWeaponFixedHandTargetMode(
-                      true,
-                      WeaponFixedHandRole::Support) ==
+                      false,
+                      WeaponFixedHandRole::Support,
+                      false) ==
                   WeaponFixedHandTargetMode::NativeWeaponRelative);
-    static_assert(!shouldPublishWeaponFixedSupportHand(
-        false,
-        false));
-    static_assert(shouldPublishWeaponFixedSupportHand(
-        false,
-        true));
-    static_assert(shouldPublishWeaponFixedSupportHand(
-        true,
-        false));
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      false,
+                      WeaponFixedHandRole::Support,
+                      true) ==
+                  WeaponFixedHandTargetMode::LiveGripDelta);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      true,
+                      WeaponFixedHandRole::Primary,
+                      false) ==
+                  WeaponFixedHandTargetMode::LiveGripDelta);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      true,
+                      WeaponFixedHandRole::Primary,
+                      true) ==
+                  WeaponFixedHandTargetMode::LiveGripDelta);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      true,
+                      WeaponFixedHandRole::Support,
+                      false) ==
+                  WeaponFixedHandTargetMode::NativeWeaponRelative);
+    static_assert(resolveWeaponFixedHandTargetMode(
+                      true,
+                      WeaponFixedHandRole::Support,
+                      true) ==
+                  WeaponFixedHandTargetMode::NativeWeaponRelative);
 
     constexpr NativeAnimationCompatibilityObservation compatibleWeapon{
         .weaponGenerationKey = 42,
