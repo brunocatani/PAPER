@@ -1233,7 +1233,7 @@ namespace
                         s_gripState.weaponGenerationKey,
                     s_runtimeOperational);
             }
-            native_animation_authority::completeRockFrame();
+            native_animation_authority::completeRockFrame(context->frameIndex);
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
@@ -1347,6 +1347,7 @@ namespace
 
         if (message->type == F4SE::MessagingInterface::kGameLoaded) {
             (void)g_config.reload();
+            native_animation_authority::initializeCycleTrace();
             weapon_motion::configureCache(g_config);
             publishConfigState();
             g_config.startWatching();

@@ -143,7 +143,8 @@ namespace paper::native_animation_authority
 
     void beginRockFrame(float deltaSeconds);
     [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);
-    void completeRockFrame();
+    void initializeCycleTrace();
+    void completeRockFrame(std::uint64_t frameIndex);
     void resetTransientState();
 
     [[nodiscard]] bool isHookInstalled();

@@ -26,6 +26,9 @@
 #include <cstdint>
 #include <cstring>
 #include <string_view>
+#include <memory>
+#include <spdlog/async_logger.h>
+#include <spdlog/details/thread_pool.h>
 
 namespace paper::native_animation_authority
 {
@@ -192,6 +195,27 @@ namespace paper::native_animation_authority
         LatchedManualCycleAuthoredSupportGrip
             s_manualCycleAuthoredSupportGripLatch{};
         ControllerAimFrame s_sourceAimFrame{};
+        // Investigation owner: PAPER cycle handoff. Remove after Timberwolf
+        // alignment is qualified. Debug logging must be enabled at GameLoaded.
+        // The game thread owns this session; the bounded worker receives only
+        // formatted values and shares PAPER's thread-safe sink. Destruction
+        // releases the logger before draining/joining its pool.
+        struct CycleTrace
+        {
+            std::shared_ptr<spdlog::details::thread_pool> pool;
+            std::shared_ptr<spdlog::async_logger> log;
+            std::uint64_t fireSequence{ 0 };
+            bool active{ false };
+            bool published{ false };
+            bool failureReported{ false };
+            std::atomic<bool> failed{ false };
+            ~CycleTrace()
+            {
+                log.reset();
+                pool.reset();
+            }
+        };
+        std::unique_ptr<CycleTrace> s_cycleTrace;
         WeaponFireHandlerFn s_originalWeaponFire{ nullptr };
         ReloadStateChangeHandlerFn s_originalReloadStateChange{ nullptr };
         std::atomic<bool> s_hookInstalled{ false };
@@ -2489,14 +2513,84 @@ namespace paper::native_animation_authority
         return finishApplication(true);
     }
 
-    void completeRockFrame()
+    void initializeCycleTrace()
     {
+        if (s_cycleTrace || !logger::instance ||
+            !logger::instance->should_log(spdlog::level::debug)) return;
+        try {
+            auto trace = std::make_unique<CycleTrace>();
+            trace->pool = std::make_shared<spdlog::details::thread_pool>(1024, 1);
+            trace->log = std::make_shared<spdlog::async_logger>(
+                "PAPER_CycleTrace", logger::instance->sinks().begin(),
+                logger::instance->sinks().end(), trace->pool,
+                spdlog::async_overflow_policy::overrun_oldest);
+            trace->log->set_level(spdlog::level::debug);
+            trace->log->set_error_handler([state = trace.get()](const std::string&) {
+                state->failed.store(true, std::memory_order_relaxed);
+            });
+            trace->log->info("CYCLE_TRACE start version=1 pid={} build={} {} form=1700206C stride=8 phase=complete-before-final-presentation matrices=Ni-stored-rows",
+                GetCurrentProcessId(), __DATE__, __TIME__);
+            s_cycleTrace = std::move(trace);
+        } catch (const std::exception& error) {
+            PAPER_LOG_ERROR(Animation, "Cycle trace initialization failed: {}", error.what());
+        }
+    }
+
+    void completeRockFrame(std::uint64_t frameIndex)
+    {
+        if (s_cycleTrace && s_cycleTrace->failed.load(std::memory_order_relaxed) &&
+            !s_cycleTrace->failureReported) {
+            s_cycleTrace->failureReported = true;
+            PAPER_LOG_ERROR(Animation, "Cycle trace failed; further samples disabled");
+        }
         if ((s_frameWeaponFixedHandsExpected && !s_frameWeaponFixedHandsApplied) ||
             s_frameWeaponFixedHandsCleanupPending) {
             // Failure cleanup runs after ROCK has refreshed its normal grip
             // targets, so releasing the retained weapon-fixed tags cannot feed a
             // previous-frame pose into the weapon solver.
             clearManualCycleVisualAuthorityPreservingWeapon();
+        }
+        if (s_cycleTrace && logger::instance->should_log(spdlog::level::debug) &&
+            !s_cycleTrace->failed.load(std::memory_order_relaxed) &&
+            s_manualCycleRockGripBaselines.weaponFormId == 0x1700206C) {
+            try {
+                DebugAuthoritySnapshot sample{};
+                if (queryDebugAuthoritySnapshot(sample)) {
+                    auto& trace = *s_cycleTrace;
+                    const auto& hand = sample.rightHand;
+                    const bool edge = trace.active != sample.runtime.localManualCycleLeaseActive ||
+                        trace.published != hand.visualAuthorityPublished ||
+                        trace.fireSequence != sample.runtime.fireSequence;
+                    trace.active = sample.runtime.localManualCycleLeaseActive;
+                    trace.published = hand.visualAuthorityPublished;
+                    trace.fireSequence = sample.runtime.fireSequence;
+                    if (edge || frameIndex % 8 == 0) {
+                        trace.log->debug("CYCLE_TRACE frame={} fire={} weapon={:016X} active={} support={} edge={} capture={} ready={} applied={} qualified={} published={} motion=({:.5f}gu,{:.5f}deg) overruns={}",
+                            frameIndex, trace.fireSequence, s_manualCycleRockGripBaselines.weaponGenerationKey,
+                            trace.active, s_manualCycleRockGripBaselines.authoredLeftActive, edge,
+                            sample.frameCaptureSequence, sample.frameCaptureReady,
+                            sample.afterRockApplicationSucceeded, hand.motionQualified, trace.published,
+                            hand.motionTranslationGameUnits, hand.motionRotationDegrees,
+                            trace.pool->overrun_counter());
+                        const auto pose = [&](const char* label, bool valid, const RE::NiTransform& value) {
+                            const auto& t = value.translate;
+                            const auto& r = value.rotate.entry;
+                            trace.log->debug("CYCLE_TRACE pose frame={} label={} valid={} T=({:.5f},{:.5f},{:.5f}) S={:.6f} R=({:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f})",
+                                frameIndex, label, valid && finiteTransform(value), t.x, t.y, t.z, value.scale,
+                                r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2]);
+                        };
+                        pose("rock-right-in-weapon", s_manualCycleRockGripBaselines.rightValid, s_manualCycleRockGripBaselines.rightHandInWeapon);
+                        pose("live-baseline", hand.liveBaselineValid, hand.liveBaselineHandInWeapon);
+                        pose("native-baseline", hand.nativeBaselineValid, hand.nativeBaselineHandInWeapon);
+                        pose("native-current", sample.frameCaptureReady && hand.nativeHandValid, hand.nativeHandInWeapon);
+                        pose("resolved-in-weapon", sample.frameCaptureReady && hand.resolvedHandInWeaponValid, hand.resolvedHandInWeapon);
+                        pose("submitted-world", hand.visualAuthorityPublished && hand.resolvedHandWorldValid, hand.resolvedHandWorld);
+                        trace.log->flush();
+                    }
+                }
+            } catch (...) {
+                s_cycleTrace->failed.store(true, std::memory_order_relaxed);
+            }
         }
         if (s_frameCaptureReady) {
             s_lastCompletedCaptureSequence = s_frameCaptureSequence;
