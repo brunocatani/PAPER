@@ -139,6 +139,7 @@ namespace paper::native_animation_authority
 
         struct ResolvedManualCycleRockGripBaselines
         {
+            std::uintptr_t weaponNode{ 0 };
             RE::NiTransform rightHandInWeapon{};
             RE::NiTransform leftHandInWeapon{};
             std::uint64_t weaponGenerationKey{ 0 };
@@ -341,9 +342,13 @@ namespace paper::native_animation_authority
         void setEffectiveManualCycleRockGripBaselines(
             const ResolvedManualCycleRockGripBaselines& resolved)
         {
-            const bool weaponGenerationChanged =
-                s_manualCycleRockGripBaselines.weaponGenerationKey !=
-                resolved.weaponGenerationKey;
+            const auto& previous = s_manualCycleRockGripBaselines;
+            const bool sameWeapon = previous.weaponNode == resolved.weaponNode &&
+                previous.weaponFormId == resolved.weaponFormId;
+            const bool initialCollisionReady = sameWeapon && previous.weaponNode != 0 &&
+                previous.weaponGenerationKey == 0 && resolved.weaponGenerationKey != 0;
+            const bool weaponGenerationChanged = !sameWeapon ||
+                (previous.weaponGenerationKey != resolved.weaponGenerationKey && !initialCollisionReady);
             const bool authoredLeftStateChanged =
                 s_manualCycleRockGripBaselines.authoredLeftActive !=
                 resolved.authoredLeftActive;
@@ -2270,6 +2275,7 @@ namespace paper::native_animation_authority
         const ManualCycleRockGripSnapshot& snapshot)
     {
         ResolvedManualCycleRockGripBaselines resolved{};
+        resolved.weaponNode = snapshot.weaponNode;
         resolved.weaponGenerationKey = snapshot.weaponGenerationKey;
         resolved.weaponFormId = snapshot.weaponFormId;
         if (s_manualCycleHandAnimationEligible.load(

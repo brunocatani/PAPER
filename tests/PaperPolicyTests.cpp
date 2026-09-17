@@ -582,6 +582,37 @@ int main()
     };
 
     constexpr AffineTransform observationIdentity{ 1.0f, 0.0f };
+    // A verified scene weapon can cycle before collision finishes building.
+    // The first generation adopts that identity without restarting the clip;
+    // replacing its node, form, or an established generation still cancels.
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        input.weaponGenerationKey = 0;
+        input.weaponNode = 0x1000;
+        const auto firstShot = advanceNativeAnimationCompatibility({}, input, true);
+        if (!canApplyManualCycleHandAnimation(input) || !firstShot.compatible() || !firstShot.state.weaponBound) return false;
+        input.weaponGenerationKey = 42;
+        const auto ready = advanceNativeAnimationCompatibility(firstShot.state, input, true);
+        if (!ready.compatible() || ready.state.weaponGenerationKey != 42) return false;
+        input.weaponGenerationKey = 43;
+        return !advanceNativeAnimationCompatibility(ready.state, input, true).compatible();
+    }());
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        input.weaponGenerationKey = 0;
+        input.weaponNode = 0x1000;
+        const auto firstShot = advanceNativeAnimationCompatibility({}, input, true);
+        input.weaponNode = 0x2000;
+        input.weaponGenerationKey = 42;
+        return !advanceNativeAnimationCompatibility(firstShot.state, input, true).compatible();
+    }());
+    static_assert([=] {
+        auto input = compatibleWeapon;
+        input.weaponGenerationKey = 0;
+        input.weaponNode = 0;
+        return !canApplyManualCycleHandAnimation(input) &&
+            !advanceNativeAnimationCompatibility({}, input, true).compatible();
+    }());
     constexpr auto observationRoot =
         paper::reload_observation_policy::resolveWeaponLocalFromGraph(
             true,

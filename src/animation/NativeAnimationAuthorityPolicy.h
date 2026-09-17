@@ -179,6 +179,8 @@ namespace paper::native_animation_authority_policy
     struct NativeAnimationCompatibilityObservation
     {
         std::uint64_t weaponGenerationKey{ 0 };
+        // Scene identity remains available while ROCK builds collision.
+        std::uintptr_t weaponNode{ 0 };
         std::uint32_t weaponFormId{ 0 };
         bool handlingStateValid{ false };
         bool gripStateValid{ false };
@@ -191,6 +193,7 @@ namespace paper::native_animation_authority_policy
     struct NativeAnimationCompatibilityState
     {
         std::uint64_t weaponGenerationKey{ 0 };
+        std::uintptr_t weaponNode{ 0 };
         std::uint32_t weaponFormId{ 0 };
         bool weaponBound{ false };
         bool animationRequestResetRequired{ false };
@@ -240,7 +243,9 @@ namespace paper::native_animation_authority_policy
      * any) currently owns the rolling handling lease.
      *
      * Active local or consumer animation authority is additionally bound to
-     * one concrete equipped weapon generation. A physical drop, stash,
+     * one concrete equipped weapon. Its scene node can bind the first shot
+     * before collision is ready; the first nonzero generation is adopted only
+     * for that same node and form. A physical drop, stash,
      * unequip, replacement, or collision-generation change cancels that
      * session instead of allowing a stale captured pose to attach to a
      * different weapon. The request must clear before a new session can bind.
@@ -291,7 +296,7 @@ namespace paper::native_animation_authority_policy
         }
         if (!observation.weaponPresent ||
             observation.weaponFormId == 0 ||
-            observation.weaponGenerationKey == 0) {
+            (observation.weaponGenerationKey == 0 && observation.weaponNode == 0)) {
             return {
                 canceledState,
                 NativeAnimationCompatibilityReason::WeaponUnavailable,
@@ -305,12 +310,21 @@ namespace paper::native_animation_authority_policy
         }
         if (!state.weaponBound) {
             state.weaponGenerationKey = observation.weaponGenerationKey;
+            state.weaponNode = observation.weaponNode;
             state.weaponFormId = observation.weaponFormId;
             state.weaponBound = true;
             return { state, NativeAnimationCompatibilityReason::None };
         }
         if (state.weaponFormId != observation.weaponFormId ||
-            state.weaponGenerationKey != observation.weaponGenerationKey) {
+            state.weaponNode != observation.weaponNode) {
+            return {
+                canceledState,
+                NativeAnimationCompatibilityReason::WeaponIdentityChanged,
+            };
+        }
+        if (state.weaponGenerationKey == 0 && state.weaponNode != 0) {
+            state.weaponGenerationKey = observation.weaponGenerationKey;
+        } else if (state.weaponGenerationKey != observation.weaponGenerationKey) {
             return {
                 canceledState,
                 NativeAnimationCompatibilityReason::WeaponIdentityChanged,
@@ -327,7 +341,7 @@ namespace paper::native_animation_authority_policy
                observation.weaponPresent &&
                observation.weaponIdentityCoherent &&
                observation.weaponFormId != 0 &&
-               observation.weaponGenerationKey != 0 &&
+               (observation.weaponGenerationKey != 0 || observation.weaponNode != 0) &&
                !observation.firingHandIsLeft &&
                !observation.partCarryActive;
     }

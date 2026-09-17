@@ -700,6 +700,7 @@ namespace
                         s_gripState.weaponGenerationKey));
 
         native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
+        snapshot.weaponNode = s_gripStateValid ? s_gripState.weaponNode : 0;
         snapshot.weaponFormId = s_gripStateValid ? s_gripState.weaponFormId : 0;
         snapshot.weaponGenerationKey =
             s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
@@ -773,6 +774,7 @@ namespace
                     s_handlingStateValid ?
                         s_handlingState.weaponGenerationKey :
                         0,
+                .weaponNode = s_gripStateValid ? s_gripState.weaponNode : 0,
                 .weaponFormId =
                     s_handlingStateValid ?
                         s_handlingState.weaponFormId :
