@@ -487,7 +487,7 @@ namespace paper::native_animation_authority
                 return 0;
             }
 
-            rock::provider::RockProviderNativeAnimationAuthorityStateV1 state{};
+            rock::api::animation::NativeAnimationAuthorityStateV1 state{};
             const std::uint32_t providerFlags =
                 rockApiClient().queryNativeAnimationAuthorityState(state) ?
                 state.activeFlags :

@@ -46,6 +46,7 @@ namespace paper::fo4vr
     [[nodiscard]] BSFlattenedBoneTree* getFlattenedBoneTree() noexcept;
     [[nodiscard]] BSFlattenedBoneTree* getFirstPersonBoneTree() noexcept;
     [[nodiscard]] RE::EquippedItem* getEquippedItem() noexcept;
+    [[nodiscard]] RE::NiNode* getFirstPersonWeaponNode() noexcept;
     void updateTransforms(RE::NiAVObject* node) noexcept;
     void updateTransformsDown(RE::NiAVObject* node, bool updateSelf) noexcept;
 }

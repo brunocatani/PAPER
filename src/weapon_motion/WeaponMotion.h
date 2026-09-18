@@ -1,7 +1,7 @@
 #pragma once
 
 #include "api/PAPERApi.h"
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 
 #include <cstdint>
 
@@ -36,7 +36,7 @@ namespace paper::weapon_motion
     [[nodiscard]] bool requiresExactAnimationEvidence(bool cacheReadRequested);
     void reset(ResetReason reason);
     void completeFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const rock::api::core::AnimationPhaseContextV1& context,
         RockApiClient& rockApi,
         std::uint32_t paperProviderGeneration,
         const RuntimeOptions& options);

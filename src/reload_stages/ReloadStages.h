@@ -1,7 +1,7 @@
 #pragma once
 
 #include "api/PAPERApi.h"
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 
 #include <cstdint>
 
@@ -9,7 +9,7 @@ namespace paper::reload_stages
 {
     void reset();
     void completeFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context);
+        const rock::api::core::AnimationPhaseContextV1& context);
 
     [[nodiscard]] api::PaperResultV1 getState(
         api::PaperReloadStageStateV1& outState);

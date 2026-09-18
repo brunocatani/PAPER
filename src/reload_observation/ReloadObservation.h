@@ -1,7 +1,7 @@
 #pragma once
 
 #include "api/PAPERApi.h"
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 
 #include <cstdint>
 
@@ -35,16 +35,16 @@ namespace paper::reload_observation
     // Game-thread ROCK phase ownership. The grip state's scene pointer is a
     // current-callback witness only and is never retained by this subsystem.
     void advanceFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::RockProviderEquippedWeaponGripStateV1* gripState,
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState* gripState,
         std::uint32_t paperProviderGeneration,
         bool collectEvidenceGeometry);
     void capturePhase(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::RockProviderEquippedWeaponGripStateV1& gripState,
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState& gripState,
         api::PaperReloadObservationPhaseV1 phase);
     void completeFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const rock::api::core::AnimationPhaseContextV1& context,
         std::uint32_t paperProviderGeneration);
 
     [[nodiscard]] api::PaperResultV1 getLimits(

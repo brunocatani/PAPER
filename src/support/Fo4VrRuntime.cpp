@@ -31,6 +31,21 @@ namespace paper::fo4vr
             skeleton->children[0]->IsNode());
     }
 
+    RE::NiNode* getFirstPersonWeaponNode() noexcept {
+        auto* player=getPlayer();
+        auto* root=player?player->firstPerson3D.get():nullptr;
+        std::uint32_t visited=0;
+        const auto find=[&](auto&& self,RE::NiAVObject* object,std::uint32_t depth)->RE::NiNode* {
+            if (!object || depth>64 || ++visited>8192) return nullptr;
+            if (const auto* name=object->name.c_str(); name && _stricmp(name,"Weapon")==0) return object->IsNode();
+            if (auto* node=object->IsNode()) for (const auto& child:node->children) {
+                if (auto* match=self(self,child.get(),depth+1)) return match;
+            }
+            return nullptr;
+        };
+        return find(find,root,0);
+    }
+
     RE::EquippedItem* getEquippedItem() noexcept
     {
         auto* player = getPlayer();

@@ -223,7 +223,7 @@ namespace paper::animation_evidence
             const std::uint64_t weaponGenerationKey,
             const std::uint32_t paperProviderGeneration,
             const std::uint64_t reloadCatalogSequence,
-            const rock::provider::RockProviderAnimationPhaseContextV1& context)
+            const rock::api::core::AnimationPhaseContextV1& context)
         {
             clearCatalog(state);
             state.catalog.statusFlags =
@@ -701,21 +701,18 @@ namespace paper::animation_evidence
 
         [[nodiscard]] bool hasGripFlag(
             const std::uint32_t flags,
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateFlagV1 value)
+            const rock::api::weapon::EquippedWeaponGripStateFlagV1 value)
         {
             return (flags & static_cast<std::uint32_t>(value)) != 0;
         }
 
         [[nodiscard]] RE::NiNode* currentWeaponRoot(
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateV1* gripState)
+            const paper::RockWeaponGripState* gripState)
         {
             if (!gripState ||
                 !hasGripFlag(
                     gripState->flags,
-                    rock::provider::
-                        RockProviderEquippedWeaponGripStateFlagV1::Valid) ||
+                    rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid) ||
                 gripState->weaponFormId == 0 ||
                 gripState->weaponGenerationKey == 0 ||
                 gripState->weaponNode == 0) {
@@ -1231,8 +1228,8 @@ namespace paper::animation_evidence
     }
 
     void advanceFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::RockProviderEquippedWeaponGripStateV1* gripState,
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState* gripState,
         const std::uint32_t paperProviderGeneration,
         const bool exactPreharvestDemand)
     {
@@ -1350,7 +1347,7 @@ namespace paper::animation_evidence
     }
 
     void completeFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context)
+        const rock::api::core::AnimationPhaseContextV1& context)
     {
         auto& state = runtime();
         if (!state.valid) {

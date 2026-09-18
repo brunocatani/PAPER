@@ -1,14 +1,14 @@
 #pragma once
 
 #include "animation/NativeAnimationAuthorityPolicy.h"
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 
 #include <cstdint>
 
 namespace paper::native_pose_pipeline
 {
     void publishFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const rock::api::core::AnimationPhaseContextV1& context,
         native_animation_authority_policy::NativeAnimationCompatibilityReason
             compatibilityReason,
         std::uint32_t localAuthorityFlags,

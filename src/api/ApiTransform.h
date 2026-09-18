@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 #include "api/PAPERApi.h"
 
 #include <RE/NetImmerse/NiTransform.h>
@@ -8,7 +8,7 @@
 namespace paper::api_transform
 {
     [[nodiscard]] inline RE::NiTransform toNi(
-        const rock::provider::RockProviderTransform& source)
+        const rock::api::Transform& source)
     {
         RE::NiTransform result{};
         for (int row = 0; row < 3; ++row) {
@@ -26,7 +26,7 @@ namespace paper::api_transform
 
     inline void fromNi(
         const RE::NiTransform& source,
-        rock::provider::RockProviderTransform& target)
+        rock::api::Transform& target)
     {
         for (int row = 0; row < 3; ++row) {
             for (int column = 0; column < 3; ++column) {
@@ -56,7 +56,7 @@ namespace paper::api_transform
     }
 
     inline void fromRock(
-        const rock::provider::RockProviderTransform& source,
+        const rock::api::Transform& source,
         api::PaperTransformV1& target)
     {
         for (int row = 0; row < 3; ++row) {

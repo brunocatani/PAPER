@@ -415,7 +415,7 @@ namespace paper::weapon_motion
 
         [[nodiscard]] std::uint32_t findPartForGrip(
             const Runtime& state,
-            const rock::provider::RockProviderWeaponPartGripStateV1& grip)
+            const rock::api::weaponparts::WeaponPartGripStateV1& grip)
         {
             if (grip.bodyId != kInvalidBodyId) {
                 for (std::uint32_t index = 0; index < state.partCount; ++index) {
@@ -1183,7 +1183,7 @@ namespace paper::weapon_motion
 
         [[nodiscard]] bool synchronizeParts(
             Runtime& state,
-            const rock::provider::RockProviderAnimationPhaseContextV1& context)
+            const rock::api::core::AnimationPhaseContextV1& context)
         {
             PaperReloadCatalogStateV1 catalog{};
             PaperReloadFrameStateV1 frame{};
@@ -2041,10 +2041,10 @@ namespace paper::weapon_motion
             current.value.frameIndex = frameIndex;
             current.value.flags = flag(PaperWeaponManipulationHandFlagV1::Valid);
 
-            rock::provider::RockProviderWeaponPartGripStateV1 grip{};
+            rock::api::weaponparts::WeaponPartGripStateV1 grip{};
             const auto rockHand = hand == PaperHandV1::Left ?
-                rock::provider::RockProviderHand::Left :
-                rock::provider::RockProviderHand::Right;
+                rock::api::Hand::Left :
+                rock::api::Hand::Right;
             if (!rockApi.queryWeaponPartGripState(rockHand, grip)) {
                 if (previous.active) {
                     current.value.lastEndReason =
@@ -2057,7 +2057,7 @@ namespace paper::weapon_motion
                 PaperWeaponManipulationFrameFlagV1::RockGripStateAvailable);
             if (grip.active == 0 ||
                 grip.gripKind ==
-                    rock::provider::RockProviderWeaponPartGripKindV1::None) {
+                    rock::api::weaponparts::WeaponPartGripKindV1::None) {
                 if (previous.active) {
                     current.value.lastEndReason =
                         PaperWeaponManipulationEndReasonV1::GripEnded;
@@ -2157,7 +2157,7 @@ namespace paper::weapon_motion
         void updateManipulation(
             Runtime& state,
             RockApiClient& rockApi,
-            const rock::provider::RockProviderAnimationPhaseContextV1& context,
+            const rock::api::core::AnimationPhaseContextV1& context,
             const std::uint32_t paperProviderGeneration)
         {
             state.manipulation = {};
@@ -2303,7 +2303,7 @@ namespace paper::weapon_motion
     }
 
     void completeFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
+        const rock::api::core::AnimationPhaseContextV1& context,
         RockApiClient& rockApi,
         const std::uint32_t paperProviderGeneration,
         const RuntimeOptions& options)

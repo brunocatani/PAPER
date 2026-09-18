@@ -1,11 +1,11 @@
 #pragma once
 
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 
 namespace paper::debug_visualization
 {
     void publish(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::RockProviderEquippedWeaponGripStateV1& gripState);
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState& gripState);
     void clear();
 }

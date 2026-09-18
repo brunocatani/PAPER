@@ -48,38 +48,32 @@ namespace paper::reload_stages
                         PaperWeaponClassificationFlagV1::Valid)) != 0 &&
                    catalog.classification.sizeClass ==
                        static_cast<std::uint32_t>(
-                           rock::provider::
-                               RockProviderWeaponSizeClassV1::Pistol);
+                           rock::api::weapon::WeaponSizeClassV1::Pistol);
         }
 
         [[nodiscard]] bool isMagazine(
             const reload_observation::EvidenceMotionSource& source)
         {
             return source.partKind == static_cast<std::uint32_t>(
-                rock::provider::
-                    RockProviderWeaponPartKindV1::Magazine);
+                rock::api::weaponparts::WeaponPartKindV1::Magazine);
         }
 
         [[nodiscard]] bool isSlide(
             const reload_observation::EvidenceMotionSource& source)
         {
             return source.partKind == static_cast<std::uint32_t>(
-                       rock::provider::
-                           RockProviderWeaponPartKindV1::Slide) ||
+                       rock::api::weaponparts::WeaponPartKindV1::Slide) ||
                    source.actionRole == static_cast<std::uint32_t>(
-                       rock::provider::
-                           RockProviderWeaponActionRoleV1::Slide);
+                       rock::api::weaponparts::WeaponActionRoleV1::Slide);
         }
 
         [[nodiscard]] bool isBolt(
             const reload_observation::EvidenceMotionSource& source)
         {
             return source.partKind == static_cast<std::uint32_t>(
-                       rock::provider::
-                           RockProviderWeaponPartKindV1::Bolt) ||
+                       rock::api::weaponparts::WeaponPartKindV1::Bolt) ||
                    source.actionRole == static_cast<std::uint32_t>(
-                       rock::provider::
-                           RockProviderWeaponActionRoleV1::Bolt);
+                       rock::api::weaponparts::WeaponActionRoleV1::Bolt);
         }
 
         [[nodiscard]] bool contributesToAggregate(
@@ -136,8 +130,7 @@ namespace paper::reload_stages
     }
 
     void completeFrame(
-        const rock::provider::
-            RockProviderAnimationPhaseContextV1& context)
+        const rock::api::core::AnimationPhaseContextV1& context)
     {
         PaperReloadCatalogStateV1 catalog{};
         PaperReloadFrameStateV1 frame{};

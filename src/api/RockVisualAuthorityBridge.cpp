@@ -26,12 +26,12 @@ namespace paper::frik_visual_authority
             return hand == Hand::Left ? 1u : 0u;
         }
 
-        [[nodiscard]] constexpr rock::provider::RockProviderHand providerHand(
+        [[nodiscard]] constexpr rock::api::Hand providerHand(
             const Hand hand)
         {
             return hand == Hand::Left ?
-                rock::provider::RockProviderHand::Left :
-                rock::provider::RockProviderHand::Right;
+                rock::api::Hand::Left :
+                rock::api::Hand::Right;
         }
 
         [[nodiscard]] bool publish(const Hand hand)
@@ -42,17 +42,17 @@ namespace paper::frik_visual_authority
                 return true;
             }
 
-            rock::provider::RockProviderHandVisualAuthorityRequestV1 request{};
+            rock::api::animation::HandVisualAuthorityRequestV1 request{};
             request.hand = providerHand(hand);
             request.priority = source.priority;
             if (source.worldValid) {
                 request.flags |= static_cast<std::uint32_t>(
-                    rock::provider::RockProviderHandVisualAuthorityFlagV1::WorldTransform);
+                    rock::api::animation::HandVisualAuthorityFlagV1::WorldTransform);
                 api_transform::fromNi(source.world, request.worldTransform);
             }
             if (source.fingersValid && source.fingers.enabledMask != 0) {
                 request.flags |= static_cast<std::uint32_t>(
-                    rock::provider::RockProviderHandVisualAuthorityFlagV1::FingerLocalTransforms);
+                    rock::api::animation::HandVisualAuthorityFlagV1::FingerLocalTransforms);
                 request.fingerLocalTransformMask = source.fingers.enabledMask;
                 for (std::size_t index = 0; index < source.fingers.localTransforms.size(); ++index) {
                     const auto bit = static_cast<std::uint16_t>(1u << index);
@@ -144,9 +144,8 @@ namespace paper::frik_visual_authority
         RE::NiTransform& outWorld)
     {
         outWorld = {};
-        const auto* api = rockApiClient().api();
         if (!rockApiClient().ready() || !isSkeletonReadyHint() ||
-            !api || !api->getPresentedHandFrameV1) {
+            !rockApiClient().ready()) {
             return false;
         }
 
@@ -154,13 +153,13 @@ namespace paper::frik_visual_authority
         // from its controller/physics hand. getHandFrameV1 reports the latter.
         // Requested ROCK grip targets take precedence at the caller; this
         // readback serves hands without an available explicit grip target.
-        rock::provider::RockProviderHandFrameV1 frame{};
+        rock::api::hands::HandFrameV1 frame{};
         constexpr auto requiredFlags =
             static_cast<std::uint32_t>(
-                rock::provider::RockProviderHandFrameFlagV1::Valid) |
+                rock::api::hands::HandFrameFlagV1::Valid) |
             static_cast<std::uint32_t>(
-                rock::provider::RockProviderHandFrameFlagV1::PresentedVisual);
-        if (!api->getPresentedHandFrameV1(providerHand(hand), &frame) ||
+                rock::api::hands::HandFrameFlagV1::PresentedVisual);
+        if (!rockApiClient().queryPresentedHandFrame(providerHand(hand),frame) ||
             frame.hand != providerHand(hand) ||
             (frame.flags & requiredFlags) != requiredFlags) {
             return false;

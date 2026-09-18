@@ -2,7 +2,7 @@
 
 #include "animation_evidence/ExactClipPreharvest.h"
 #include "api/PAPERApi.h"
-#include "api/ROCKProviderApi.h"
+#include "api/RockTypes.h"
 
 #include <cstdint>
 
@@ -23,12 +23,12 @@ namespace paper::animation_evidence
     void reset();
 
     void advanceFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::RockProviderEquippedWeaponGripStateV1* gripState,
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState* gripState,
         std::uint32_t paperProviderGeneration,
         bool exactPreharvestDemand);
     void completeFrame(
-        const rock::provider::RockProviderAnimationPhaseContextV1& context);
+        const rock::api::core::AnimationPhaseContextV1& context);
     [[nodiscard]] FrameDiagnostics snapshotFrameDiagnostics();
 
     [[nodiscard]] api::PaperResultV1 getLimits(

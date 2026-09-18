@@ -95,28 +95,24 @@ namespace paper::reload_observation
 
         [[nodiscard]] bool hasGripFlag(
             const std::uint32_t flags,
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateFlagV1 value)
+            const rock::api::weapon::EquippedWeaponGripStateFlagV1 value)
         {
             return (flags & flag(value)) != 0;
         }
 
         [[nodiscard]] bool validWeaponGrip(
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateV1& gripState)
+            const paper::RockWeaponGripState& gripState)
         {
             return hasGripFlag(
                        gripState.flags,
-                       rock::provider::
-                           RockProviderEquippedWeaponGripStateFlagV1::Valid) &&
+                       rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid) &&
                    gripState.weaponFormId != 0 &&
                    gripState.weaponGenerationKey != 0 &&
                    gripState.weaponNode != 0;
         }
 
         [[nodiscard]] RE::NiNode* weaponRoot(
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateV1& gripState)
+            const paper::RockWeaponGripState& gripState)
         {
             if (!validWeaponGrip(gripState)) {
                 return nullptr;
@@ -328,65 +324,63 @@ namespace paper::reload_observation
             };
 
             for (const auto& record : building.evidence) {
-                const auto partKind = static_cast<rock::provider::
-                    RockProviderWeaponPartKindV1>(record.value.partKind);
+                const auto partKind = static_cast<rock::api::weaponparts::WeaponPartKindV1>(record.value.partKind);
                 switch (partKind) {
-                case rock::provider::RockProviderWeaponPartKindV1::Magazine:
+                case rock::api::weaponparts::WeaponPartKindV1::Magazine:
                     signals.magazinePart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Cylinder:
+                case rock::api::weaponparts::WeaponPartKindV1::Cylinder:
                     signals.cylinderPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Slide:
+                case rock::api::weaponparts::WeaponPartKindV1::Slide:
                     signals.slidePart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Stock:
+                case rock::api::weaponparts::WeaponPartKindV1::Stock:
                     signals.stockPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Handguard:
+                case rock::api::weaponparts::WeaponPartKindV1::Handguard:
                     signals.handguardPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Foregrip:
+                case rock::api::weaponparts::WeaponPartKindV1::Foregrip:
                     signals.foregripPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Lever:
+                case rock::api::weaponparts::WeaponPartKindV1::Lever:
                     signals.leverPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Pump:
+                case rock::api::weaponparts::WeaponPartKindV1::Pump:
                     signals.pumpPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::BreakAction:
+                case rock::api::weaponparts::WeaponPartKindV1::BreakAction:
                     signals.breakActionPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::LaserCell:
+                case rock::api::weaponparts::WeaponPartKindV1::LaserCell:
                     signals.laserCellPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Shell:
+                case rock::api::weaponparts::WeaponPartKindV1::Shell:
                     signals.shellPart = true;
                     break;
-                case rock::provider::RockProviderWeaponPartKindV1::Round:
+                case rock::api::weaponparts::WeaponPartKindV1::Round:
                     signals.looseRoundPart = true;
                     break;
                 default:
                     break;
                 }
 
-                const auto actionRole = static_cast<rock::provider::
-                    RockProviderWeaponActionRoleV1>(record.value.actionRole);
+                const auto actionRole = static_cast<rock::api::weaponparts::WeaponActionRoleV1>(record.value.actionRole);
                 switch (actionRole) {
-                case rock::provider::RockProviderWeaponActionRoleV1::Slide:
+                case rock::api::weaponparts::WeaponActionRoleV1::Slide:
                     signals.slidePart = true;
                     break;
-                case rock::provider::RockProviderWeaponActionRoleV1::Cylinder:
+                case rock::api::weaponparts::WeaponActionRoleV1::Cylinder:
                     signals.cylinderPart = true;
                     break;
-                case rock::provider::RockProviderWeaponActionRoleV1::Lever:
+                case rock::api::weaponparts::WeaponActionRoleV1::Lever:
                     signals.leverPart = true;
                     break;
-                case rock::provider::RockProviderWeaponActionRoleV1::Pump:
+                case rock::api::weaponparts::WeaponActionRoleV1::Pump:
                     signals.pumpPart = true;
                     break;
-                case rock::provider::RockProviderWeaponActionRoleV1::BreakAction:
+                case rock::api::weaponparts::WeaponActionRoleV1::BreakAction:
                     signals.breakActionPart = true;
                     break;
                 default:
@@ -591,10 +585,8 @@ namespace paper::reload_observation
         }
 
         [[nodiscard]] bool beginCatalog(
-            const rock::provider::
-                RockProviderAnimationPhaseContextV1& context,
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateV1& gripState,
+            const rock::api::core::AnimationPhaseContextV1& context,
+            const paper::RockWeaponGripState& gripState,
             const std::uint32_t paperProviderGeneration,
             const bool collectEvidenceGeometry)
         {
@@ -638,7 +630,7 @@ namespace paper::reload_observation
                 root->world,
                 building.state.weaponRootWorld);
 
-            rock::provider::RockProviderWeaponClassificationV1
+            rock::api::weapon::WeaponClassificationV1
                 sourceClassification{};
             if (rockApiClient().queryEquippedWeaponClassification(
                     sourceClassification) &&
@@ -844,7 +836,7 @@ namespace paper::reload_observation
                 building.state.reportedEvidenceCount,
                 PAPER_MAX_RELOAD_EVIDENCE_V1);
             std::array<
-                rock::provider::RockProviderWeaponEvidenceDetailV1,
+                rock::api::weaponparts::WeaponEvidenceDetailV1,
                 PAPER_MAX_RELOAD_EVIDENCE_V1>
                 sourceEvidence{};
             const auto copiedEvidence = evidenceCapacity > 0 ?
@@ -882,12 +874,10 @@ namespace paper::reload_observation
                 record.value.bodyId = source.bodyId;
                 record.value.sourceNodeId = nodeIdFor(
                     nodePointers,
-                    reinterpret_cast<RE::NiAVObject*>(
-                        source.sourceRoot));
+                    rockApiClient().resolveWeaponSource(source.weaponGenerationKey,source.sourceKey));
                 record.value.interactionNodeId = nodeIdFor(
                     nodePointers,
-                    reinterpret_cast<RE::NiAVObject*>(
-                        source.interactionRoot));
+                    rockApiClient().resolveWeaponSource(source.weaponGenerationKey,source.interactionKey));
                 if (record.value.sourceNodeId >= 0) {
                     record.value.flags |= flag(
                         PaperReloadEvidenceFlagV1::
@@ -990,7 +980,7 @@ namespace paper::reload_observation
                 }
 
                 std::array<
-                    rock::provider::RockProviderPoint3,
+                    rock::api::Point3,
                     PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1>
                     sourcePoints{};
                 const auto copied = std::min(
@@ -1026,8 +1016,7 @@ namespace paper::reload_observation
         }
 
         void beginWorkingFrame(
-            const rock::provider::
-                RockProviderAnimationPhaseContextV1& context)
+            const rock::api::core::AnimationPhaseContextV1& context)
         {
             if (s_workingFrame.active &&
                 s_workingFrame.state.frameIndex == context.frameIndex &&
@@ -1066,10 +1055,8 @@ namespace paper::reload_observation
         }
 
         [[nodiscard]] PhaseCapture captureCurrentPhase(
-            const rock::provider::
-                RockProviderAnimationPhaseContextV1& context,
-            const rock::provider::
-                RockProviderEquippedWeaponGripStateV1& gripState,
+            const rock::api::core::AnimationPhaseContextV1& context,
+            const paper::RockWeaponGripState& gripState,
             const PaperReloadObservationPhaseV1 phase)
         {
             PhaseCapture result{};
@@ -1271,10 +1258,8 @@ namespace paper::reload_observation
     }
 
     void advanceFrame(
-        const rock::provider::
-            RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::
-            RockProviderEquippedWeaponGripStateV1* gripState,
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState* gripState,
         const std::uint32_t paperProviderGeneration,
         const bool collectEvidenceGeometry)
     {
@@ -1327,10 +1312,8 @@ namespace paper::reload_observation
     }
 
     void capturePhase(
-        const rock::provider::
-            RockProviderAnimationPhaseContextV1& context,
-        const rock::provider::
-            RockProviderEquippedWeaponGripStateV1& gripState,
+        const rock::api::core::AnimationPhaseContextV1& context,
+        const paper::RockWeaponGripState& gripState,
         const PaperReloadObservationPhaseV1 phase)
     {
         if (!s_catalog.valid || !validWeaponGrip(gripState) ||
@@ -1371,8 +1354,7 @@ namespace paper::reload_observation
     }
 
     void completeFrame(
-        const rock::provider::
-            RockProviderAnimationPhaseContextV1& context,
+        const rock::api::core::AnimationPhaseContextV1& context,
         const std::uint32_t paperProviderGeneration)
     {
         if (!s_catalog.valid || !s_workingFrame.active ||
