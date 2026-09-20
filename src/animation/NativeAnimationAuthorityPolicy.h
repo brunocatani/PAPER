@@ -87,38 +87,6 @@ namespace paper::native_animation_authority_policy
         Support,
     };
 
-    inline constexpr std::uint32_t kPrimaryParticipant = 1u << 0;
-    inline constexpr std::uint32_t kSupportParticipant = 1u << 1;
-    inline constexpr std::uint32_t kBothParticipants = kPrimaryParticipant | kSupportParticipant;
-
-    // Explicit action roles for the observed animation sets. Support-pose
-    // changes during firing or locomotion are not weapon manipulation. Keep reload
-    // authority separate and retain motion observation for other weapons.
-    [[nodiscard]] constexpr std::uint32_t resolveFireHandParticipants(
-        const std::uint32_t weaponFormId,
-        const std::uint32_t m16FormId,
-        const std::uint32_t timberwolfFormId,
-        const std::uint32_t handmadeFormId)
-    {
-        if (weaponFormId == 0 ||
-            (m16FormId != 0 && weaponFormId == m16FormId) ||
-            (handmadeFormId != 0 && weaponFormId == handmadeFormId)) {
-            return 0;
-        }
-        if (timberwolfFormId != 0 && weaponFormId == timberwolfFormId) {
-            return kPrimaryParticipant;
-        }
-        return kBothParticipants;
-    }
-
-    [[nodiscard]] constexpr bool shouldPublishWeaponFixedSupportHand(
-        const bool partialReload, const bool localCycleActive,
-        const bool consumerRequestsHands, const std::uint32_t cycleParticipants)
-    {
-        return partialReload || !localCycleActive || consumerRequestsHands ||
-               (cycleParticipants & kSupportParticipant) != 0;
-    }
-
     enum class WeaponFixedHandTargetMode : std::uint8_t
     {
         LiveGripDelta,

@@ -2,6 +2,9 @@
 
 #include "PaperLog.h"
 #include "support/NativeMemory.h"
+#include "support/TransformMath.h"
+
+#include <Windows.h>
 
 #include <array>
 #include <atomic>
@@ -104,6 +107,9 @@ namespace paper::clip_telemetry
         // with the verified bones array at +0x28.
         constexpr std::uintptr_t kSkeletonParentIndicesOffset = 0x18;
         constexpr std::uintptr_t kSkeletonParentIndicesCountOffset = 0x20;
+        // Reference locals, also consumed by ExactClipPreharvest.
+        constexpr std::uintptr_t kSkeletonReferencePoseOffset = 0x38;
+        constexpr std::uintptr_t kSkeletonReferencePoseCountOffset = 0x40;
         constexpr std::uintptr_t kSkeletonBonesDataOffset = 0x28;
         constexpr std::uintptr_t kSkeletonBonesCountOffset = 0x30;
         constexpr std::uintptr_t kSkeletonBoneStride = 0x10;
@@ -367,6 +373,24 @@ namespace paper::clip_telemetry
         std::uint32_t s_hookNodeNameCount = 0;
         std::uint32_t s_hookWeaponFormId = 0;
         std::uint64_t s_hookWeaponGenerationKey = 0;
+
+        // Diagnostic ownership: target identities and budgets use s_hookMutex.
+        // Stored engine addresses are comparison keys only, never dereferenced
+        // outside the activation/deactivation callback that supplies them.
+        struct HandActionTrace
+        {
+            std::shared_ptr<spdlog::logger> log;
+            std::array<std::uintptr_t, kMaxHookCharacters> characters{};
+            std::array<std::uintptr_t, 32> sampledBindings{};
+            std::array<std::uintptr_t, 16> activeClips{};
+            std::uintptr_t weaponNode{ 0 };
+            std::uint64_t generation{ 0 };
+            std::uint32_t formId{ 0 };
+            std::uint32_t samplesUsed{ 0 };
+            std::uint32_t eventsRemaining{ 512 };
+            bool faulted{ false };
+        };
+        HandActionTrace s_handActionTrace;
 
         /*
          * Bindings terminally processed this weapon generation (captured or
@@ -953,6 +977,112 @@ namespace paper::clip_telemetry
             }
         }
 
+        bool traceUnblendedHands(
+            const std::uintptr_t binding, const std::uintptr_t skeleton,
+            const std::uintptr_t animation, const float duration,
+            const std::int32_t boneCount, const std::int32_t trackCount,
+            const std::array<std::int16_t, kSampleBufferTracks>& trackBones,
+            const std::int32_t mappedTrackCount, const char* clipName)
+        {
+            constexpr std::size_t maxChain = 32;
+            constexpr std::uint32_t sampleCount = 33;
+            const auto unavailable = [&](const char* stage) {
+                s_handActionTrace.log->debug("HAND_ACTION unavailable weapon={:08X}/{:016X} binding={:X} stage={}",
+                    s_handActionTrace.formId, s_handActionTrace.generation, binding, stage);
+                return false;
+            };
+            const auto parents = *reinterpret_cast<const std::int16_t* const*>(
+                skeleton + kSkeletonParentIndicesOffset);
+            const auto parentCount = *reinterpret_cast<const std::int32_t*>(
+                skeleton + kSkeletonParentIndicesCountOffset);
+            // Same reference-pose layout used by ExactClipPreharvest. A
+            // partition may omit ancestors; their reference locals are needed.
+            const auto reference = *reinterpret_cast<const HkQsTransform* const*>(skeleton + kSkeletonReferencePoseOffset);
+            const auto referenceCount = *reinterpret_cast<const std::int32_t*>(skeleton + kSkeletonReferencePoseCountOffset);
+            if (trackCount > static_cast<std::int32_t>(kSampleBufferTracks) ||
+                mappedTrackCount < trackCount || parentCount < boneCount ||
+                referenceCount < boneCount ||
+                !native_memory::pointerRangeLooksReadable(parents, boneCount * sizeof(*parents)) ||
+                !native_memory::pointerRangeLooksReadable(reference, boneCount * sizeof(*reference))) return unavailable("rig-arrays-or-track-capacity");
+
+            struct Chain
+            {
+                std::array<std::int16_t, maxChain> bones{};
+                std::array<std::int16_t, maxChain> tracks{};
+                std::uint32_t count{ 0 };
+                bool targetAnimated{ false };
+            };
+            std::array<Chain, 3> chains{};
+            constexpr std::array names{ "Weapon", "RArm_Hand", "LArm_Hand" };
+            for (std::size_t target = 0; target < chains.size(); ++target) {
+                std::int32_t bone = -1;
+                for (std::int32_t i = 0; i < boneCount; ++i) {
+                    const auto* name = skeletonBoneName(skeleton, i);
+                    if (name && std::strcmp(name, names[target]) == 0) { bone = i; break; }
+                }
+                if (bone < 0) return unavailable(names[target]);
+                auto& chain = chains[target];
+                while (bone >= 0 && chain.count < maxChain) {
+                    if (bone >= boneCount) return unavailable("parent-index");
+                    for (std::uint32_t i = 0; i < chain.count; ++i) {
+                        if (chain.bones[i] == bone) return unavailable("parent-cycle");
+                    }
+                    auto& track = chain.tracks[chain.count];
+                    track = -1;
+                    for (std::int32_t i = 0; i < trackCount; ++i) {
+                        if (trackBones[i] == bone) { track = static_cast<std::int16_t>(i); break; }
+                    }
+                    if (chain.count == 0) chain.targetAnimated = track >= 0;
+                    chain.bones[chain.count++] = static_cast<std::int16_t>(bone);
+                    bone = parents[bone];
+                }
+                if (bone >= 0) return unavailable("parent-depth");
+            }
+
+            const auto sampler = reinterpret_cast<SampleTracks_t>(
+                (*reinterpret_cast<const std::uintptr_t* const*>(animation))[kSampleTracksSlot]);
+            if (!sampler) return unavailable("sampler");
+            alignas(16) std::array<HkQsTransform, kSampleBufferTracks> sampled{};
+            auto& trace = s_handActionTrace;
+            trace.log->debug("HAND_ACTION definition weapon={:08X}/{:016X} binding={:X} clip='{}' duration={:.6f} samples={} mappedTargets={}/{}/{}",
+                trace.formId, trace.generation, binding, clipName, duration, sampleCount,
+                chains[0].targetAnimated, chains[1].targetAnimated, chains[2].targetAnimated);
+            for (std::uint32_t step = 0; step < sampleCount; ++step) {
+                const float time = duration * static_cast<float>(step) / (sampleCount - 1);
+                sampler(reinterpret_cast<void*>(animation), time, trackCount, sampled.data(), 0, nullptr);
+                std::array<RE::NiTransform, 3> models{};
+                for (std::size_t target = 0; target < chains.size(); ++target) {
+                    auto& model = models[target];
+                    model = transform_math::identityTransform<RE::NiTransform>();
+                    const auto& chain = chains[target];
+                    for (auto i = chain.count; i > 0; --i) {
+                        const auto track = chain.tracks[i - 1];
+                        const auto& raw = track >= 0 ? sampled[track] : reference[chain.bones[i - 1]];
+                        for (int component = 0; component < 4; ++component) {
+                            if (!std::isfinite(raw.translate[component]) || !std::isfinite(raw.rotate[component]) ||
+                                !std::isfinite(raw.scale[component])) return unavailable("nonfinite-pose");
+                        }
+                        if (raw.scale[0] <= 0.0001f || std::abs(raw.scale[0] - raw.scale[1]) > 0.0001f ||
+                            std::abs(raw.scale[0] - raw.scale[2]) > 0.0001f) return unavailable("nonuniform-or-zero-scale");
+                        auto local = transform_math::identityTransform<RE::NiTransform>();
+                        local.translate = { raw.translate[0], raw.translate[1], raw.translate[2] };
+                        local.rotate = transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(raw.rotate);
+                        local.scale = raw.scale[0];
+                        model = transform_math::composeTransforms(model, local);
+                    }
+                }
+                for (std::size_t hand = 1; hand < models.size(); ++hand) {
+                    const auto pose = transform_math::relativeTransform(models[0], models[hand]);
+                    float q[4]{};
+                    transform_math::niRowsToHavokQuaternion(pose.rotate, q);
+                    trace.log->debug("HAND_ACTION sample weapon={:08X}/{:016X} binding={:X} step={} t={:.6f} hand={} T=({:.6f},{:.6f},{:.6f}) Qxyzw=({:.6f},{:.6f},{:.6f},{:.6f}) S={:.6f}",
+                        trace.formId, trace.generation, binding, step, time, hand == 1 ? "right" : "left",
+                        pose.translate.x, pose.translate.y, pose.translate.z, q[0], q[1], q[2], q[3], pose.scale);
+                }
+            }
+            return true;
+        }
+
         // Returns true when the binding reached a terminal outcome (captured
         // or target-less) and should not be revisited this generation; false
         // on bails that may succeed later.
@@ -968,7 +1098,8 @@ namespace paper::clip_telemetry
             std::uint64_t captureActivityId,
             bool* outHadWeaponTracks,
             bool* outRichPacketQueued,
-            const MarkerCaptureScratch* markers = nullptr)
+            const MarkerCaptureScratch* markers = nullptr,
+            const bool traceHandsOnly = false)
         {
             if (outHadWeaponTracks) {
                 *outHadWeaponTracks = false;
@@ -1115,6 +1246,11 @@ namespace paper::clip_telemetry
                 s_rejectedTrackMap.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
                 return false;
+            }
+
+            if (traceHandsOnly) {
+                return traceUnblendedHands(binding, skeleton, animation, duration,
+                    boneCount, animationTrackCount, trackBones, mappedTrackCount, clipAnimationName);
             }
 
             // Collect the weapon-part tracks for this clip. Tracks beyond
@@ -1515,6 +1651,77 @@ namespace paper::clip_telemetry
             }
         }
 
+        void traceHandActionActivation(const std::uintptr_t clip, const std::uintptr_t context)
+        {
+            auto& trace = s_handActionTrace;
+            if (!trace.log || trace.faulted || trace.eventsRemaining == 0) return;
+            std::uintptr_t character = 0;
+            for (std::size_t i = 0; i < 4 && !character; ++i) {
+                const auto candidate = reinterpret_cast<const std::uintptr_t*>(context)[i];
+                for (const auto target : trace.characters) {
+                    if (target != 0 && target == candidate) { character = candidate; break; }
+                }
+            }
+            if (!character) return;
+            --trace.eventsRemaining;
+            std::array<char, animation_evidence::kAnimationPathCapacity> name{};
+            copyHkStringPtr(*reinterpret_cast<const std::uintptr_t*>(clip + kClipGeneratorAnimationNameOffset),
+                name.data(), name.size());
+            const auto wrapper = *reinterpret_cast<const std::uintptr_t*>(clip + kClipGeneratorLoadedBindingOffset);
+            if (!plausiblePointer(wrapper)) {
+                trace.log->debug("HAND_ACTION unavailable weapon={:08X} stage=control clip='{}'", trace.formId, name.data());
+                return;
+            }
+            const auto binding = *reinterpret_cast<const std::uintptr_t*>(wrapper + kLoadedBindingWrapperBindingOffset);
+            trace.log->debug("HAND_ACTION activate weapon={:08X}/{:016X} clip={:X} binding={:X} name='{}' t={:.6f} crop=({:.6f},{:.6f})",
+                trace.formId, trace.generation, clip, binding, name.data(),
+                *reinterpret_cast<const float*>(clip + kClipGeneratorLocalTimeOffset),
+                *reinterpret_cast<const float*>(clip + kClipGeneratorCropStartOffset),
+                *reinterpret_cast<const float*>(clip + kClipGeneratorCropEndOffset));
+            bool tracked = false;
+            for (auto& active : trace.activeClips) {
+                if (active == 0 || active == clip) { active = clip; tracked = true; break; }
+            }
+            if (!tracked) trace.log->warn("HAND_ACTION active clip capacity reached weapon={:08X}", trace.formId);
+            if (!plausiblePointer(binding)) return;
+            for (const auto previous : trace.sampledBindings) if (previous == binding) return;
+            if (trace.samplesUsed == trace.sampledBindings.size()) return;
+            trace.sampledBindings[trace.samplesUsed++] = binding;
+            if (trace.samplesUsed == trace.sampledBindings.size()) {
+                trace.log->debug("HAND_ACTION definition budget reached weapon={:08X}; later clips retain lifecycle events only", trace.formId);
+            }
+            const auto setup = *reinterpret_cast<const std::uintptr_t*>(character + kCharacterSetupOffset);
+            if (!plausiblePointer(setup)) {
+                trace.log->debug("HAND_ACTION unavailable weapon={:08X} stage=setup", trace.formId);
+                return;
+            }
+            const auto skeleton = *reinterpret_cast<const std::uintptr_t*>(setup + kSetupAnimationSkeletonOffset);
+            if (!plausiblePointer(skeleton)) {
+                trace.log->debug("HAND_ACTION unavailable weapon={:08X} stage=skeleton", trace.formId);
+                return;
+            }
+            auto behavior = *reinterpret_cast<const std::uintptr_t*>(context + kContextBehaviorGraphOffset);
+            if (!plausiblePointer(behavior) || *reinterpret_cast<const std::uintptr_t*>(behavior) !=
+                REL::Module::get().base() + kBehaviorGraphVtableModuleOffset) behavior = 0;
+            if (!s_richCaptureEnabled.load(std::memory_order_relaxed)) {
+                captureClipMarkers(clip, binding, name.data(), behavior, nullptr);
+            }
+            const bool sampled = captureBindingEvidence(binding, skeleton, nullptr, 0, true,
+                name.data(), trace.formId, trace.generation, 0, nullptr, nullptr, nullptr, true);
+            trace.log->debug("HAND_ACTION sampled weapon={:08X}/{:016X} binding={:X} complete={} definitions={}/{}",
+                trace.formId, trace.generation, binding, sampled, trace.samplesUsed, trace.sampledBindings.size());
+        }
+
+        bool guardedTraceHandActionActivation(const std::uintptr_t clip, const std::uintptr_t context)
+        {
+            __try {
+                traceHandActionActivation(clip, context);
+                return true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+        }
+
         /*
          * Runs on the engine's graph-update thread right after the original
          * hkbClipGenerator::activate completed, i.e. while the animation
@@ -1534,6 +1741,18 @@ namespace paper::clip_telemetry
             }
 
             std::scoped_lock lock(s_hookMutex);
+            bool traced = false;
+            try {
+                traced = guardedTraceHandActionActivation(clipGenerator, context);
+            } catch (...) {
+                traced = false;
+            }
+            if (!traced) {
+                s_handActionTrace.faulted = true;
+                if (s_handActionTrace.log) {
+                    s_handActionTrace.log->error("HAND_ACTION disabled after native read/sample fault weapon={:08X}", s_handActionTrace.formId);
+                }
+            }
             /*
              * The second argument is a stack-built hkbContext, not the
              * character (in-game hook dumps 2026-07-04: stack-range
@@ -1713,6 +1932,19 @@ namespace paper::clip_telemetry
             const auto clipGenerator = reinterpret_cast<std::uintptr_t>(clipGeneratorRaw);
             {
                 std::scoped_lock lock(s_hookMutex);
+                for (auto& clip : s_handActionTrace.activeClips) {
+                    if (clip != clipGenerator) continue;
+                    clip = 0;
+                    if (s_handActionTrace.log && s_handActionTrace.eventsRemaining > 0) {
+                        --s_handActionTrace.eventsRemaining;
+                        float localTime = 0.0f;
+                        const bool validTime = native_memory::tryReadField(
+                            clipGeneratorRaw, kClipGeneratorLocalTimeOffset, localTime);
+                        s_handActionTrace.log->debug("HAND_ACTION deactivate weapon={:08X}/{:016X} clip={:X} t={:.6f} validTime={}",
+                            s_handActionTrace.formId, s_handActionTrace.generation, clipGenerator, localTime, validTime);
+                    }
+                    break;
+                }
                 for (auto& slot : s_richActiveClips) {
                     if (slot.clip.load(std::memory_order_acquire) == clipGenerator) {
                         if (slot.clip.exchange(0, std::memory_order_acq_rel) != 0) {
@@ -1731,6 +1963,69 @@ namespace paper::clip_telemetry
     const char* lastResolvePoint()
     {
         return s_lastResolvePoint;
+    }
+
+    namespace
+    {
+        bool readHandTraceCharacters(const std::uint32_t formId,
+            std::array<std::uintptr_t, kMaxHookCharacters>& characters)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            auto* biped = player ? player->GetBiped(true).get() : nullptr;
+            if (!biped) return false;
+            std::size_t count = 0;
+            for (auto slot = static_cast<std::uint32_t>(RE::BIPED_OBJECT::kWeaponHand);
+                 slot < static_cast<std::uint32_t>(RE::BIPED_OBJECT::kTotal); ++slot) {
+                const auto& object = biped->object[slot];
+                if (!object.parent.object || object.parent.object->GetFormID() != formId ||
+                    !object.objectGraphManager) continue;
+                const auto manager = managerFromWeaponHolder(object.objectGraphManager.get());
+                GraphArrayView graphs{};
+                if (!resolveGraphArray(reinterpret_cast<std::uintptr_t>(manager), graphs)) continue;
+                for (std::uint32_t i = 0; i < graphs.capacity && count < characters.size(); ++i) {
+                    const auto graph = graphAtIndex(graphs, i);
+                    if (graph != 0) characters[count++] = graph + kGraphCharacterOffset;
+                }
+            }
+            return count != 0;
+        }
+
+        bool guardedReadHandTraceCharacters(const std::uint32_t formId,
+            std::array<std::uintptr_t, kMaxHookCharacters>& characters)
+        {
+            __try {
+                return readHandTraceCharacters(formId, characters);
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+        }
+    }
+
+    void refreshHandActionTrace(const std::uint32_t weaponFormId,
+        const std::uint64_t weaponGenerationKey, const std::uintptr_t weaponNode,
+        const std::shared_ptr<spdlog::logger>& log)
+    {
+        std::array<std::uintptr_t, kMaxHookCharacters> characters{};
+        const bool requested = log && weaponFormId != 0 && weaponNode != 0;
+        const bool available = requested && guardedReadHandTraceCharacters(weaponFormId, characters);
+        if (!available) characters = {};
+        const bool hooksReady = available && ensureHooksInstalled();
+        std::scoped_lock lock(s_hookMutex);
+        auto& trace = s_handActionTrace;
+        if (!requested) { trace = {}; return; }
+        if (trace.formId == weaponFormId && trace.generation == weaponGenerationKey &&
+            trace.weaponNode == weaponNode && trace.characters == characters && trace.log == log) return;
+        trace = {};
+        trace.log = log;
+        trace.formId = weaponFormId;
+        trace.generation = weaponGenerationKey;
+        trace.weaponNode = weaponNode;
+        trace.characters = characters;
+        trace.faulted = !hooksReady;
+        s_markerLogBudget = kMarkerLogBudgetPerGeneration;
+        trace.log->debug("HAND_ACTION target weapon={:08X}/{:016X} scene={:X} characters={} hooks={} maxDefinitions=32 samplesPerDefinition=33 maxLifecycleEvents=512",
+            weaponFormId, weaponGenerationKey, weaponNode,
+            std::count_if(characters.begin(), characters.end(), [](const auto value) { return value != 0; }), hooksReady);
     }
 
     const void* managerFromWeaponHolder(const void* weaponGraphHolder)

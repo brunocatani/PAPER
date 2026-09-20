@@ -4,9 +4,18 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
+
+namespace spdlog { class logger; }
 
 namespace paper::clip_telemetry
 {
+    // Debug-only, first-person clip evidence. Uses the existing asynchronous
+    // cycle logger; never requests animation authority or enables harvesting.
+    void refreshHandActionTrace(
+        std::uint32_t weaponFormId, std::uint64_t weaponGenerationKey,
+        std::uintptr_t weaponNode, const std::shared_ptr<spdlog::logger>& log);
+
     enum class StepResult : std::uint32_t
     {
         Pending = 0,
