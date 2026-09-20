@@ -146,6 +146,7 @@ namespace paper::native_animation_authority
     void beginRockFrame(float deltaSeconds);
     [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);
     void initializeCycleTrace();
+    void initializeFireHandParticipants();
     void completeRockFrame(std::uint64_t frameIndex);
     void capturePresentedHandBaselines(std::uint64_t frameIndex);
     void resetTransientState();

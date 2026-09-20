@@ -1348,6 +1348,7 @@ namespace
         if (message->type == F4SE::MessagingInterface::kGameLoaded) {
             (void)g_config.reload();
             native_animation_authority::initializeCycleTrace();
+            native_animation_authority::initializeFireHandParticipants();
             weapon_motion::configureCache(g_config);
             publishConfigState();
             g_config.startWatching();

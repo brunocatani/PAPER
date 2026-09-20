@@ -507,6 +507,23 @@ int main()
     static_assert(resolveLocalReloadAuthorityFlags(true) == kWeaponFixedHandsPose);
     static_assert((kWeaponFixedHandsPose & kWeapon) == 0);
 
+    // Plugin-local identities are resolved at runtime; changing MO2's load
+    // order must not change the firing role or match an unrelated weapon.
+    constexpr std::uint32_t m16 = 0x2A01EC2E;
+    constexpr std::uint32_t timberwolf = 0x3400206C;
+    static_assert(resolveFireHandParticipants(m16, m16, timberwolf) == 0);
+    static_assert(resolveFireHandParticipants(timberwolf, m16, timberwolf) == kPrimaryParticipant);
+    static_assert(resolveFireHandParticipants(0x1100206C, m16, timberwolf) == kBothParticipants);
+    static_assert(resolveFireHandParticipants(0, 0, 0) == 0);
+    static_assert(resolveFireHandParticipants(0x00123456, 0, 0) == kBothParticipants);
+    // Cycle eligibility and grip topology are not inputs to a hand's authored
+    // role. A free pumping hand still participates; a static support does not.
+    static_assert(!shouldPublishWeaponFixedSupportHand(false, true, false, kPrimaryParticipant));
+    static_assert(shouldPublishWeaponFixedSupportHand(false, true, false, kBothParticipants));
+    static_assert(shouldPublishWeaponFixedSupportHand(true, true, false, kPrimaryParticipant));
+    static_assert(shouldPublishWeaponFixedSupportHand(false, false, false, 0));
+    static_assert(shouldPublishWeaponFixedSupportHand(false, true, true, kPrimaryParticipant));
+
     static_assert(!shouldSuppressAnimationForClimbing(
         ClimbingAnimationSuppressionObservation{
             .rightStateValid = true,

@@ -1,6 +1,7 @@
 #include "animation/NativeAnimationAuthority.h"
 
 #include "api/RockApiClient.h"
+#include "api/PAPERProvider.h"
 #include "api/ApiTransform.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "animation_evidence/ClipTelemetry.h"
@@ -242,6 +243,12 @@ namespace paper::native_animation_authority
         std::atomic<bool> s_localReloadTestEnabled{ false };
         std::atomic<bool> s_manualCycleHandAnimationEligible{ false };
         std::atomic<bool> s_localManualCycleTestLeaseActive{ false };
+        // Resolved once from plugin-local IDs at GameLoaded, never load-order
+        // indices. The fire hook copies the selected role into its own lease.
+        std::atomic<std::uint32_t> s_m16FormId{ 0 };
+        std::atomic<std::uint32_t> s_timberwolfFormId{ 0 };
+        std::atomic<std::uint32_t> s_cycleHandParticipants{
+            native_animation_authority_policy::kBothParticipants };
         std::atomic<bool> s_captureValid{ false };
         std::atomic<bool> s_threadMismatch{ false };
         std::atomic<bool> s_captureFault{ false };
@@ -1039,6 +1046,17 @@ namespace paper::native_animation_authority
                 return handled;
             }
 
+            const auto participants = native_animation_authority_policy::resolveFireHandParticipants(
+                weapon->formID, s_m16FormId.load(std::memory_order_acquire),
+                s_timberwolfFormId.load(std::memory_order_acquire));
+            s_cycleHandParticipants.store(participants, std::memory_order_release);
+            if (participants == 0) {
+                // The fire observation above remains available. Recoil and
+                // ordinary grip presentation retain their existing owners.
+                cancelLocalManualCycleTestLease();
+                return handled;
+            }
+
             const float watchdogSeconds = manualCycleWatchdogSeconds(*weaponData);
             const auto watchdogMilliseconds = static_cast<std::uint32_t>(
                 watchdogSeconds * 1000.0f + 0.5f);
@@ -1586,7 +1604,13 @@ namespace paper::native_animation_authority
                             native_animation_authority_policy::
                                 WeaponFixedHandRole::Primary,
                             s_manualCycleRockGripBaselines.authoredLeftActive));
-            if (s_nativeHandPoseCapture.supportHandValid) {
+            const bool consumerRequestsHands = (provider::currentConsumerAuthorityFlags() &
+                native_animation_authority_policy::kWeaponFixedHandsPose) != 0;
+            if (s_nativeHandPoseCapture.supportHandValid &&
+                native_animation_authority_policy::shouldPublishWeaponFixedSupportHand(
+                    s_framePartialReloadExpected,
+                    s_localManualCycleTestLeaseActive.load(std::memory_order_acquire),
+                    consumerRequestsHands, s_cycleHandParticipants.load(std::memory_order_acquire))) {
                 (void)publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_nativeHandPoseCapture.supportHandInWeapon,
@@ -2565,6 +2589,21 @@ namespace paper::native_animation_authority
             return finishApplication(false);
         }
         return finishApplication(true);
+    }
+
+    void initializeFireHandParticipants()
+    {
+        auto* data = RE::TESDataHandler::GetSingleton();
+        // 2026-09-19 runtime capture: these sets move the support wrist during
+        // firing without manipulating a part. Timberwolf's bolt is right-hand
+        // operated. Resolve the owning records, not localized display names.
+        const auto* m16 = data ? data->LookupForm<RE::TESObjectWEAP>(0x1EC2E, "AK_AR15FO4.esp") : nullptr;
+        const auto* timberwolf = data ? data->LookupForm<RE::TESObjectWEAP>(0x206C, "L118A2.esp") : nullptr;
+        s_m16FormId.store(m16 ? m16->formID : 0, std::memory_order_release);
+        s_timberwolfFormId.store(timberwolf ? timberwolf->formID : 0, std::memory_order_release);
+        PAPER_LOG_INFO(Animation,
+            "Fire hand participation initialized: M16={:08X} hands=none Timberwolf={:08X} hands=primary; reload and other weapon motion remain independent",
+            m16 ? m16->formID : 0, timberwolf ? timberwolf->formID : 0);
     }
 
     void initializeCycleTrace()
