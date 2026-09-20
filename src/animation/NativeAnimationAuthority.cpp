@@ -2649,6 +2649,47 @@ namespace paper::native_animation_authority
             if (!finiteTransform(local)) continue;
             (left ? captured.leftHandInWeapon : captured.rightHandInWeapon) = local;
             (left ? captured.authoredLeftActive : captured.rightValid) = true;
+
+            // The cycle trace above ends before FRIK presents the final arm and
+            // weapon. Compare the same-frame results here to separate a moved
+            // weapon from a hand that did not reach PAPER's requested target.
+            // Investigation: primary-only bipod mismatch; remove on qualification.
+            const auto& primary = s_sourceAimFrame.manualCycleHandRebases[0];
+            if (!left && s_cycleTrace && !s_cycleTrace->failed.load(std::memory_order_relaxed) &&
+                logger::instance->should_log(spdlog::level::debug) && frameIndex % 3 == 0 &&
+                s_manualCycleVisualPublications[0].worldPublished &&
+                primary.resolvedHandWorldValid && primary.resolvedHandInWeaponValid &&
+                s_sourceAimFrame.controlCaptured) {
+                try {
+                    const auto handError = measureManualCycleHandMotion(
+                        primary.resolvedHandWorld, api_transform::toNi(pose.handWorld));
+                    const auto weaponDrift = measureManualCycleHandMotion(
+                        s_sourceAimFrame.controlWeaponWorld, weapon->world);
+                    const auto alignmentError = measureManualCycleHandMotion(
+                        primary.resolvedHandInWeapon, local);
+                    const auto baselineShift = measureManualCycleHandMotion(
+                        primary.nativeBaselineHandInWeapon, primary.liveBaselineHandInWeapon);
+                    const auto& expected = primary.resolvedHandInWeapon.translate;
+                    const auto& actual = local.translate;
+                    const auto& beforeWeapon = s_sourceAimFrame.controlWeaponWorld.translate;
+                    const auto& finalWeapon = weapon->world.translate;
+                    s_cycleTrace->log->debug(
+                        "PRIMARY_FINAL frame={} fire={} weapon={:08X}/{:016X} cycle={} reload={} poseFlags=0x{:X} handError=({:.5f}gu,{:.5f}deg) weaponDrift=({:.5f}gu,{:.5f}deg) alignmentError=({:.5f}gu,{:.5f}deg) baselineShift=({:.5f}gu,{:.5f}deg) expectedLocal=({:.5f},{:.5f},{:.5f}) actualLocal=({:.5f},{:.5f},{:.5f}) beforeWeapon=({:.5f},{:.5f},{:.5f}) finalWeapon=({:.5f},{:.5f},{:.5f}) overruns={}",
+                        frameIndex, s_playerWeaponFireSequence.load(std::memory_order_acquire),
+                        identity.weaponFormId, identity.weaponGenerationKey,
+                        s_localManualCycleTestLeaseActive.load(std::memory_order_acquire),
+                        localReloadLeaseActive(), pose.flags,
+                        handError.translationGameUnits, handError.rotationDegrees,
+                        weaponDrift.translationGameUnits, weaponDrift.rotationDegrees,
+                        alignmentError.translationGameUnits, alignmentError.rotationDegrees,
+                        baselineShift.translationGameUnits, baselineShift.rotationDegrees,
+                        expected.x, expected.y, expected.z, actual.x, actual.y, actual.z,
+                        beforeWeapon.x, beforeWeapon.y, beforeWeapon.z,
+                        finalWeapon.x, finalWeapon.y, finalWeapon.z, s_cycleTrace->pool->overrun_counter());
+                } catch (...) {
+                    s_cycleTrace->failed.store(true, std::memory_order_relaxed);
+                }
+            }
         }
     }
 
