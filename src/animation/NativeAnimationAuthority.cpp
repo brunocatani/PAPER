@@ -1,6 +1,7 @@
 #include "animation/NativeAnimationAuthority.h"
 
 #include "api/RockApiClient.h"
+#include "api/ApiTransform.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "animation_evidence/ClipTelemetry.h"
 #include "compat/TacticalReloadBridge.h"
@@ -197,6 +198,9 @@ namespace paper::native_animation_authority
         LatchedManualCycleAuthoredSupportGrip
             s_manualCycleAuthoredSupportGripLatch{};
         ControllerAimFrame s_sourceAimFrame{};
+        // Paired final hand/weapon samples. Never combine an older wrist world
+        // with the current weapon world when acquiring a cycle baseline.
+        ResolvedManualCycleRockGripBaselines s_presentedGripBaselines{};
         // Investigation owner: PAPER hand participation. Remove after stationary
         // support and real pump/bolt trajectories are distinguished and qualified.
         // Debug logging must be enabled at GameLoaded.
@@ -518,6 +522,7 @@ namespace paper::native_animation_authority
         void resetHybridPoseState()
         {
             s_sourceAimFrame = {};
+            s_presentedGripBaselines = {};
         }
 
         [[nodiscard]] bool cacheMatches(BoneTree* source, BoneTree* destination)
@@ -1360,11 +1365,12 @@ namespace paper::native_animation_authority
                     handRebase.liveBaselineHandInWeapon =
                         rockBaselineHandInWeapon;
                 } else {
-                    RE::NiTransform liveHandWorld{};
-                    if (!frik_visual_authority::tryGetPresentedHandWorldTransform(
-                            hand,
-                            liveHandWorld) ||
-                        !finiteTransform(liveHandWorld)) {
+                    const auto& presented = s_presentedGripBaselines;
+                    const bool isLeft = hand == frik_visual_authority::Hand::Left;
+                    if (presented.weaponGenerationKey == 0 ||
+                        presented.weaponGenerationKey != s_manualCycleRockGripBaselines.weaponGenerationKey ||
+                        presented.weaponNode != s_manualCycleRockGripBaselines.weaponNode ||
+                        !(isLeft ? presented.authoredLeftActive : presented.rightValid)) {
                         if (!handRebase.baselineUnavailableLogged) {
                             PAPER_LOG_WARN(Animation,
                                 "Native weapon-fixed hand baseline unavailable hand={} weapon={:016X}; waiting for a valid presented grip",
@@ -1375,10 +1381,7 @@ namespace paper::native_animation_authority
                         (void)clearManualCycleVisualForHand(hand);
                         return ManualCycleHandVisualResult::Failed;
                     }
-                    handRebase.liveBaselineHandInWeapon =
-                        transform_math::composeTransforms(
-                            transform_math::invertTransform(fixedWeaponWorld),
-                            liveHandWorld);
+                    handRebase.liveBaselineHandInWeapon = isLeft ? presented.leftHandInWeapon : presented.rightHandInWeapon;
                 }
 
                 handRebase.nativeBaselineHandInWeapon = handInWeapon;
@@ -2579,6 +2582,29 @@ namespace paper::native_animation_authority
             s_cycleTrace = std::move(trace);
         } catch (const std::exception& error) {
             PAPER_LOG_ERROR(Animation, "Cycle trace initialization failed: {}", error.what());
+        }
+    }
+
+    void capturePresentedHandBaselines(std::uint64_t frameIndex)
+    {
+        s_presentedGripBaselines = {};
+        const auto& identity = s_latestManualCycleRockGripBaselines;
+        auto* weapon = s_sourceAimFrame.weaponNode;
+        if (!weapon || reinterpret_cast<std::uintptr_t>(weapon) != identity.weaponNode ||
+            identity.weaponGenerationKey == 0 || !weapon->parent || !finiteTransform(weapon->world)) return;
+        const auto inverseWeapon = transform_math::invertTransform(weapon->world);
+        auto& captured = s_presentedGripBaselines;
+        captured.weaponNode = identity.weaponNode;
+        captured.weaponGenerationKey = identity.weaponGenerationKey;
+        captured.weaponFormId = identity.weaponFormId;
+        for (const bool left : { false, true }) {
+            rock::api::hands::PresentedHandPoseV1 pose{};
+            if (!rockApiClient().queryPresentedHandPose(left ? rock::api::Hand::Left : rock::api::Hand::Right, pose) ||
+                pose.frameIndex != frameIndex || pose.presentationSequence != frameIndex) continue;
+            const auto local = transform_math::composeTransforms(inverseWeapon, api_transform::toNi(pose.handWorld));
+            if (!finiteTransform(local)) continue;
+            (left ? captured.leftHandInWeapon : captured.rightHandInWeapon) = local;
+            (left ? captured.authoredLeftActive : captured.rightValid) = true;
         }
     }
 

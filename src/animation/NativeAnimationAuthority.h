@@ -146,6 +146,7 @@ namespace paper::native_animation_authority
     [[nodiscard]] bool applyCapturedPose(ApplyPhase phase);
     void initializeCycleTrace();
     void completeRockFrame(std::uint64_t frameIndex);
+    void capturePresentedHandBaselines(std::uint64_t frameIndex);
     void resetTransientState();
 
     [[nodiscard]] bool isHookInstalled();

@@ -239,6 +239,9 @@ namespace paper::native_pose_pipeline
             const rock::api::core::AnimationPhaseContextV1& context,
             PaperNativeHandSolutionV1& solution)
         {
+            if (context.phase != rock::api::core::AnimationPhaseV1::Presented) {
+                return false;
+            }
             const auto rockHand = solution.hand == PaperHandV1::Left ?
                 rock::api::Hand::Left :
                 rock::api::Hand::Right;

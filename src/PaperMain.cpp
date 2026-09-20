@@ -1276,6 +1276,18 @@ namespace
             completePerformanceFrame(*context, enrichmentDemand);
             break;
         }
+        case rock::api::core::AnimationPhaseV1::Presented: {
+            native_animation_authority::capturePresentedHandBaselines(context->frameIndex);
+            if (enrichmentDemand.nativePosePipeline) {
+                const auto authority = currentPaperAnimationAuthority();
+                native_pose_pipeline::publishFrame(*context, s_lastAnimationCompatibilityReason,
+                    authority.localFlags, authority.consumerFlags,
+                    s_handlingStateValid ? s_handlingState.weaponFormId : s_gripState.weaponFormId,
+                    s_handlingStateValid ? s_handlingState.weaponGenerationKey : s_gripState.weaponGenerationKey,
+                    s_runtimeOperational);
+            }
+            break;
+        }
         default:
             break;
         }
