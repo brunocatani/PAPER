@@ -1277,6 +1277,7 @@ namespace
                     s_handlingStateValid ? s_handlingState.weaponFormId : s_gripState.weaponFormId,
                     s_handlingStateValid ? s_handlingState.weaponGenerationKey : s_gripState.weaponGenerationKey,
                     s_runtimeOperational);
+                provider::dispatchEvent(api::PaperEventKindV1::PresentationComplete);
             }
             break;
         }

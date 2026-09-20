@@ -869,6 +869,9 @@ namespace paper::api
         WeaponManipulationReachedRest = 8,
         WeaponManipulationEnded = 9,
         WeaponMotionCandidateCompleted = 10,
+        // Final native-pose readback is published. FrameComplete remains the
+        // control/lease boundary; this observation does not advance leases.
+        PresentationComplete = 11,
     };
 
     struct PaperTransformV1

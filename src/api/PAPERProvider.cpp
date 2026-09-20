@@ -1800,6 +1800,10 @@ namespace paper::provider
             if (!consumer) {
                 continue;
             }
+            if (eventData.kind == PaperEventKindV1::PresentationComplete &&
+                !hasCapability(*consumer, PaperConsumerCapabilityV1::NativePosePipeline)) {
+                continue;
+            }
             const auto manipulationEvent =
                 eventData.kind >=
                     PaperEventKindV1::WeaponManipulationStarted &&
