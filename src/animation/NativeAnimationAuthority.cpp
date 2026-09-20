@@ -103,6 +103,7 @@ namespace paper::native_animation_authority
 
         struct NativeHandPoseCapture
         {
+            RE::NiTransform weaponModel{};
             RE::NiTransform primaryHandInWeapon{};
             RE::NiTransform supportHandInWeapon{};
             frik_visual_authority::FingerLocalTransformOverride primaryFingerLocals{};
@@ -196,8 +197,9 @@ namespace paper::native_animation_authority
         LatchedManualCycleAuthoredSupportGrip
             s_manualCycleAuthoredSupportGripLatch{};
         ControllerAimFrame s_sourceAimFrame{};
-        // Investigation owner: PAPER cycle handoff. Remove after Timberwolf
-        // alignment is qualified. Debug logging must be enabled at GameLoaded.
+        // Investigation owner: PAPER hand participation. Remove after stationary
+        // support and real pump/bolt trajectories are distinguished and qualified.
+        // Debug logging must be enabled at GameLoaded.
         // The game thread owns this session; the bounded worker receives only
         // formatted values and shares PAPER's thread-safe sink. Destruction
         // releases the logger before draining/joining its pool.
@@ -205,9 +207,16 @@ namespace paper::native_animation_authority
         {
             std::shared_ptr<spdlog::details::thread_pool> pool;
             std::shared_ptr<spdlog::async_logger> log;
+            NativeHandPoseCapture nativePose{};
+            std::uint64_t graphSequence{ 0 };
             std::uint64_t fireSequence{ 0 };
+            std::uint64_t reloadStartSequence{ 0 };
+            std::uint64_t reloadEndSequence{ 0 };
+            std::uint64_t weaponGenerationKey{ 0 };
+            std::uint32_t weaponFormId{ 0 };
             bool active{ false };
-            bool published{ false };
+            std::array<bool, 2> published{};
+            std::array<bool, 2> qualified{};
             bool failureReported{ false };
             std::atomic<bool> failed{ false };
             ~CycleTrace()
@@ -719,9 +728,10 @@ namespace paper::native_animation_authority
             }
         }
 
-        [[nodiscard]] bool captureNativeHandPose(BoneTree& source)
+        [[nodiscard]] bool captureNativeHandPose(
+            BoneTree& source, NativeHandPoseCapture& out)
         {
-            s_nativeHandPoseCapture = {};
+            out = {};
             if (!nativeHandCacheMatches(source) &&
                 !rebuildNativeHandBoneCache(source)) {
                 return false;
@@ -774,18 +784,19 @@ namespace paper::native_animation_authority
                     });
             };
 
-            s_nativeHandPoseCapture.primaryHandInWeapon =
+            out.weaponModel = nativeWeaponModel;
+            out.primaryHandInWeapon =
                 resolveHandInWeapon(primaryHandModel.model);
             if (!finiteTransform(
-                    s_nativeHandPoseCapture.primaryHandInWeapon)) {
-                s_nativeHandPoseCapture = {};
+                    out.primaryHandInWeapon)) {
+                out = {};
                 return false;
             }
-            s_nativeHandPoseCapture.primaryHandValid = true;
+            out.primaryHandValid = true;
             captureNativeFingerLocals(
                 source,
                 s_nativeHandBoneCache.primaryFingerIndices,
-                s_nativeHandPoseCapture.primaryFingerLocals);
+                out.primaryFingerLocals);
 
             if (supportHandIndex >= 0 &&
                 supportHandIndex < source.numTransforms) {
@@ -798,17 +809,36 @@ namespace paper::native_animation_authority
                     const RE::NiTransform supportHandInWeapon =
                         resolveHandInWeapon(supportHandModel.model);
                     if (finiteTransform(supportHandInWeapon)) {
-                        s_nativeHandPoseCapture.supportHandInWeapon =
+                        out.supportHandInWeapon =
                             supportHandInWeapon;
-                        s_nativeHandPoseCapture.supportHandValid = true;
+                        out.supportHandValid = true;
                         captureNativeFingerLocals(
                             source,
                             s_nativeHandBoneCache.supportFingerIndices,
-                            s_nativeHandPoseCapture.supportFingerLocals);
+                            out.supportFingerLocals);
                     }
                 }
             }
             return true;
+        }
+
+        void captureCycleTracePose()
+        {
+            if (!s_cycleTrace || s_cycleTrace->failed.load(std::memory_order_relaxed) ||
+                !logger::instance->should_log(spdlog::level::debug) ||
+                !s_runtimeEnabled.load(std::memory_order_acquire) || !claimOrValidateThread()) {
+                return;
+            }
+            auto& trace = *s_cycleTrace;
+            ++trace.graphSequence;
+            trace.nativePose = {};
+            if (s_captureValid.load(std::memory_order_acquire)) {
+                trace.nativePose = s_nativeHandPoseCapture;
+            } else if (auto* source = f4vr::getFirstPersonBoneTree(); validTree(source)) {
+                // Read idle graph locals too: an event's first sample may already
+                // contain recoil. This diagnostic copy never grants pose authority.
+                (void)captureNativeHandPose(*source, trace.nativePose);
+            }
         }
 
         void captureNativePose()
@@ -866,7 +896,7 @@ namespace paper::native_animation_authority
                 (requestedFlags & native_animation_authority_policy::kWeapon) == 0;
             if (handOnlyAuthority) {
                 if ((requestedFlags & native_animation_authority_policy::kArms) == 0 ||
-                    !captureNativeHandPose(*source)) {
+                    !captureNativeHandPose(*source, s_nativeHandPoseCapture)) {
                     s_nativeHandPoseCapture = {};
                     invalidateCapture();
                     return;
@@ -874,7 +904,7 @@ namespace paper::native_animation_authority
             } else {
                 // Full reload authority does not require this derived hand pose
                 // for application, but retain it for Paper API consumers.
-                (void)captureNativeHandPose(*source);
+                (void)captureNativeHandPose(*source, s_nativeHandPoseCapture);
             }
 
             s_capturedFlags.store(requestedFlags, std::memory_order_release);
@@ -2204,8 +2234,18 @@ namespace paper::native_animation_authority
             s_captureFault.store(true, std::memory_order_release);
             invalidateCapture();
         }
+        __try {
+            captureCycleTracePose();
+        } __except (EXCEPTION_EXECUTE_HANDLER) {
+            // A diagnostic read failure must not invalidate the normal pose.
+            if (s_cycleTrace) {
+                s_cycleTrace->nativePose = {};
+                s_cycleTrace->failed.store(true, std::memory_order_relaxed);
+            }
+        }
 #else
         captureNativePose();
+        captureCycleTracePose();
 #endif
     }
 
@@ -2534,7 +2574,7 @@ namespace paper::native_animation_authority
             trace->log->set_error_handler([state = trace.get()](const std::string&) {
                 state->failed.store(true, std::memory_order_relaxed);
             });
-            trace->log->info("CYCLE_TRACE start version=1 pid={} build={} {} form=1700206C stride=8 phase=complete-before-final-presentation matrices=Ni-stored-rows",
+            trace->log->info("CYCLE_TRACE start version=2 pid={} build={} {} weapons=all hands=both activeStride=3 idleStride=90 phase=complete-before-final-presentation matrices=Ni-stored-rows",
                 GetCurrentProcessId(), __DATE__, __TIME__);
             s_cycleTrace = std::move(trace);
         } catch (const std::exception& error) {
@@ -2557,46 +2597,78 @@ namespace paper::native_animation_authority
             clearManualCycleVisualAuthorityPreservingWeapon();
         }
         if (s_cycleTrace && logger::instance->should_log(spdlog::level::debug) &&
-            !s_cycleTrace->failed.load(std::memory_order_relaxed) &&
-            s_manualCycleRockGripBaselines.weaponFormId == 0x1700206C) {
+            !s_cycleTrace->failed.load(std::memory_order_relaxed)) {
             try {
                 DebugAuthoritySnapshot sample{};
                 if (queryDebugAuthoritySnapshot(sample)) {
                     auto& trace = *s_cycleTrace;
-                    const auto& hand = sample.rightHand;
-                    const bool edge = trace.active != sample.runtime.localManualCycleLeaseActive ||
-                        trace.published != hand.visualAuthorityPublished ||
-                        trace.fireSequence != sample.runtime.fireSequence;
-                    trace.active = sample.runtime.localManualCycleLeaseActive;
-                    trace.published = hand.visualAuthorityPublished;
+                    const bool active = sample.runtime.effectiveFlags != 0;
+                    const std::array published{ sample.rightHand.visualAuthorityPublished,
+                        sample.leftHand.visualAuthorityPublished };
+                    const std::array qualified{ sample.rightHand.motionQualified,
+                        sample.leftHand.motionQualified };
+                    const bool edge = trace.active != active || trace.published != published ||
+                        trace.qualified != qualified || trace.fireSequence != sample.runtime.fireSequence ||
+                        trace.reloadStartSequence != sample.runtime.reloadStartSequence ||
+                        trace.reloadEndSequence != sample.runtime.reloadEndSequence ||
+                        trace.weaponFormId != s_manualCycleRockGripBaselines.weaponFormId ||
+                        trace.weaponGenerationKey != s_manualCycleRockGripBaselines.weaponGenerationKey;
+                    trace.active = active;
+                    trace.published = published;
+                    trace.qualified = qualified;
                     trace.fireSequence = sample.runtime.fireSequence;
-                    if (edge || frameIndex % 8 == 0) {
-                        trace.log->debug("CYCLE_TRACE frame={} fire={} weapon={:016X} active={} support={} edge={} capture={} ready={} applied={} qualified={} published={} motion=({:.5f}gu,{:.5f}deg) overruns={}",
-                            frameIndex, trace.fireSequence, s_manualCycleRockGripBaselines.weaponGenerationKey,
-                            trace.active, s_manualCycleRockGripBaselines.authoredLeftActive, edge,
+                    trace.reloadStartSequence = sample.runtime.reloadStartSequence;
+                    trace.reloadEndSequence = sample.runtime.reloadEndSequence;
+                    trace.weaponFormId = s_manualCycleRockGripBaselines.weaponFormId;
+                    trace.weaponGenerationKey = s_manualCycleRockGripBaselines.weaponGenerationKey;
+                    if (edge || (trace.weaponFormId != 0 && frameIndex % (active ? 3 : 90) == 0)) {
+                        trace.log->debug("CYCLE_TRACE frame={} graph={} fire={} reloadStart={} reloadEnd={} weapon={:08X}/{:016X} active={} cycle={} reload={} support={} edge={} capture={} ready={} applied={} overruns={}",
+                            frameIndex, trace.graphSequence, trace.fireSequence,
+                            trace.reloadStartSequence, trace.reloadEndSequence,
+                            trace.weaponFormId, trace.weaponGenerationKey,
+                            trace.active, sample.runtime.localManualCycleLeaseActive,
+                            sample.partialReloadExpected, s_manualCycleRockGripBaselines.authoredLeftActive, edge,
                             sample.frameCaptureSequence, sample.frameCaptureReady,
-                            sample.afterRockApplicationSucceeded, hand.motionQualified, trace.published,
-                            hand.motionTranslationGameUnits, hand.motionRotationDegrees,
+                            sample.afterRockApplicationSucceeded,
                             trace.pool->overrun_counter());
-                        const auto pose = [&](const char* label, bool valid, const RE::NiTransform& value) {
+                        const auto pose = [&](const char* hand, const char* label, bool valid, const RE::NiTransform& value) {
                             const auto& t = value.translate;
                             const auto& r = value.rotate.entry;
-                            trace.log->debug("CYCLE_TRACE pose frame={} label={} valid={} T=({:.5f},{:.5f},{:.5f}) S={:.6f} R=({:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f})",
-                                frameIndex, label, valid && finiteTransform(value), t.x, t.y, t.z, value.scale,
+                            trace.log->debug("CYCLE_TRACE pose frame={} hand={} label={} valid={} T=({:.5f},{:.5f},{:.5f}) S={:.6f} R=({:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f};{:.7f},{:.7f},{:.7f})",
+                                frameIndex, hand, label, valid && finiteTransform(value), t.x, t.y, t.z, value.scale,
                                 r[0][0], r[0][1], r[0][2], r[1][0], r[1][1], r[1][2], r[2][0], r[2][1], r[2][2]);
                         };
-                        pose("rock-right-in-weapon", s_manualCycleRockGripBaselines.rightValid, s_manualCycleRockGripBaselines.rightHandInWeapon);
-                        pose("live-baseline", hand.liveBaselineValid, hand.liveBaselineHandInWeapon);
-                        pose("native-baseline", hand.nativeBaselineValid, hand.nativeBaselineHandInWeapon);
-                        pose("native-current", sample.frameCaptureReady && hand.nativeHandValid, hand.nativeHandInWeapon);
-                        pose("resolved-in-weapon", sample.frameCaptureReady && hand.resolvedHandInWeaponValid, hand.resolvedHandInWeapon);
-                        pose("submitted-world", hand.visualAuthorityPublished && hand.resolvedHandWorldValid, hand.resolvedHandWorld);
-                        trace.log->flush();
+                        pose("weapon", "native-model", trace.nativePose.primaryHandValid, trace.nativePose.weaponModel);
+                        for (std::size_t index = 0; index < 2; ++index) {
+                            const bool left = index == 1;
+                            const char* name = left ? "left" : "right";
+                            const auto& hand = left ? sample.leftHand : sample.rightHand;
+                            trace.log->debug("CYCLE_TRACE hand frame={} hand={} mode={} qualified={} published={} motion=({:.5f}gu,{:.5f}deg)",
+                                frameIndex, name, static_cast<unsigned>(hand.targetMode),
+                                hand.motionQualified, hand.visualAuthorityPublished,
+                                hand.motionTranslationGameUnits, hand.motionRotationDegrees);
+                            pose(name, "native-current", left ? trace.nativePose.supportHandValid : trace.nativePose.primaryHandValid,
+                                left ? trace.nativePose.supportHandInWeapon : trace.nativePose.primaryHandInWeapon);
+                            if (active || edge) {
+                                pose(name, "native-baseline", hand.nativeBaselineValid, hand.nativeBaselineHandInWeapon);
+                                pose(name, "live-baseline", hand.liveBaselineValid, hand.liveBaselineHandInWeapon);
+                                pose(name, "resolved-in-weapon", sample.frameCaptureReady && hand.resolvedHandInWeaponValid, hand.resolvedHandInWeapon);
+                                pose(name, "submitted-world", hand.visualAuthorityPublished && hand.resolvedHandWorldValid, hand.resolvedHandWorld);
+                            }
+                        }
+                        if (edge) {
+                            trace.log->flush();
+                        }
                     }
                 }
             } catch (...) {
                 s_cycleTrace->failed.store(true, std::memory_order_relaxed);
             }
+        }
+        if (s_cycleTrace) {
+            // Do not label a previous graph sample as current after a missed
+            // callback, load, or skeleton transition.
+            s_cycleTrace->nativePose = {};
         }
         if (s_frameCaptureReady) {
             s_lastCompletedCaptureSequence = s_frameCaptureSequence;
