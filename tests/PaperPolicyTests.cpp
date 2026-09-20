@@ -511,11 +511,22 @@ int main()
     // order must not change the firing role or match an unrelated weapon.
     constexpr std::uint32_t m16 = 0x2A01EC2E;
     constexpr std::uint32_t timberwolf = 0x3400206C;
-    static_assert(resolveFireHandParticipants(m16, m16, timberwolf) == 0);
-    static_assert(resolveFireHandParticipants(timberwolf, m16, timberwolf) == kPrimaryParticipant);
-    static_assert(resolveFireHandParticipants(0x1100206C, m16, timberwolf) == kBothParticipants);
-    static_assert(resolveFireHandParticipants(0, 0, 0) == 0);
-    static_assert(resolveFireHandParticipants(0x00123456, 0, 0) == kBothParticipants);
+    constexpr std::uint32_t handmade = 0x07033B60;
+    static_assert(resolveFireHandParticipants(m16, m16, timberwolf, handmade) == 0);
+    static_assert(resolveFireHandParticipants(timberwolf, m16, timberwolf, handmade) == kPrimaryParticipant);
+    static_assert(resolveFireHandParticipants(handmade, m16, timberwolf, handmade) == 0);
+    static_assert(resolveFireHandParticipants(0x1100206C, m16, timberwolf, handmade) == kBothParticipants);
+    static_assert(resolveFireHandParticipants(0x11033B60, m16, timberwolf, handmade) == kBothParticipants);
+    static_assert(resolveFireHandParticipants(0, 0, 0, 0) == 0);
+    static_assert(resolveFireHandParticipants(0x00123456, 0, 0, 0) == kBothParticipants);
+    // The observed Handmade running pose qualifies the motion detector, but
+    // the fire role must prevent that pose from acquiring a cycle lease.
+    static_assert(updateManualCycleHandMotionQualification(
+        false, ManualCycleHandMotionSample{ 0.98293f, 0.46478f }));
+    static_assert(!shouldPublishWeaponFixedSupportHand(false, true, false,
+        resolveFireHandParticipants(handmade, m16, timberwolf, handmade)));
+    static_assert(shouldPublishWeaponFixedSupportHand(true, false, false,
+        resolveFireHandParticipants(handmade, m16, timberwolf, handmade)));
     // Cycle eligibility and grip topology are not inputs to a hand's authored
     // role. A free pumping hand still participates; a static support does not.
     static_assert(!shouldPublishWeaponFixedSupportHand(false, true, false, kPrimaryParticipant));

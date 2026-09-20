@@ -250,6 +250,7 @@ namespace paper::native_animation_authority
         // indices. The fire hook copies the selected role into its own lease.
         std::atomic<std::uint32_t> s_m16FormId{ 0 };
         std::atomic<std::uint32_t> s_timberwolfFormId{ 0 };
+        std::atomic<std::uint32_t> s_handmadeFormId{ 0 };
         std::atomic<std::uint32_t> s_cycleHandParticipants{
             native_animation_authority_policy::kBothParticipants };
         std::atomic<bool> s_captureValid{ false };
@@ -1051,7 +1052,8 @@ namespace paper::native_animation_authority
 
             const auto participants = native_animation_authority_policy::resolveFireHandParticipants(
                 weapon->formID, s_m16FormId.load(std::memory_order_acquire),
-                s_timberwolfFormId.load(std::memory_order_acquire));
+                s_timberwolfFormId.load(std::memory_order_acquire),
+                s_handmadeFormId.load(std::memory_order_acquire));
             s_cycleHandParticipants.store(participants, std::memory_order_release);
             if (participants == 0) {
                 // The fire observation above remains available. Recoil and
@@ -2602,11 +2604,16 @@ namespace paper::native_animation_authority
         // operated. Resolve the owning records, not localized display names.
         const auto* m16 = data ? data->LookupForm<RE::TESObjectWEAP>(0x1EC2E, "AK_AR15FO4.esp") : nullptr;
         const auto* timberwolf = data ? data->LookupForm<RE::TESObjectWEAP>(0x206C, "L118A2.esp") : nullptr;
+        // 2026-09-20 capture: Handmade has no hand-operated fire action. Its
+        // running support pose crossed the motion gate in the post-shot lease.
+        const auto* handmade = data ? data->LookupForm<RE::TESObjectWEAP>(0x33B60, "DLCNukaWorld.esm") : nullptr;
         s_m16FormId.store(m16 ? m16->formID : 0, std::memory_order_release);
         s_timberwolfFormId.store(timberwolf ? timberwolf->formID : 0, std::memory_order_release);
+        s_handmadeFormId.store(handmade ? handmade->formID : 0, std::memory_order_release);
         PAPER_LOG_INFO(Animation,
-            "Fire hand participation initialized: M16={:08X} hands=none Timberwolf={:08X} hands=primary; reload and other weapon motion remain independent",
-            m16 ? m16->formID : 0, timberwolf ? timberwolf->formID : 0);
+            "Fire hand participation initialized: M16={:08X} hands=none Timberwolf={:08X} hands=primary Handmade={:08X} hands=none; reload and other weapon motion remain independent",
+            m16 ? m16->formID : 0, timberwolf ? timberwolf->formID : 0,
+            handmade ? handmade->formID : 0);
     }
 
     void initializeCycleTrace()
