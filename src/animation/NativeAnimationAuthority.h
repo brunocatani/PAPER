@@ -47,6 +47,7 @@ namespace paper::native_animation_authority
     struct ManualCycleRockGripSnapshot
     {
         std::uintptr_t weaponNode{ 0 };
+        // Canonical firing seat only; never the current physical grab position.
         RE::NiTransform rightHandInWeapon{};
         RE::NiTransform leftSupportHandInWeapon{};
         std::uint64_t weaponGenerationKey{ 0 };

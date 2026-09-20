@@ -923,6 +923,25 @@ int main()
     static_assert(corrected.scale == 15.0f);
     static_assert(corrected.translate == 120.0f);
 
+    // A cycle uses the weapon's calibrated seat, regardless of where a physical
+    // hand is holding a braced weapon. Missing calibration preserves the native
+    // weapon-space trajectory rather than borrowing a displaced presented wrist.
+    constexpr AffineTransform nativePrimaryEntry{ 1.0f, 5.0f };
+    constexpr AffineTransform nativePrimaryAction{ 1.0f, 9.0f };
+    constexpr AffineTransform canonicalPrimarySeat{ 1.0f, 12.0f };
+    constexpr auto calibratedBaseline = resolvePrimaryAnimationBaseline(
+        true, canonicalPrimarySeat, nativePrimaryEntry);
+    constexpr auto calibratedAction = compose(resolveControllerAnchoredPoseCorrection(
+        calibratedBaseline, nativePrimaryEntry, nativePrimaryAction, compose, invert), nativePrimaryAction);
+    static_assert(calibratedAction.translate == 16.0f);
+    static_assert(compose(AffineTransform{ 2.0f, 100.0f }, calibratedAction).translate == 132.0f);
+    constexpr auto nativeBaseline = resolvePrimaryAnimationBaseline(
+        false, AffineTransform{ 123.0f, 987.0f }, nativePrimaryEntry);
+    constexpr auto uncalibratedAction = compose(resolveControllerAnchoredPoseCorrection(
+        nativeBaseline, nativePrimaryEntry, nativePrimaryAction, compose, invert), nativePrimaryAction);
+    static_assert(uncalibratedAction.translate == nativePrimaryAction.translate);
+    static_assert(uncalibratedAction.scale == nativePrimaryAction.scale);
+
     constexpr auto sharedTargetCorrection =
         resolvePoseCorrectionToWorldTarget(
             AffineTransform{ 5.0f, 100.0f },

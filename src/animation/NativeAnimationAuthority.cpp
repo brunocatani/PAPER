@@ -1358,7 +1358,11 @@ namespace paper::native_animation_authority
                     s_manualCycleRockGripBaselines.rightHandInWeapon;
                 const bool useRockBaseline = rockBaselineValid &&
                     finiteTransform(rockBaselineHandInWeapon);
-                if (useRockBaseline) {
+                if (hand == frik_visual_authority::Hand::Right) {
+                    handRebase.liveBaselineHandInWeapon =
+                        native_animation_authority_policy::resolvePrimaryAnimationBaseline(
+                            useRockBaseline, rockBaselineHandInWeapon, handInWeapon);
+                } else if (useRockBaseline) {
                     // Use ROCK's exact requested grip target, not the solved
                     // hand-bone readback. The latter retains a small hFRIK IK
                     // residual that made cycle motion sit behind the handle.
@@ -1400,7 +1404,8 @@ namespace paper::native_animation_authority
                     PAPER_LOG_INFO(Animation,
                         "Native reload grip baseline hand={} source={} weapon={:016X} capture={} liveT=({:.3f},{:.3f},{:.3f}) nativeT=({:.3f},{:.3f},{:.3f})",
                         hand == frik_visual_authority::Hand::Left ? "left" : "right",
-                        useRockBaseline ? "rock-grip-target" : "presented-hand",
+                        useRockBaseline ? "rock-canonical-grip" :
+                            (hand == frik_visual_authority::Hand::Right ? "native-weapon-frame" : "presented-hand"),
                         s_manualCycleRockGripBaselines.weaponGenerationKey,
                         s_frameCaptureSequence,
                         live.x, live.y, live.z,
@@ -1455,9 +1460,9 @@ namespace paper::native_animation_authority
             RE::NiTransform targetHandInWeapon = handInWeapon;
             if (targetMode == native_animation_authority_policy::
                                   WeaponFixedHandTargetMode::LiveGripDelta) {
-                // Manual-cycle hands and the partial-reload primary keep their
-                // exact live grip as the neutral frame. Only Bethesda's delta
-                // from the first native sample is applied to that grip.
+                // The primary uses its canonical firing seat; an authored
+                // support grip keeps its retained seat. Apply Bethesda's delta
+                // without carrying an arbitrary physical primary grab offset.
                 const RE::NiTransform handInWeaponCorrection =
                     native_animation_authority_policy::
                         resolveControllerAnchoredPoseCorrection(

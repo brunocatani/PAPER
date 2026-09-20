@@ -699,20 +699,12 @@ namespace
         snapshot.weaponFormId = s_gripStateValid ? s_gripState.weaponFormId : 0;
         snapshot.weaponGenerationKey =
             s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
-        if (s_gripStateValid && hasGripFlag(
-                s_gripState.flags,
-                rock::api::weapon::EquippedWeaponGripStateFlagV1::RightHandInWeaponValid)) {
-            snapshot.rightHandInWeapon =
-                api_transform::toNi(s_gripState.rightHandInWeapon);
-            snapshot.rightValid = true;
-        }
-        if (!snapshot.rightValid && s_gripStateValid &&
+        if (s_gripStateValid &&
             weaponIdentityCoherent && !gripFiringHandIsLeft &&
             !handlingFiringHandIsLeft && !partCarryActive) {
-            // The paired grip query is limited to the full two-hand solver.
-            // One-hand and visual-only support grips use ROCK's canonical
-            // firing seat. Its requested pose is current even though ROCK
-            // presents deferred hand claims after PAPER's AfterRock phase.
+            // Animation belongs to the weapon's canonical firing seat. A paired
+            // grip snapshot may instead describe an arbitrary physical grab,
+            // especially while the weapon is resting on its bipod.
             rock::api::weapon::AuthoredGripPoseV1 authored{};
             constexpr auto requiredFlags =
                 static_cast<std::uint32_t>(

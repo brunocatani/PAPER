@@ -93,6 +93,16 @@ namespace paper::native_animation_authority_policy
         NativeWeaponRelative,
     };
 
+    // Without a calibrated firing seat, the native trajectory is already in
+    // Weapon space. A controller or presented wrist is never a model origin.
+    template <class Transform>
+    [[nodiscard]] constexpr Transform resolvePrimaryAnimationBaseline(
+        const bool canonicalValid, const Transform& canonical,
+        const Transform& nativeAtEntry)
+    {
+        return canonicalValid ? canonical : nativeAtEntry;
+    }
+
     // The vanilla SMG's model registration is absent from native animation
     // coordinates. Its stationary primary baseline provides the translation
     // into ROCK's corrected model frame. Do not use an arbitrary support grab
