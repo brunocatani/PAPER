@@ -2,6 +2,7 @@
 
 #include "PaperLog.h"
 #include "support/NativeMemory.h"
+#include "support/AcquiredAnimationGraphManager.h"
 #include "support/TransformMath.h"
 
 #include <Windows.h>
@@ -388,6 +389,10 @@ namespace paper::clip_telemetry
             std::uint32_t formId{ 0 };
             std::uint32_t samplesUsed{ 0 };
             std::uint32_t eventsRemaining{ 512 };
+            std::uint64_t hookCallsAtTarget{ 0 };
+            std::uint32_t activationMatches{ 0 };
+            std::uint32_t unmatchedContextsLogged{ 0 };
+            std::uint32_t framesSinceSummary{ 0 };
             bool faulted{ false };
         };
         HandActionTrace s_handActionTrace;
@@ -1044,8 +1049,8 @@ namespace paper::clip_telemetry
             if (!sampler) return unavailable("sampler");
             alignas(16) std::array<HkQsTransform, kSampleBufferTracks> sampled{};
             auto& trace = s_handActionTrace;
-            trace.log->debug("HAND_ACTION definition weapon={:08X}/{:016X} binding={:X} clip='{}' duration={:.6f} samples={} mappedTargets={}/{}/{}",
-                trace.formId, trace.generation, binding, clipName, duration, sampleCount,
+            trace.log->debug("HAND_ACTION definition weapon={:08X}/{:016X} binding={:X} skeleton={:X} bones={} clip='{}' duration={:.6f} samples={} mappedTargets={}/{}/{}",
+                trace.formId, trace.generation, binding, skeleton, boneCount, clipName, duration, sampleCount,
                 chains[0].targetAnimated, chains[1].targetAnimated, chains[2].targetAnimated);
             for (std::uint32_t step = 0; step < sampleCount; ++step) {
                 const float time = duration * static_cast<float>(step) / (sampleCount - 1);
@@ -1662,7 +1667,16 @@ namespace paper::clip_telemetry
                     if (target != 0 && target == candidate) { character = candidate; break; }
                 }
             }
-            if (!character) return;
+            if (!character) {
+                if (trace.unmatchedContextsLogged < 3) {
+                    ++trace.unmatchedContextsLogged;
+                    const auto* slots = reinterpret_cast<const std::uintptr_t*>(context);
+                    trace.log->debug("HAND_ACTION unmatched weapon={:08X} clip={:X} context=[{:X},{:X},{:X},{:X}]",
+                        trace.formId, clip, slots[0], slots[1], slots[2], slots[3]);
+                }
+                return;
+            }
+            ++trace.activationMatches;
             --trace.eventsRemaining;
             std::array<char, animation_evidence::kAnimationPathCapacity> name{};
             copyHkStringPtr(*reinterpret_cast<const std::uintptr_t*>(clip + kClipGeneratorAnimationNameOffset),
@@ -1673,8 +1687,8 @@ namespace paper::clip_telemetry
                 return;
             }
             const auto binding = *reinterpret_cast<const std::uintptr_t*>(wrapper + kLoadedBindingWrapperBindingOffset);
-            trace.log->debug("HAND_ACTION activate weapon={:08X}/{:016X} clip={:X} binding={:X} name='{}' t={:.6f} crop=({:.6f},{:.6f})",
-                trace.formId, trace.generation, clip, binding, name.data(),
+            trace.log->debug("HAND_ACTION activate weapon={:08X}/{:016X} character={:X} clip={:X} binding={:X} name='{}' t={:.6f} crop=({:.6f},{:.6f})",
+                trace.formId, trace.generation, character, clip, binding, name.data(),
                 *reinterpret_cast<const float*>(clip + kClipGeneratorLocalTimeOffset),
                 *reinterpret_cast<const float*>(clip + kClipGeneratorCropStartOffset),
                 *reinterpret_cast<const float*>(clip + kClipGeneratorCropEndOffset));
@@ -1967,37 +1981,55 @@ namespace paper::clip_telemetry
 
     namespace
     {
-        bool readHandTraceCharacters(const std::uint32_t formId,
+        bool readHandTraceCharacters(const std::uint32_t formId, const void* actorManager,
             std::array<std::uintptr_t, kMaxHookCharacters>& characters)
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             auto* biped = player ? player->GetBiped(true).get() : nullptr;
-            if (!biped) return false;
             std::size_t count = 0;
+            const auto appendManager = [&](const void* manager) {
+                GraphArrayView graphs{};
+                if (!resolveGraphArray(reinterpret_cast<std::uintptr_t>(manager), graphs)) return;
+                for (std::uint32_t i = 0; i < graphs.capacity && count < characters.size(); ++i) {
+                    const auto graph = graphAtIndex(graphs, i);
+                    if (graph == 0) continue;
+                    const auto character = graph + kGraphCharacterOffset;
+                    if (std::find(characters.begin(), characters.begin() + count, character) == characters.begin() + count) {
+                        characters[count++] = character;
+                    }
+                }
+            };
+            // The player graph owns playing arm clips. Equipped biped holders
+            // alone can expose a resource graph that never activates them.
+            appendManager(actorManager);
             for (auto slot = static_cast<std::uint32_t>(RE::BIPED_OBJECT::kWeaponHand);
-                 slot < static_cast<std::uint32_t>(RE::BIPED_OBJECT::kTotal); ++slot) {
+                 biped && slot < static_cast<std::uint32_t>(RE::BIPED_OBJECT::kTotal); ++slot) {
                 const auto& object = biped->object[slot];
                 if (!object.parent.object || object.parent.object->GetFormID() != formId ||
                     !object.objectGraphManager) continue;
-                const auto manager = managerFromWeaponHolder(object.objectGraphManager.get());
-                GraphArrayView graphs{};
-                if (!resolveGraphArray(reinterpret_cast<std::uintptr_t>(manager), graphs)) continue;
-                for (std::uint32_t i = 0; i < graphs.capacity && count < characters.size(); ++i) {
-                    const auto graph = graphAtIndex(graphs, i);
-                    if (graph != 0) characters[count++] = graph + kGraphCharacterOffset;
-                }
+                appendManager(managerFromWeaponHolder(object.objectGraphManager.get()));
             }
             return count != 0;
         }
 
-        bool guardedReadHandTraceCharacters(const std::uint32_t formId,
+        bool guardedReadHandTraceCharacters(const std::uint32_t formId, const void* actorManager,
             std::array<std::uintptr_t, kMaxHookCharacters>& characters)
         {
             __try {
-                return readHandTraceCharacters(formId, characters);
+                return readHandTraceCharacters(formId, actorManager, characters);
             } __except (EXCEPTION_EXECUTE_HANDLER) {
                 return false;
             }
+        }
+
+        void logHandTraceSummary(const char* reason)
+        {
+            const auto& trace = s_handActionTrace;
+            if (!trace.log) return;
+            trace.log->debug("HAND_ACTION summary reason={} weapon={:08X}/{:016X} hookCalls={} activationMatches={} definitions={} remainingEvents={} faulted={}",
+                reason, trace.formId, trace.generation,
+                s_hookCalls.load(std::memory_order_relaxed) - trace.hookCallsAtTarget,
+                trace.activationMatches, trace.samplesUsed, trace.eventsRemaining, trace.faulted);
         }
     }
 
@@ -2007,14 +2039,25 @@ namespace paper::clip_telemetry
     {
         std::array<std::uintptr_t, kMaxHookCharacters> characters{};
         const bool requested = log && weaponFormId != 0 && weaponNode != 0;
-        const bool available = requested && guardedReadHandTraceCharacters(weaponFormId, characters);
+        // Own the acquired reference outside the guarded raw graph walk so a
+        // failed read still releases it through the same RAII path.
+        native_animation_graph::AcquiredGraphManager actorManager{
+            requested ? RE::PlayerCharacter::GetSingleton() : nullptr };
+        const bool available = requested && guardedReadHandTraceCharacters(weaponFormId, actorManager.get(), characters);
         if (!available) characters = {};
         const bool hooksReady = available && ensureHooksInstalled();
         std::scoped_lock lock(s_hookMutex);
         auto& trace = s_handActionTrace;
-        if (!requested) { trace = {}; return; }
+        if (!requested) { logHandTraceSummary("cleared"); trace = {}; return; }
         if (trace.formId == weaponFormId && trace.generation == weaponGenerationKey &&
-            trace.weaponNode == weaponNode && trace.characters == characters && trace.log == log) return;
+            trace.weaponNode == weaponNode && trace.characters == characters && trace.log == log) {
+            if (++trace.framesSinceSummary >= 180) {
+                logHandTraceSummary("periodic");
+                trace.framesSinceSummary = 0;
+            }
+            return;
+        }
+        logHandTraceSummary("target-changed");
         trace = {};
         trace.log = log;
         trace.formId = weaponFormId;
@@ -2022,10 +2065,14 @@ namespace paper::clip_telemetry
         trace.weaponNode = weaponNode;
         trace.characters = characters;
         trace.faulted = !hooksReady;
+        trace.hookCallsAtTarget = s_hookCalls.load(std::memory_order_relaxed);
         s_markerLogBudget = kMarkerLogBudgetPerGeneration;
         trace.log->debug("HAND_ACTION target weapon={:08X}/{:016X} scene={:X} characters={} hooks={} maxDefinitions=32 samplesPerDefinition=33 maxLifecycleEvents=512",
             weaponFormId, weaponGenerationKey, weaponNode,
             std::count_if(characters.begin(), characters.end(), [](const auto value) { return value != 0; }), hooksReady);
+        for (std::size_t i = 0; i < characters.size(); ++i) {
+            if (characters[i] != 0) trace.log->debug("HAND_ACTION character weapon={:08X} slot={} identity={:X}", weaponFormId, i, characters[i]);
+        }
     }
 
     const void* managerFromWeaponHolder(const void* weaponGraphHolder)
