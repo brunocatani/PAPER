@@ -49,7 +49,10 @@ namespace paper::native_animation_authority
         constexpr float kManualCycleWatchdogPaddingSeconds = 0.75f;
         constexpr float kManualCycleMinimumWatchdogSeconds = 1.0f;
         constexpr float kManualCycleMaximumWatchdogSeconds = 12.0f;
-        constexpr int kManualCycleVisualAuthorityPriority = 110;
+        // ROCK's collision hand layer is 110. Animation already uses the
+        // resolved weapon and must outrank that layer, not tie its newly
+        // registered claim (FRIK preserves registration order on republish).
+        constexpr int kManualCycleVisualAuthorityPriority = 120;
         constexpr const char* kManualCycleVisualAuthorityTag =
             "PAPER_NativeManualCycle";
         constexpr std::uint32_t kImplementedFlags = native_animation_authority_policy::kReloadPose;
