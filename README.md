@@ -21,7 +21,7 @@ PAPER restores visible reload and weapon-cycling animations in Fallout 4 VR. Wor
 - Fallout 4 VR.
 - [F4SEVR](https://f4se.silverlock.org/).
 - [ROCK](https://www.nexusmods.com/fallout4/mods/108881) and its requirements.
-- [FRIK v78.2 or newer](https://www.nexusmods.com/fallout4/mods/53464).
+- [FRIK 0.79 / API 2.3 for current source](https://www.nexusmods.com/fallout4/mods/53464).
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 
 ## Installation
@@ -63,7 +63,7 @@ The plugin log is at `Documents/My Games/Fallout4VR/F4SE/PAPER.log`. When report
 
 ## For developers
 
-PAPER consumes ROCK's animation phases and exposes reload stages, animation observations, and weapon motion through its public API. The [RPS SDK](https://github.com/brunocatani/RPS_SDK) contains integration documentation and examples; this repository also includes the [PAPER API header](SDK/PAPER/include/PAPERApi.h).
+PAPER consumes ROCK's modular Core animation phases and feature interfaces. Its own 50-call V1 API exposes reload stages, animation observations and weapon motion. Final-pose consumers use PresentationComplete with NativePosePipeline plus FrameCallbacks; FrameComplete remains the control/lease boundary. The [RPS SDK](https://github.com/brunocatani/RPS_SDK) contains integration documentation and examples; this repository also includes the [PAPER API header](SDK/PAPER/include/PAPERApi.h).
 
 <details>
 <summary>Building from source</summary>
