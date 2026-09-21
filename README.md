@@ -20,7 +20,7 @@ PAPER restores visible reload and weapon-cycling animations in Fallout 4 VR. Wor
 
 - Fallout 4 VR.
 - [F4SEVR](https://f4se.silverlock.org/).
-- [ROCK](https://www.nexusmods.com/fallout4/mods/108881) and its requirements.
+- [ROCK 0.9](https://www.nexusmods.com/fallout4/mods/108881) with its modular APIs and requirements.
 - [FRIK 0.79 / API 2.3 for current source](https://www.nexusmods.com/fallout4/mods/53464).
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 
@@ -30,7 +30,7 @@ PAPER restores visible reload and weapon-cycling animations in Fallout 4 VR. Wor
 2. Install the archive through your mod manager. The plugin must resolve to `Data/F4SE/Plugins/PAPER.dll`.
 3. Enable the mod and launch Fallout 4 VR through F4SEVR.
 
-PAPER creates its configuration on first use. The GitHub source archive is for development; use the Nexus download for installation.
+PAPER creates its configuration on first use. Install the `.7z` asset from [GitHub Releases](https://github.com/brunocatani/PAPER/releases/latest) or the Nexus download. GitHub's automatic source archives are for development.
 
 ## Animation compatibility
 
