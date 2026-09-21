@@ -1080,6 +1080,7 @@ namespace
             break;
         }
         case rock::api::core::AnimationPhaseV1::BeforeRock: {
+            tactical_reload_bridge::prepareFrame();
             provider::beginFrame(context->frameIndex);
 
             if (operational &&
@@ -1370,6 +1371,7 @@ namespace
 
         if (message->type == F4SE::MessagingInterface::kPostLoadGame ||
             message->type == F4SE::MessagingInterface::kNewGame) {
+            s_gameLoaded.store(false, std::memory_order_release);
             resetSession();
             (void)g_config.reload();
             weapon_motion::configureCache(g_config);

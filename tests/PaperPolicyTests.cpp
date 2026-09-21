@@ -1,5 +1,6 @@
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "compat/TacticalReloadBridgePolicy.h"
+#include "compat/TacticalReloadSession.h"
 #include "development/DevelopmentCapturePolicy.h"
 #include "reload_observation/ReloadObservationPolicy.h"
 #include "reload_observation/WeaponClassificationPolicy.h"
@@ -9,6 +10,18 @@
 
 int main()
 {
+    using paper::tactical_reload_bridge::SessionAction;
+    paper::tactical_reload_bridge::SessionRequests sessions;
+    sessions.request(SessionAction::Initialize);
+    if (sessions.owner()!=0 || !sessions.pending()) return 30;
+    if (!sessions.beginFrame(22) || sessions.owner()!=22) return 31;
+    if (sessions.take()!=SessionAction::Initialize || sessions.pending()) return 32;
+    sessions.request(SessionAction::Reset);
+    sessions.request(SessionAction::Initialize); // The new save supersedes departed-save cleanup.
+    if (sessions.take()!=SessionAction::Initialize) return 33;
+    sessions.request(SessionAction::Reset); // A request during processing remains pending.
+    if (!sessions.pending() || sessions.beginFrame(11) || sessions.owner()!=22) return 34;
+    if (sessions.take()!=SessionAction::Reset || sessions.take()!=SessionAction::None) return 35;
     using namespace paper::native_animation_authority_policy;
     namespace tactical =
         paper::tactical_reload_bridge_policy;

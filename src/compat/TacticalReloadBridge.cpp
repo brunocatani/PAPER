@@ -3,6 +3,7 @@
 #include "compat/TacticalReloadBridge.h"
 
 #include "compat/TacticalReloadBridgePolicy.h"
+#include "compat/TacticalReloadSession.h"
 #include "native/NativeOffsets.h"
 #include "PaperLog.h"
 #include "support/Fo4VrRuntime.h"
@@ -72,7 +73,7 @@ namespace paper::tactical_reload_bridge
         std::atomic<bool> s_runtimeFault{ false };
         std::atomic<bool> s_baselineDeferralLogged{ false };
         std::atomic<bool> s_threadMismatchLogged{ false };
-        std::atomic<DWORD> s_ownerThreadId{ 0 };
+        SessionRequests s_session;
         std::atomic<RE::BGSKeyword*> s_manualReloadKeyword{ nullptr };
         ReadyWeaponShouldHandleEventFn s_originalShouldHandleEvent{ nullptr };
         PolicyState s_state{};
@@ -80,14 +81,8 @@ namespace paper::tactical_reload_bridge
         [[nodiscard]] bool requireOwnerThread(const char* operation)
         {
             const DWORD currentThread = GetCurrentThreadId();
-            DWORD expected = 0;
-            if (s_ownerThreadId.compare_exchange_strong(
-                    expected,
-                    currentThread,
-                    std::memory_order_acq_rel)) {
-                return true;
-            }
-            if (expected == currentThread) {
+            const DWORD expected = s_session.owner();
+            if (expected != 0 && expected == currentThread) {
                 return true;
             }
             if (!s_threadMismatchLogged.exchange(
@@ -334,7 +329,7 @@ namespace paper::tactical_reload_bridge
             const bool accepted = original(handler, event);
             if (!accepted ||
                 !s_runtimeEnabled.load(std::memory_order_acquire) ||
-                !s_contractReady.load(std::memory_order_acquire) ||
+                !contractReady() ||
                 s_runtimeFault.load(std::memory_order_acquire) ||
                 !requireOwnerThread("accepted input")) {
                 return accepted;
@@ -398,7 +393,7 @@ namespace paper::tactical_reload_bridge
         }
     }
 
-    void initializeSession()
+    static void initializeSessionOnFrame()
     {
         if (!requireOwnerThread("session initialization")) {
             s_contractReady.store(false, std::memory_order_release);
@@ -460,7 +455,7 @@ namespace paper::tactical_reload_bridge
             std::memory_order_release);
     }
 
-    void resetSession()
+    static void resetSessionOnFrame()
     {
         s_runtimeEnabled.store(false, std::memory_order_release);
         if (requireOwnerThread("session reset")) {
@@ -478,9 +473,34 @@ namespace paper::tactical_reload_bridge
         s_manualReloadKeyword.store(nullptr, std::memory_order_release);
     }
 
+    void initializeSession()
+    {
+        s_session.request(SessionAction::Initialize);
+        s_runtimeEnabled.store(false, std::memory_order_release);
+    }
+
+    void resetSession()
+    {
+        s_session.request(SessionAction::Reset);
+        s_runtimeEnabled.store(false, std::memory_order_release);
+    }
+
+    void prepareFrame()
+    {
+        if (!s_session.beginFrame(GetCurrentThreadId())) {
+            (void)requireOwnerThread("frame preparation");
+            return;
+        }
+        const auto action = s_session.take();
+        if (action == SessionAction::None) return;
+        s_runtimeEnabled.store(false, std::memory_order_release);
+        if (action == SessionAction::Initialize) initializeSessionOnFrame();
+        else resetSessionOnFrame();
+    }
+
     bool contractReady()
     {
-        return s_contractReady.load(std::memory_order_acquire);
+        return !s_session.pending() && s_contractReady.load(std::memory_order_acquire);
     }
 
     bool installInputHook()
@@ -578,9 +598,13 @@ namespace paper::tactical_reload_bridge
 
     void setRuntimeEnabled(const bool enabled)
     {
+        if (!requireOwnerThread("runtime enable")) {
+            s_runtimeEnabled.store(false, std::memory_order_release);
+            return;
+        }
         const bool effectiveEnabled =
             enabled &&
-            s_contractReady.load(std::memory_order_acquire) &&
+            contractReady() &&
             s_cleanSessionBaseline.load(std::memory_order_acquire) &&
             s_hookInstalled.load(std::memory_order_acquire) &&
             !s_runtimeFault.load(std::memory_order_acquire);
@@ -600,7 +624,7 @@ namespace paper::tactical_reload_bridge
 
     void beginFrame(const float deltaSeconds)
     {
-        if (!requireOwnerThread("frame advance")) {
+        if (!requireOwnerThread("frame advance") || s_session.pending()) {
             return;
         }
         if (s_contractReady.load(std::memory_order_acquire) &&
@@ -624,7 +648,7 @@ namespace paper::tactical_reload_bridge
 
     void notifyPlayerReloadStart()
     {
-        if (!s_runtimeEnabled.load(std::memory_order_acquire) ||
+        if (!s_runtimeEnabled.load(std::memory_order_acquire) || !contractReady() ||
             !requireOwnerThread("reload start")) {
             return;
         }
@@ -635,7 +659,7 @@ namespace paper::tactical_reload_bridge
 
     void notifyPlayerReloadEnd()
     {
-        if (!s_runtimeEnabled.load(std::memory_order_acquire) ||
+        if (!s_runtimeEnabled.load(std::memory_order_acquire) || !contractReady() ||
             !requireOwnerThread("reload end")) {
             return;
         }
