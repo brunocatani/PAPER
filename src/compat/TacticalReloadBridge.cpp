@@ -503,6 +503,14 @@ namespace paper::tactical_reload_bridge
         return !s_session.pending() && s_contractReady.load(std::memory_order_acquire);
     }
 
+    bool readDiagnosticState(PolicyState& state, bool& enabled) noexcept
+    {
+        if (GetCurrentThreadId() != s_session.owner() || !contractReady()) return false;
+        state = s_state;
+        enabled = s_runtimeEnabled.load(std::memory_order_acquire);
+        return true;
+    }
+
     bool installInputHook()
     {
         if (s_hookInstalled.load(std::memory_order_acquire)) {

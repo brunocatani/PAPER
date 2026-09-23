@@ -1,4 +1,5 @@
 #include "animation_evidence/ClipTelemetry.h"
+#include "compat/ReloadSelectionTrace.h"
 
 #include "PaperLog.h"
 #include "support/NativeMemory.h"
@@ -1681,6 +1682,7 @@ namespace paper::clip_telemetry
             std::array<char, animation_evidence::kAnimationPathCapacity> name{};
             copyHkStringPtr(*reinterpret_cast<const std::uintptr_t*>(clip + kClipGeneratorAnimationNameOffset),
                 name.data(), name.size());
+            reload_selection_trace::observeClip(name.data());
             const auto wrapper = *reinterpret_cast<const std::uintptr_t*>(clip + kClipGeneratorLoadedBindingOffset);
             if (!plausiblePointer(wrapper)) {
                 trace.log->debug("HAND_ACTION unavailable weapon={:08X} stage=control clip='{}'", trace.formId, name.data());

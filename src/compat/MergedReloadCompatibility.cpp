@@ -267,4 +267,9 @@ namespace paper::merged_reload_compatibility
         s_enabled.store(enabled && s_original.load(std::memory_order_acquire) &&
             !s_faulted.load(std::memory_order_acquire), std::memory_order_release);
     }
+
+    spdlog::logger* diagnosticLogger() noexcept
+    {
+        return s_diagnostics ? s_diagnostics->log.get() : nullptr;
+    }
 }

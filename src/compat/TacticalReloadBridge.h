@@ -1,5 +1,7 @@
 #pragma once
 
+#include "compat/TacticalReloadBridgePolicy.h"
+
 namespace paper::tactical_reload_bridge
 {
     // F4SE message threads request changes; prepareFrame applies them on the
@@ -15,4 +17,6 @@ namespace paper::tactical_reload_bridge
     void beginFrame(float deltaSeconds);
     void notifyPlayerReloadStart();
     void notifyPlayerReloadEnd();
+    [[nodiscard]] bool readDiagnosticState(
+        tactical_reload_bridge_policy::State& state, bool& enabled) noexcept;
 }
