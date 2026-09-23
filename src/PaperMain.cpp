@@ -9,6 +9,7 @@
 #include "api/RockApiClient.h"
 #include "api/RockVisualAuthorityBridge.h"
 #include "compat/TacticalReloadBridge.h"
+#include "compat/MergedReloadCompatibility.h"
 #include "debug/NativeAnimationDebugVisualization.h"
 #include "development/DevelopmentCapturePolicy.h"
 #include "PaperConfig.h"
@@ -781,6 +782,7 @@ namespace
     void configureRuntime(const bool operational)
     {
         tactical_reload_bridge::setRuntimeEnabled(operational);
+        merged_reload_compatibility::setRuntimeEnabled(operational);
         native_animation_authority::setRuntimeEnabled(operational);
         native_animation_authority::setLocalManualCycleTestEnabled(
             operational);
@@ -1085,6 +1087,7 @@ namespace
 
             if (operational &&
                 !s_hookAttempted.exchange(true, std::memory_order_acq_rel)) {
+                (void)merged_reload_compatibility::installHook();
                 const bool lifecycleHooksReady =
                     native_animation_authority::installEventHooks();
                 if (!lifecycleHooksReady) {
@@ -1313,6 +1316,7 @@ namespace
     {
         manual_reload_only::resetSession();
         tactical_reload_bridge::resetSession();
+        merged_reload_compatibility::setRuntimeEnabled(false);
         debug_visualization::clear();
         rockApiClient().clearNativeAnimationAuthority();
         native_animation_authority::resetTransientState();
