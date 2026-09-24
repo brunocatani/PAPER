@@ -595,6 +595,19 @@ int main()
     };
 
     constexpr AffineTransform observationIdentity{ 1.0f, 0.0f };
+    static_assert([=] {
+        const auto active = advanceNativeAnimationCompatibility({}, compatibleWeapon, true);
+        auto dual = compatibleWeapon;
+        dual.akimboActive = true;
+        const auto canceled = advanceNativeAnimationCompatibility(active.state, dual, true);
+        const auto stale = advanceNativeAnimationCompatibility(canceled.state, compatibleWeapon, true);
+        const auto released = advanceNativeAnimationCompatibility(stale.state, compatibleWeapon, false);
+        const auto fresh = advanceNativeAnimationCompatibility(released.state, compatibleWeapon, true);
+        return canceled.reason == NativeAnimationCompatibilityReason::Akimbo &&
+            !canceled.state.weaponBound && !canApplyManualCycleHandAnimation(dual) &&
+            !advanceNativeAnimationCompatibility({}, dual, false).compatible() &&
+            !stale.compatible() && fresh.compatible();
+    }());
     // A verified scene weapon can cycle before collision finishes building.
     // The first generation adopts that identity without restarting the clip;
     // replacing its node, form, or an established generation still cancels.

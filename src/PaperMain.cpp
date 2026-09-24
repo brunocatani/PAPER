@@ -696,6 +696,27 @@ namespace
                     s_handlingState.weaponGenerationKey ==
                         s_gripState.weaponGenerationKey));
 
+        // A retained world weapon and the equipped weapon are distinct items.
+        // Neither PAPER's reload nor its manual-cycle arm pose can own both.
+        bool handStatesValid = true;
+        std::uint32_t heldWeapons[2]{};
+        for (const auto hand : {rock::api::Hand::Right, rock::api::Hand::Left}) {
+            rock::api::grab::HandInteractionStateV1 held{};
+            const bool valid = rockApiClient().queryHandInteractionState(hand, held) &&
+                held.hand == hand && hasHandInteractionFlag(held.flags,
+                    rock::api::grab::HandInteractionFlagV1::Valid) &&
+                held.worldGeneration == context.worldGeneration &&
+                held.skeletonGeneration == context.skeletonGeneration &&
+                held.providerGeneration == context.providerGeneration;
+            handStatesValid = handStatesValid && valid;
+            if (valid && hasHandInteractionFlag(held.flags,
+                    rock::api::grab::HandInteractionFlagV1::LooseWeapon))
+                heldWeapons[hand == rock::api::Hand::Left ? 1 : 0] = held.targetFormId;
+        }
+        const bool akimboActive =
+            (weaponPresent && (heldWeapons[0] || heldWeapons[1])) ||
+            (heldWeapons[0] && heldWeapons[1] && heldWeapons[0] != heldWeapons[1]);
+
         native_animation_authority::ManualCycleRockGripSnapshot snapshot{};
         snapshot.weaponNode = s_gripStateValid ? s_gripState.weaponNode : 0;
         snapshot.weaponFormId = s_gripStateValid ? s_gripState.weaponFormId : 0;
@@ -703,7 +724,7 @@ namespace
             s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
         if (s_gripStateValid &&
             weaponIdentityCoherent && !gripFiringHandIsLeft &&
-            !handlingFiringHandIsLeft && !partCarryActive) {
+            !handlingFiringHandIsLeft && !partCarryActive && !akimboActive && handStatesValid) {
             // Animation belongs to the weapon's canonical firing seat. A paired
             // grip snapshot may instead describe an arbitrary physical grab,
             // especially while the weapon is resting on its bipod.
@@ -768,7 +789,7 @@ namespace
                     s_handlingStateValid ?
                         s_handlingState.weaponFormId :
                         0,
-                .handlingStateValid = s_handlingStateValid,
+                .handlingStateValid = s_handlingStateValid && handStatesValid,
                 .gripStateValid = s_gripStateValid,
                 .firingHandIsLeft =
                     gripFiringHandIsLeft ||
@@ -777,6 +798,7 @@ namespace
                 .weaponPresent = weaponPresent,
                 .weaponIdentityCoherent =
                     weaponIdentityCoherent,
+                .akimboActive = akimboActive,
         };
     }
 

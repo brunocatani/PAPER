@@ -184,6 +184,7 @@ namespace paper::native_animation_authority_policy
         WeaponUnavailable,
         WeaponIdentityChanged,
         AnimationRequestResetRequired,
+        Akimbo,
     };
 
     struct NativeAnimationCompatibilityObservation
@@ -198,6 +199,7 @@ namespace paper::native_animation_authority_policy
         bool partCarryActive{ false };
         bool weaponPresent{ false };
         bool weaponIdentityCoherent{ false };
+        bool akimboActive{ false };
     };
 
     struct NativeAnimationCompatibilityState
@@ -227,6 +229,8 @@ namespace paper::native_animation_authority_policy
             const NativeAnimationCompatibilityReason reason)
     {
         switch (reason) {
+        case NativeAnimationCompatibilityReason::Akimbo:
+            return "akimbo";
         case NativeAnimationCompatibilityReason::HandlingStateUnavailable:
             return "handling-state-unavailable";
         case NativeAnimationCompatibilityReason::LeftFiringHand:
@@ -278,6 +282,9 @@ namespace paper::native_animation_authority_policy
                 NativeAnimationCompatibilityReason::
                     HandlingStateUnavailable,
             };
+        }
+        if (observation.akimboActive) {
+            return { canceledState, NativeAnimationCompatibilityReason::Akimbo };
         }
         if (observation.firingHandIsLeft) {
             return {
@@ -353,7 +360,8 @@ namespace paper::native_animation_authority_policy
                observation.weaponFormId != 0 &&
                (observation.weaponGenerationKey != 0 || observation.weaponNode != 0) &&
                !observation.firingHandIsLeft &&
-               !observation.partCarryActive;
+               !observation.partCarryActive &&
+               !observation.akimboActive;
     }
 
     struct ManualCycleAuthoredSupportGripLatchState
