@@ -7,13 +7,16 @@
 #include "support/TransformMath.h"
 
 #include <Windows.h>
+#include <fmt/format.h>
 
 #include <array>
 #include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <iterator>
 #include <mutex>
+#include <string_view>
 #include <type_traits>
 
 namespace paper::clip_telemetry
@@ -381,9 +384,15 @@ namespace paper::clip_telemetry
         // outside the activation/deactivation callback that supplies them.
         struct HandActionTrace
         {
+            struct SampledBinding
+            {
+                std::uintptr_t binding{ 0 };
+                std::uintptr_t skeleton{ 0 };
+            };
             std::shared_ptr<spdlog::logger> log;
             std::array<std::uintptr_t, kMaxHookCharacters> characters{};
-            std::array<std::uintptr_t, 32> sampledBindings{};
+            std::array<SampledBinding, 32> sampledBindings{};
+            std::array<std::uintptr_t, 8> mappedSkeletons{};
             std::array<std::uintptr_t, 16> activeClips{};
             std::uintptr_t weaponNode{ 0 };
             std::uint64_t generation{ 0 };
@@ -983,6 +992,143 @@ namespace paper::clip_telemetry
             }
         }
 
+        // Temporary investigation: distinguish the loaded binding's map from
+        // the selected rig before interpreting hand participation. Remove this
+        // metadata dump after that mapping is verified. Only the existing
+        // debug trace calls it, under s_hookMutex, once per binding/rig pair;
+        // stored addresses are comparison keys, not retained readable objects.
+        template <class T>
+        bool readHandMappingField(const std::uintptr_t base,
+            const std::uintptr_t offset, T& value)
+        {
+            return plausiblePointer(base) &&
+                native_memory::tryReadField(reinterpret_cast<const void*>(base), offset, value);
+        }
+
+        std::array<char, 64> handMappingName(const std::uintptr_t stringPointer)
+        {
+            std::array<char, 64> name{};
+            const auto pointer = stringPointer & ~std::uintptr_t{ 1 };
+            if (!plausiblePointer(pointer) ||
+                !native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(pointer), name.data(), name.size() - 1)) {
+                std::memcpy(name.data(), "<unreadable>", 12);
+            }
+            for (auto& character : name) {
+                if (character == '\0') break;
+                if (static_cast<unsigned char>(character) < 32 ||
+                    static_cast<unsigned char>(character) > 126) character = '?';
+            }
+            return name;
+        }
+
+        template <class Index>
+        void traceHandMappingIndices(const char* kind, const std::uintptr_t binding,
+            const std::uintptr_t data, const std::int32_t count)
+        {
+            auto& trace = s_handActionTrace;
+            std::array<Index, 512> indices{};
+            const bool valid = count >= 0 && count <= static_cast<std::int32_t>(indices.size()) &&
+                (count == 0 || (plausiblePointer(data) && native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(data), indices.data(), count * sizeof(Index))));
+            trace.log->debug("HAND_MAPPING array binding={:X} kind={} data={:X} count={} readable={}",
+                binding, kind, data, count, valid);
+            if (!valid) return;
+            fmt::memory_buffer values;
+            for (std::int32_t first = 0; first < count; first += 32) {
+                values.clear();
+                for (auto index = first; index < (std::min)(first + 32, count); ++index) {
+                    fmt::format_to(std::back_inserter(values), "{}{}", index == first ? "" : ",",
+                        static_cast<int>(indices[index]));
+                }
+                trace.log->debug("HAND_MAPPING indices binding={:X} kind={} first={} values=[{}]",
+                    binding, kind, first, std::string_view(values.data(), values.size()));
+            }
+        }
+
+        void traceHandMappingDefinition(const std::uintptr_t binding,
+            const std::uintptr_t skeleton, const char* clipName)
+        {
+            auto& trace = s_handActionTrace;
+            std::uintptr_t animation = 0, vtable = 0, map = 0, partitions = 0;
+            std::uintptr_t bones = 0, parents = 0, rigPartitions = 0;
+            std::int32_t trackCount = -1, mapCount = -1, partitionCount = -1;
+            std::int32_t boneCount = -1, parentCount = -1, rigPartitionCount = -1, referenceCount = -1;
+            float duration = 0.0f;
+            const bool bindingReadable =
+                readHandMappingField(binding, kBindingAnimationOffset, animation) &&
+                readHandMappingField(binding, kBindingTrackToBoneDataOffset, map) &&
+                readHandMappingField(binding, kBindingTrackToBoneCountOffset, mapCount) &&
+                readHandMappingField(binding, kBindingPartitionIndicesOffset, partitions) &&
+                readHandMappingField(binding, kBindingPartitionCountOffset, partitionCount);
+            const bool animationReadable =
+                readHandMappingField(animation, 0, vtable) &&
+                readHandMappingField(animation, kAnimationDurationOffset, duration) &&
+                readHandMappingField(animation, kAnimationTrackCountOffset, trackCount);
+            const bool rigReadable =
+                readHandMappingField(skeleton, kSkeletonBonesDataOffset, bones) &&
+                readHandMappingField(skeleton, kSkeletonBonesCountOffset, boneCount) &&
+                readHandMappingField(skeleton, kSkeletonParentIndicesOffset, parents) &&
+                readHandMappingField(skeleton, kSkeletonParentIndicesCountOffset, parentCount) &&
+                readHandMappingField(skeleton, kSkeletonPartitionsDataOffset, rigPartitions) &&
+                readHandMappingField(skeleton, kSkeletonPartitionsCountOffset, rigPartitionCount) &&
+                readHandMappingField(skeleton, kSkeletonReferencePoseCountOffset, referenceCount);
+            trace.log->debug("HAND_MAPPING definition version=1 weapon={:08X}/{:016X} binding={:X} skeleton={:X} clip='{}' animation={:X} vtableRel={:X} duration={} tracks={} mapCount={} partitionCount={} bones={} parents={} referencePoses={} rigPartitions={} readable={}/{}/{}",
+                trace.formId, trace.generation, binding, skeleton, clipName, animation, moduleRelative(vtable),
+                duration, trackCount, mapCount, partitionCount, boneCount, parentCount, referenceCount,
+                rigPartitionCount, bindingReadable, animationReadable, rigReadable);
+            if (bindingReadable) {
+                traceHandMappingIndices<std::int16_t>("track-to-bone", binding, map, mapCount);
+                traceHandMappingIndices<std::uint16_t>("partition-selection", binding, partitions, partitionCount);
+            }
+            if (!rigReadable) return;
+            for (const auto previous : trace.mappedSkeletons) if (previous == skeleton) return;
+            const auto slot = std::find(trace.mappedSkeletons.begin(), trace.mappedSkeletons.end(), 0);
+            if (slot == trace.mappedSkeletons.end()) {
+                trace.log->debug("HAND_MAPPING rig unavailable skeleton={:X} stage=rig-budget", skeleton);
+                return;
+            }
+            *slot = skeleton;
+
+            // Batch names to avoid filling the bounded asynchronous queue with
+            // one line per bone. Array counts and copies have independent caps.
+            constexpr std::int32_t maxBones = 256;
+            std::array<std::int16_t, maxBones> parentIndices{};
+            const auto copiedParents = (std::clamp)(parentCount, 0, maxBones);
+            const bool parentsReadable = parentCount >= 0 &&
+                (copiedParents == 0 || (plausiblePointer(parents) && native_memory::guardedCopyFromMemory(
+                    reinterpret_cast<const void*>(parents), parentIndices.data(), copiedParents * sizeof(std::int16_t))));
+            trace.log->debug("HAND_MAPPING rig skeleton={:X} boneData={:X} parentData={:X} bones={} parents={} parentsReadable={} boneLimit={} partitionLimit=64",
+                skeleton, bones, parents, boneCount, parentCount, parentsReadable, maxBones);
+            fmt::memory_buffer values;
+            const auto copiedBones = (std::clamp)(boneCount, 0, maxBones);
+            for (std::int32_t first = 0; first < copiedBones; first += 8) {
+                values.clear();
+                for (auto index = first; index < (std::min)(first + 8, copiedBones); ++index) {
+                    std::uintptr_t namePointer = 0;
+                    const bool readable = readHandMappingField(bones, index * kSkeletonBoneStride, namePointer);
+                    const auto name = handMappingName(readable ? namePointer : 0);
+                    fmt::format_to(std::back_inserter(values), "{}{}:parent={}:name='{}'",
+                        index == first ? "" : ";", index,
+                        parentsReadable && index < copiedParents ? parentIndices[index] : -32768, name.data());
+                }
+                trace.log->debug("HAND_MAPPING bones skeleton={:X} first={} values=[{}]",
+                    skeleton, first, std::string_view(values.data(), values.size()));
+            }
+            const auto copiedPartitions = (std::clamp)(rigPartitionCount, 0, 64);
+            for (std::int32_t index = 0; index < copiedPartitions; ++index) {
+                const auto entry = rigPartitions + index * kSkeletonPartitionStride;
+                std::int16_t start = -1, count = -1;
+                const bool readable = plausiblePointer(rigPartitions) &&
+                    readHandMappingField(entry, kPartitionStartBoneOffset, start) &&
+                    readHandMappingField(entry, kPartitionNumBonesOffset, count);
+                trace.log->debug("HAND_MAPPING partition skeleton={:X} index={} start={} count={} readable={}",
+                    skeleton, index, start, count, readable);
+            }
+            trace.log->debug("HAND_MAPPING rig-end skeleton={:X} bonesCopied={} partitionsCopied={} truncated={}",
+                skeleton, copiedBones, copiedPartitions, boneCount > copiedBones || rigPartitionCount > copiedPartitions);
+        }
+
         bool traceUnblendedHands(
             const std::uintptr_t binding, const std::uintptr_t skeleton,
             const std::uintptr_t animation, const float duration,
@@ -1107,6 +1253,13 @@ namespace paper::clip_telemetry
             const MarkerCaptureScratch* markers = nullptr,
             const bool traceHandsOnly = false)
         {
+            const auto rejected = [&](const char* stage) {
+                if (traceHandsOnly) {
+                    s_handActionTrace.log->debug("HAND_MAPPING rejected binding={:X} skeleton={:X} clip='{}' stage={}",
+                        binding, skeleton, clipAnimationName, stage);
+                }
+                return false;
+            };
             if (outHadWeaponTracks) {
                 *outHadWeaponTracks = false;
             }
@@ -1117,7 +1270,7 @@ namespace paper::clip_telemetry
             if (!plausiblePointer(animation)) {
                 s_rejectedAnimationPointer.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("animation-ptr", binding, animation, 0.0f, 0, 0, 0);
-                return false;
+                return rejected("animation-pointer");
             }
 
             // Only spline-compressed clips are supported; the sampler slot is
@@ -1128,7 +1281,7 @@ namespace paper::clip_telemetry
             if (vtable != RE::VTABLE::hkaSplineCompressedAnimation[0].address()) {
                 s_skippedNonSpline.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("non-spline", binding, animation, 0.0f, 0, 0, 0);
-                return false;
+                return rejected("unsupported-animation-type");
             }
 
             const float duration = *reinterpret_cast<float*>(animation + kAnimationDurationOffset);
@@ -1137,7 +1290,7 @@ namespace paper::clip_telemetry
                 animationTrackCount <= 0 || animationTrackCount > kMaxPlausibleTrackCount) {
                 s_rejectedClipParameters.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("clip-params", binding, animation, duration, animationTrackCount, 0, 0);
-                return false;
+                return rejected("clip-parameters");
             }
 
             // The engine sampler dereferences the spline payload unguarded;
@@ -1172,7 +1325,7 @@ namespace paper::clip_telemetry
                         splineDataBase,
                         splineDataSize);
                 }
-                return false;
+                return rejected("spline-payload");
             }
 
             const auto trackToBoneData = *reinterpret_cast<std::uintptr_t*>(binding + kBindingTrackToBoneDataOffset);
@@ -1181,7 +1334,7 @@ namespace paper::clip_telemetry
             if (boneCount <= 0 || boneCount > kMaxPlausibleBoneCount) {
                 s_rejectedBoneCount.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("bone-count", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
-                return false;
+                return rejected("skeleton-bone-count");
             }
 
             /*
@@ -1200,7 +1353,7 @@ namespace paper::clip_telemetry
                 if (!plausiblePointer(trackToBoneData) || trackToBoneCount > kMaxPlausibleTrackCount) {
                     s_rejectedTrackMap.fetch_add(1, std::memory_order_relaxed);
                     logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
-                    return false;
+                    return rejected("explicit-track-map");
                 }
                 const auto* map = reinterpret_cast<const std::int16_t*>(trackToBoneData);
                 const auto count = (std::min)(trackToBoneCount, static_cast<std::int32_t>(trackBones.size()));
@@ -1216,7 +1369,7 @@ namespace paper::clip_telemetry
                     skeletonPartitionCount > kMaxPlausibleBoneCount) {
                     s_rejectedTrackMap.fetch_add(1, std::memory_order_relaxed);
                     logBindingBail("partition-map", binding, animation, duration, animationTrackCount, partitionCount, boneCount);
-                    return false;
+                    return rejected("partition-arrays");
                 }
                 const auto* partitionIndices = reinterpret_cast<const std::uint16_t*>(partitionIndicesData);
                 for (std::int32_t p = 0; p < partitionCount && mappedTrackCount < static_cast<std::int32_t>(trackBones.size()); ++p) {
@@ -1238,7 +1391,7 @@ namespace paper::clip_telemetry
                 if (mappedTrackCount == 0) {
                     s_rejectedTrackMap.fetch_add(1, std::memory_order_relaxed);
                     logBindingBail("partition-map", binding, animation, duration, animationTrackCount, partitionCount, boneCount);
-                    return false;
+                    return rejected("empty-partition-map");
                 }
             } else if (animationTrackCount == boneCount) {
                 const auto count = (std::min)(animationTrackCount, static_cast<std::int32_t>(trackBones.size()));
@@ -1251,7 +1404,7 @@ namespace paper::clip_telemetry
                 // the rig — identity would misattribute every track.
                 s_rejectedTrackMap.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("track-map", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
-                return false;
+                return rejected("unmapped-track-count-mismatch");
             }
 
             if (traceHandsOnly) {
@@ -1306,7 +1459,7 @@ namespace paper::clip_telemetry
             if (!sampler) {
                 s_rejectedSampler.fetch_add(1, std::memory_order_relaxed);
                 logBindingBail("sampler", binding, animation, duration, animationTrackCount, trackToBoneCount, boneCount);
-                return false;
+                return rejected("sampler");
             }
 
             // Full-pose decode: slot 5 decodes tracks 0..decodeCount-1, then
@@ -1700,12 +1853,7 @@ namespace paper::clip_telemetry
             }
             if (!tracked) trace.log->warn("HAND_ACTION active clip capacity reached weapon={:08X}", trace.formId);
             if (!plausiblePointer(binding)) return;
-            for (const auto previous : trace.sampledBindings) if (previous == binding) return;
             if (trace.samplesUsed == trace.sampledBindings.size()) return;
-            trace.sampledBindings[trace.samplesUsed++] = binding;
-            if (trace.samplesUsed == trace.sampledBindings.size()) {
-                trace.log->debug("HAND_ACTION definition budget reached weapon={:08X}; later clips retain lifecycle events only", trace.formId);
-            }
             const auto setup = *reinterpret_cast<const std::uintptr_t*>(character + kCharacterSetupOffset);
             if (!plausiblePointer(setup)) {
                 trace.log->debug("HAND_ACTION unavailable weapon={:08X} stage=setup", trace.formId);
@@ -1716,6 +1864,14 @@ namespace paper::clip_telemetry
                 trace.log->debug("HAND_ACTION unavailable weapon={:08X} stage=skeleton", trace.formId);
                 return;
             }
+            for (const auto& previous : trace.sampledBindings) {
+                if (previous.binding == binding && previous.skeleton == skeleton) return;
+            }
+            trace.sampledBindings[trace.samplesUsed++] = { binding, skeleton };
+            if (trace.samplesUsed == trace.sampledBindings.size()) {
+                trace.log->debug("HAND_ACTION definition budget reached weapon={:08X}; later clips retain lifecycle events only", trace.formId);
+            }
+            traceHandMappingDefinition(binding, skeleton, name.data());
             auto behavior = *reinterpret_cast<const std::uintptr_t*>(context + kContextBehaviorGraphOffset);
             if (!plausiblePointer(behavior) || *reinterpret_cast<const std::uintptr_t*>(behavior) !=
                 REL::Module::get().base() + kBehaviorGraphVtableModuleOffset) behavior = 0;
@@ -1724,8 +1880,8 @@ namespace paper::clip_telemetry
             }
             const bool sampled = captureBindingEvidence(binding, skeleton, nullptr, 0, true,
                 name.data(), trace.formId, trace.generation, 0, nullptr, nullptr, nullptr, true);
-            trace.log->debug("HAND_ACTION sampled weapon={:08X}/{:016X} binding={:X} complete={} definitions={}/{}",
-                trace.formId, trace.generation, binding, sampled, trace.samplesUsed, trace.sampledBindings.size());
+            trace.log->debug("HAND_ACTION sampled weapon={:08X}/{:016X} binding={:X} skeleton={:X} complete={} definitions={}/{}",
+                trace.formId, trace.generation, binding, skeleton, sampled, trace.samplesUsed, trace.sampledBindings.size());
         }
 
         bool guardedTraceHandActionActivation(const std::uintptr_t clip, const std::uintptr_t context)
@@ -2069,7 +2225,7 @@ namespace paper::clip_telemetry
         trace.faulted = !hooksReady;
         trace.hookCallsAtTarget = s_hookCalls.load(std::memory_order_relaxed);
         s_markerLogBudget = kMarkerLogBudgetPerGeneration;
-        trace.log->debug("HAND_ACTION target weapon={:08X}/{:016X} scene={:X} characters={} hooks={} maxDefinitions=32 samplesPerDefinition=33 maxLifecycleEvents=512",
+        trace.log->debug("HAND_ACTION target weapon={:08X}/{:016X} scene={:X} characters={} hooks={} maxDefinitions=32 samplesPerDefinition=33 maxLifecycleEvents=512 mappingVersion=1 maxMappedRigs=8 maxMappedBones=256 maxMapEntries=512",
             weaponFormId, weaponGenerationKey, weaponNode,
             std::count_if(characters.begin(), characters.end(), [](const auto value) { return value != 0; }), hooksReady);
         for (std::size_t i = 0; i < characters.size(); ++i) {
