@@ -3,6 +3,7 @@
 #include "animation/NativeAnimationAuthority.h"
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "animation/NativePosePipeline.h"
+#include "attachment_bindings/AttachmentBindings.h"
 #include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
 #include "api/PAPERProvider.h"
@@ -18,6 +19,7 @@
 #include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
+#include "support/Fo4VrRuntime.h"
 #include "weapon_motion/WeaponMotion.h"
 
 #include <atomic>
@@ -1190,6 +1192,15 @@ namespace
             }
             publishRockAuthority(runtimeOperational);
             if (runtimeOperational) {
+                if (s_gripStateValid && weaponObservation.weaponIdentityCoherent) {
+                    auto* equipped = f4vr::getEquippedItem();
+                    auto* weapon = equipped && equipped->item.object ? equipped->item.object->As<RE::TESObjectWEAP>() : nullptr;
+                    if (weapon && weapon->formID == s_gripState.weaponFormId) {
+                        const auto* instance = equipped->item.instanceData ? equipped->item.instanceData.get() : &weapon->weaponData;
+                        attachment_bindings::reconcile({s_gripState.weaponNode, reinterpret_cast<std::uintptr_t>(instance),
+                            s_gripState.weaponGenerationKey, s_gripState.weaponFormId, context->worldGeneration, context->skeletonGeneration});
+                    }
+                }
                 (void)native_animation_authority::applyCapturedPose(
                     native_animation_authority::ApplyPhase::BeforeRock);
             }
@@ -1346,6 +1357,7 @@ namespace
         debug_visualization::clear();
         rockApiClient().clearNativeAnimationAuthority();
         native_animation_authority::resetTransientState();
+        attachment_bindings::reset();
         frik_visual_authority::setSkeletonReadyHint(false);
         s_gripState = {};
         s_handlingState = {};
