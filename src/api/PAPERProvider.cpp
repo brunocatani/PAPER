@@ -9,6 +9,9 @@
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
 #include "weapon_motion/WeaponMotion.h"
+#include "reload_control/PhysicalReloadLease.h"
+#include "reload_control/ManualReloadOnly.h"
+#include "support/Fo4VrRuntime.h"
 
 #include <Windows.h>
 
@@ -80,6 +83,9 @@ namespace paper::provider
         std::uint64_t s_captureConfigRevision{ 0 };
 
         PaperRuntimeStateV1 s_runtimeState{};
+        physical_reload::Lease s_physicalReload;
+        const void* s_physicalEquippedData{};
+        const void* s_physicalInstance{};
         PaperConfigStateV1 s_configState{};
         std::atomic<std::uint64_t> s_runtimeSequence{ 0 };
         std::atomic<std::uint64_t> s_configSequence{ 0 };
@@ -168,6 +174,7 @@ namespace paper::provider
 
         void removeConsumer(const std::uint64_t ownerToken)
         {
+            if(s_physicalReload.owner==ownerToken)s_physicalReload.clear();
             removeCallbacksForOwner(ownerToken);
             if (auto* consumer = findConsumer(ownerToken)) {
                 *consumer = {};
@@ -1551,6 +1558,7 @@ namespace paper::provider
 
     void initialize()
     {
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
         s_ownerThread = GetCurrentThreadId();
         s_consumers = {};
         s_callbacks = {};
@@ -1578,6 +1586,7 @@ namespace paper::provider
 
     void shutdown()
     {
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
         s_ready.store(false, std::memory_order_release);
         s_consumers = {};
         s_callbacks = {};
@@ -1639,6 +1648,7 @@ namespace paper::provider
         if (!onOwnerThread()) {
             return;
         }
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
         for (auto& consumer : s_consumers) {
             consumer.authorityFlags = 0;
             consumer.remainingFrames = 0;
@@ -1885,6 +1895,76 @@ namespace paper::provider
         return flags & kAllAuthorityFlags;
     }
 
+    bool physicalReloadActive() noexcept
+    {
+        if(!onOwnerThread()||!s_physicalReload.owner)return false;
+        const auto runtimeEnabled=static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::RuntimeEnabled);
+        if(!s_ready.load(std::memory_order_acquire)||!(s_runtimeState.statusFlags&runtimeEnabled)||
+            !s_physicalReload.matches(s_runtimeState,s_currentFrame)||currentConsumerAuthorityFlags()!=0) {
+            s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
+            return false;
+        }
+        const auto* item=f4vr::getEquippedItem();
+        if(item&&item->item.object&&item->item.object->formID==s_physicalReload.request.weaponFormId&&
+            item->data.get()==s_physicalEquippedData&&item->item.instanceData.get()==s_physicalInstance)return true;
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
+        return false;
+    }
+
+    const physical_reload::ApiV1* physicalReloadApi() noexcept
+    {
+        using Result=api::PaperResultV1;
+        static const physical_reload::ApiV1 table{
+            .acquire=[](std::uint64_t owner,const physical_reload::Request* request) noexcept -> Result {
+                if(!onOwnerThread())return Result::WrongThread;
+                if(!request)return Result::InvalidArgument;
+                if(request->size!=sizeof(*request))return Result::InvalidSize;
+                if(request->version!=physical_reload::kVersion)return Result::UnsupportedVersion;
+                const auto* consumer=findConsumerConst(owner);
+                if(!consumer)return Result::UnknownOwner;
+                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::AnimationAuthority))return Result::PermissionDenied;
+                if(!s_ready.load(std::memory_order_acquire)||!manual_reload_only::physicalControlReady()||
+                    (s_runtimeState.statusFlags&static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::RuntimeEnabled))==0)
+                    return Result::NotReady;
+                if(currentConsumerAuthorityFlags()!=0)return Result::OwnerConflict;
+                constexpr auto busy=static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::ReloadEventActive)|
+                    static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::ManualCycleActive);
+                if(s_runtimeState.statusFlags&busy)return Result::NotReady;
+                const auto* item=f4vr::getEquippedItem();
+                if(!item||!item->data||!item->item.object||item->item.object->formID!=request->weaponFormId)return Result::StaleSnapshot;
+                if(s_physicalReload.owner==owner&&s_physicalReload.matches(s_runtimeState,s_currentFrame)&&
+                    (item->data.get()!=s_physicalEquippedData||item->item.instanceData.get()!=s_physicalInstance)) {
+                    s_physicalReload.clear();return Result::StaleSnapshot;
+                }
+                const auto result=s_physicalReload.set(owner,*request,s_runtimeState,s_currentFrame);
+                if(result==Result::Ok){s_physicalEquippedData=item->data.get();s_physicalInstance=item->item.instanceData.get();}
+                return result;
+            },
+            .clear=[](std::uint64_t owner) noexcept -> Result {
+                if(!onOwnerThread())return Result::WrongThread;
+                if(!findConsumerConst(owner))return Result::UnknownOwner;
+                if(s_physicalReload.owner&&s_physicalReload.owner!=owner&&physicalReloadActive())return Result::OwnerConflict;
+                if(s_physicalReload.owner==owner)s_physicalReload.clear();
+                return Result::Ok;
+            },
+            .read=[](std::uint64_t owner,physical_reload::State* output) noexcept -> Result {
+                if(!onOwnerThread())return Result::WrongThread;
+                if(!output)return Result::InvalidArgument;
+                if(output->size!=sizeof(*output))return Result::InvalidSize;
+                if(output->version!=physical_reload::kVersion)return Result::UnsupportedVersion;
+                *output={};const auto* consumer=findConsumerConst(owner);
+                if(!consumer)return Result::UnknownOwner;
+                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::RuntimeState))return Result::PermissionDenied;
+                if(physicalReloadActive()) {
+                    output->active=1;output->owner=s_physicalReload.owner;output->weaponFormId=s_physicalReload.request.weaponFormId;
+                    output->weaponGenerationKey=s_physicalReload.request.weaponGenerationKey;output->expiresAfterFrame=s_physicalReload.expires;
+                }
+                return Result::Ok;
+            }
+        };
+        return &table;
+    }
+
     std::uint32_t generation()
     {
         return s_providerGeneration;
@@ -1921,4 +2001,10 @@ extern "C" PAPER_API
     PAPERAPI_GetProviderDescriptorV1()
 {
     return paper::provider::apiDescriptor();
+}
+
+extern "C" PAPER_API const paper::physical_reload::ApiV1* PAPER_CALL
+PAPERAPI_QueryPhysicalReloadV1(std::uint32_t version,std::uint32_t bytes) noexcept
+{
+    return version==paper::physical_reload::kVersion&&bytes<=sizeof(paper::physical_reload::ApiV1)?paper::provider::physicalReloadApi():nullptr;
 }

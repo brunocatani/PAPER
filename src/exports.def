@@ -4,3 +4,4 @@ EXPORTS
     F4SEPlugin_Load
     PAPERAPI_GetProviderApi
     PAPERAPI_GetProviderDescriptorV1
+    PAPERAPI_QueryPhysicalReloadV1

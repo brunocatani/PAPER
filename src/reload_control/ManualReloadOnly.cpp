@@ -1,4 +1,6 @@
 #include "reload_control/ManualReloadOnly.h"
+#include "api/PAPERProvider.h"
+#include "support/Fo4VrRuntime.h"
 
 #include "native/NativeOffsets.h"
 #include "PaperLog.h"
@@ -220,7 +222,7 @@ namespace paper::manual_reload_only
             const std::int32_t actionId,
             const std::uint32_t priority)
         {
-            if (s_runtimeEnabled.load(std::memory_order_acquire)) {
+            if (s_runtimeEnabled.load(std::memory_order_acquire)||provider::physicalReloadActive()) {
                 recordSuppressedRequest(AutomaticReloadSource::PostFire);
                 return false;
             }
@@ -233,7 +235,7 @@ namespace paper::manual_reload_only
         bool onDirectAutomaticReloadRequest(
             const AutomaticReloadSource source, void* actionData)
         {
-            if (s_runtimeEnabled.load(std::memory_order_acquire)) {
+            if (s_runtimeEnabled.load(std::memory_order_acquire)||provider::physicalReloadActive()) {
                 recordSuppressedRequest(source);
                 return false;
             }
@@ -260,6 +262,7 @@ namespace paper::manual_reload_only
             void* actionData)
         {
             constexpr std::int32_t kReloadActionId = 0x6C;
+            if(actionId==kReloadActionId&&actor==f4vr::getPlayer()&&provider::physicalReloadActive())return;
             if (actionId == kReloadActionId) {
                 std::array<void*, 16> frames{};
                 const auto frameCount = CaptureStackBackTrace(
@@ -522,6 +525,11 @@ namespace paper::manual_reload_only
             Reload,
             "Manual-reload-only automatic producers ready: post-fire, immediate, delayed; manual reload dispatchers remain untouched");
         return true;
+    }
+
+    bool physicalControlReady() noexcept
+    {
+        return s_hookInstalled.load(std::memory_order_acquire)&&s_actionObservationHookInstalled.load(std::memory_order_acquire);
     }
 
     void setRuntimeEnabled(const bool enabled)

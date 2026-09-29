@@ -484,6 +484,7 @@ namespace paper::native_animation_authority
 
         [[nodiscard]] std::uint32_t localRequestedFlags()
         {
+            if(provider::physicalReloadActive())return 0;
             if (!s_runtimeEnabled.load(std::memory_order_acquire)) {
                 return 0;
             }

@@ -37,4 +37,6 @@ namespace paper::provider
     [[nodiscard]] std::uint32_t currentConsumerAuthorityFlags();
     [[nodiscard]] std::uint32_t generation();
     [[nodiscard]] bool isReady();
+    // Owner-thread only; validates the same live equipped item as admission.
+    [[nodiscard]] bool physicalReloadActive() noexcept;
 }
