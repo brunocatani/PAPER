@@ -715,7 +715,20 @@ namespace
                     rock::api::grab::HandInteractionFlagV1::LooseWeapon))
                 heldWeapons[hand == rock::api::Hand::Left ? 1 : 0] = held.targetFormId;
         }
-        const bool akimboActive =
+        // Native equipment has one record per slot. Two copies of the same
+        // base form still own different magazines; do not deduplicate by form.
+        // E803D0/E806B0 establish the indexed array contract in FO4VR.
+        bool nativeRight = false, nativeLeft = false;
+        const auto* player = RE::PlayerCharacter::GetSingleton();
+        const auto* middle = player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
+        if (middle && middle->equippedItems.size() <= 16) {
+            for (const auto& item : middle->equippedItems) {
+                if (!item.item.object || item.item.object->formType != RE::ENUM_FORM_ID::kWEAP || !item.data) continue;
+                if (item.equipIndex.index == 0) nativeRight = true;
+                if (item.equipIndex.index == 1) nativeLeft = true;
+            }
+        }
+        const bool akimboActive = (nativeRight && nativeLeft) ||
             (weaponPresent && (heldWeapons[0] || heldWeapons[1])) ||
             (heldWeapons[0] && heldWeapons[1] && heldWeapons[0] != heldWeapons[1]);
 
