@@ -644,6 +644,7 @@ namespace
     {
         const bool requested = g_config.enabled && g_config.manualReloadOnly;
         const bool hookReady = manual_reload_only::installHook();
+        (void)manual_reload_only::installPhysicalCycleHook();
         manual_reload_only::setRuntimeEnabled(requested && hookReady);
         if (requested && !hookReady) {
             PAPER_LOG_ERROR(
@@ -965,6 +966,24 @@ namespace
             0);
     }
 
+    void publishPhysicalEnvironment(const rock::api::core::AnimationPhaseContextV1& context,
+        bool operational,const native_animation_authority_policy::NativeAnimationCompatibilityObservation& weapon)
+    {
+        physical_reload::Environment environment;
+        environment.identity.frameIndex=context.frameIndex;
+        environment.identity.weaponFormId=weapon.weaponFormId;
+        environment.identity.weaponGenerationKey=weapon.weaponGenerationKey;
+        environment.identity.worldGeneration=context.worldGeneration;
+        environment.identity.skeletonGeneration=context.skeletonGeneration;
+        environment.identity.rockProviderGeneration=context.providerGeneration;
+        environment.identity.paperProviderGeneration=provider::generation();
+        using F=rock::api::core::AnimationPhaseContextFlagV1;
+        environment.ready=physical_reload::physicalWeaponReady(operational&&
+            native_animation_authority::isHookInstalled()&&!hasContextFlag(context.flags,F::MenuBlocking)&&
+            !hasContextFlag(context.flags,F::ConfigBlocking)&&hasContextFlag(context.flags,F::VisualWritesAllowed),weapon);
+        provider::publishPhysicalReloadEnvironment(environment);
+    }
+
     void publishRuntimeState(
         const rock::api::core::AnimationPhaseContextV1& context,
         const bool rockConnected,
@@ -1151,6 +1170,7 @@ namespace
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
             const auto weaponObservation = refreshWeaponState(*context);
+            publishPhysicalEnvironment(*context,operational&&!climbingAnimationSuppressed,weaponObservation);
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
                 reload_observation::advanceFrame(
@@ -1225,6 +1245,7 @@ namespace
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
             const auto weaponObservation = refreshWeaponState(*context);
+            publishPhysicalEnvironment(*context,operational&&!climbingAnimationSuppressed,weaponObservation);
             const auto compatibility = evaluateAnimationCompatibility(
                 *context,
                 "after-rock",
@@ -1484,7 +1505,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(
     const F4SE::LoadInterface* f4se)
 {
     F4SE::Init(f4se, false);
-    F4SE::AllocTrampoline(64);
+    F4SE::AllocTrampoline(80); // four reload relays plus opt-in physical bolt control
     paper::provider::initialize();
 
     s_messaging = F4SE::GetMessagingInterface();

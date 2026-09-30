@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api/PAPERApi.h"
+#include "reload_control/PhysicalReloadPolicy.h"
 
 #include <cstdint>
 
@@ -39,4 +40,6 @@ namespace paper::provider
     [[nodiscard]] bool isReady();
     // Owner-thread only; validates the same live equipped item as admission.
     [[nodiscard]] bool physicalReloadActive() noexcept;
+    void publishPhysicalReloadEnvironment(const physical_reload::Environment& environment) noexcept;
+    [[nodiscard]] bool physicalManualCycleActive() noexcept;
 }

@@ -26,6 +26,24 @@ namespace paper::manual_reload_only
         // 0xF9BEF0 forwards RCX as the action-data argument to 0xE75200.
         // Both automatic callers destroy their stack-owned action after return.
         using NativeActionDataDispatcherFn = bool (*)(void* actionData);
+        using NativeActorActionFn = bool (*)(void* actor,void* action,void* target);
+        std::atomic<NativeActorActionFn> s_originalBoltAction{};
+        std::atomic<bool> s_boltActionReady{},s_boltActionFailed{};
+        std::uint64_t s_blockedBoltActions{}; // PAPER owner thread only.
+
+        bool onAutomaticBoltAction(void* actor,void* action,void* target) noexcept
+        {
+            // This one call follows native ammo consumption, not weaponFire.
+            // The V2 lease validates the live equipped instance and owner thread.
+            if(actor==f4vr::getPlayer()&&provider::physicalManualCycleActive()) {
+                ++s_blockedBoltActions;
+                if(s_blockedBoltActions<=4||(s_blockedBoltActions%64)==0)
+                    PAPER_LOG_INFO(Reload,"Physical manual-cycle owner suppressed native post-shot bolt action; count={}",s_blockedBoltActions);
+                return false;
+            }
+            const auto original=s_originalBoltAction.load(std::memory_order_acquire);
+            return original?original(actor,action,target):false;
+        }
 
         // Fallout4VR.exe 1.2.72 PlayerControls::DoAction post-fire fallback.
         // The final CALL is reached only for fire actions 0x71..0x74 when a
@@ -459,7 +477,8 @@ namespace paper::manual_reload_only
 
         auto& trampoline = F4SE::GetTrampoline();
         // Three suppression wrappers plus the existing action observer each
-        // use a 14-byte CommonLib write_call<5> relay; PAPER reserves 64 bytes.
+        // use 14-byte CommonLib relays; the physical bolt hook has its own
+        // remaining 14-byte check within PAPER's 80-byte allocation.
         constexpr std::size_t kRequiredTrampolineBytes = 4 * 14;
         if (trampoline.free_size() < kRequiredTrampolineBytes) {
             s_hookInstallFailed.store(true, std::memory_order_release);
@@ -531,6 +550,39 @@ namespace paper::manual_reload_only
     {
         return s_hookInstalled.load(std::memory_order_acquire)&&s_actionObservationHookInstalled.load(std::memory_order_acquire);
     }
+
+    bool installPhysicalCycleHook() noexcept
+    {
+        if(s_boltActionReady.load(std::memory_order_acquire))return true;
+        if(s_boltActionFailed.exchange(true,std::memory_order_acq_rel))return false;
+        if(!REL::Module::IsVR()||REL::Module::get().version()!=F4SE::RUNTIME_VR_1_2_72)return false;
+        // Independently checked FO4VR Actor ammo-consumption body E4E930:
+        // remaining ammo != 0, weapon flag bit 22, default-action slot 0x388
+        // (ActionBoltCharge), actor RCX, action RDX, null target R8. E56090
+        // constructs/processes a stack-owned TESActionData and destroys it.
+        // The caller ignores its return and continues inventory bookkeeping.
+        constexpr std::array<std::uint8_t,59> signature{
+            0x48,0x8B,0x43,0x08,0x48,0x85,0xC0,0x74,0x08,0x8B,0x88,0x10,0x01,0x00,0x00,
+            0xEB,0x09,0x48,0x8B,0x03,0x8B,0x88,0xA8,0x02,0x00,0x00,0xC1,0xE9,0x16,0x80,
+            0xE1,0x01,0x84,0xC9,0x74,0x17,0xE8,0x10,0xD3,0x21,0xFF,0x45,0x33,0xC0,0x48,
+            0x8B,0xCF,0x48,0x8B,0x90,0x88,0x03,0x00,0x00,0xE8,0xBE,0x74,0x00,0x00};
+        const auto base=REL::Module::get().base(),site=base+0xE4EBCD,target=base+0xE56090;
+        if(!matchesAutomaticReloadProducerSignature(base+0xE4EB97,signature)||decodeRelativeCallTarget(site)!=target) {
+            PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook rejected: FO4VR post-shot bolt producer differs");return false;
+        }
+        auto& trampoline=F4SE::GetTrampoline();
+        if(trampoline.free_size()<14){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook has insufficient trampoline space");return false;}
+        s_originalBoltAction.store(reinterpret_cast<NativeActorActionFn>(target),std::memory_order_release);
+        try {
+            const auto original=trampoline.write_call<5>(site,&onAutomaticBoltAction);
+            if(original!=target){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook original target changed");return false;}
+        }catch(const std::exception& e){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook failed: {}",e.what());return false;}
+        catch(...){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook failed");return false;}
+        s_boltActionReady.store(true,std::memory_order_release);
+        PAPER_LOG_INFO(Reload,"Physical manual-cycle post-shot bolt action qualified at FO4VR E4EBCD; opt-in V2 leases only");return true;
+    }
+
+    bool physicalCycleReady() noexcept {return s_boltActionReady.load(std::memory_order_acquire);}
 
     void setRuntimeEnabled(const bool enabled)
     {

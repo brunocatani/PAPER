@@ -6,6 +6,7 @@ namespace paper::physical_reload {
     struct Lease {
         Request request{};
         std::uint64_t owner{}, expires{};
+        std::uint32_t contractVersion{1},flags{};
         void clear(){*this={};}
         bool matches(const api::PaperRuntimeStateV1& state,std::uint64_t frame)const {
             return owner&&frame<=expires&&request.weaponFormId==state.weaponFormId&&
