@@ -1034,7 +1034,11 @@ namespace paper::native_animation_authority
                 !s_localManualCycleTestEnabled.load(std::memory_order_acquire) ||
                 !s_manualCycleHandAnimationEligible.load(std::memory_order_acquire) ||
                 s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ||
-                s_playerReloadEventActive.load(std::memory_order_acquire)) {
+                s_playerReloadEventActive.load(std::memory_order_acquire) ||
+                // The physical-reload owner permits native firing, but owns
+                // the mechanism/hand cycle. Arming our local cycle here would
+                // make its next renewal reject the busy state we just created.
+                provider::physicalReloadActive()) {
                 return handled;
             }
 
