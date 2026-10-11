@@ -58,5 +58,16 @@ int main() {
     assert(lease.set(7,request,state,101)==api::PaperResultV1::Ok);
     assert(lease.contractVersion==1&&lease.flags==0);
     static_assert(sizeof(physical_reload::ApiV1)==32&&sizeof(physical_reload::Request)==48&&sizeof(physical_reload::State)==40);
+    lease.clear();
+    physical_reload::v3::Request early;early.weaponFormId=42;early.observedFrame=101;
+    // Native item ownership begins before collision generation or a PAPER
+    // weapon snapshot exists. V1/V2 checks above retain their old contract.
+    assert(lease.setEarly(7,early,100)==api::PaperResultV1::Ok);
+    assert(lease.contractVersion==3&&lease.request.weaponGenerationKey==0);
+    assert(lease.setEarly(8,early,101)==api::PaperResultV1::OwnerConflict);
+    assert(lease.setEarly(7,early,104)==api::PaperResultV1::StaleSnapshot);
+    early.flags=2;assert(lease.setEarly(7,early,101)==api::PaperResultV1::InvalidArgument);
+    lease.clear();assert(lease.owner==0);
+    static_assert(sizeof(physical_reload::v3::Request)==48&&sizeof(physical_reload::v3::Api)==32);
     std::cout<<"PASS physical reload ownership, renewal, expiry, conflicts and generation loss\n";
 }
