@@ -996,14 +996,6 @@ namespace paper::native_animation_authority
 
         bool onWeaponFire(void* handler, RE::Actor* actor, RE::BSFixedString* eventData)
         {
-            // Sample before Bethesda handles the fire event. Replacement clips
-            // may publish their frame-zero ReloadEnd marker synchronously from
-            // the original handler; arming from the post-call value would lose
-            // the first half of the native cycle bracket.
-            const auto reloadStartSequenceBeforeFire =
-                s_playerReloadStartSequence.load(std::memory_order_acquire);
-            const auto reloadEndSequenceBeforeFire =
-                s_playerReloadEndSequence.load(std::memory_order_acquire);
             const auto* player = RE::PlayerCharacter::GetSingleton();
             std::uint64_t activityOrderBeforeEvent = 0;
             if (actor && actor == player) {
@@ -1029,39 +1021,6 @@ namespace paper::native_animation_authority
                     std::memory_order_acq_rel);
             }
 
-            if (!handled || !actor || actor != player ||
-                !s_runtimeEnabled.load(std::memory_order_acquire) ||
-                !s_localManualCycleTestEnabled.load(std::memory_order_acquire) ||
-                !s_manualCycleHandAnimationEligible.load(std::memory_order_acquire) ||
-                s_localReloadTestLeaseFrames.load(std::memory_order_acquire) > 0 ||
-                s_playerReloadEventActive.load(std::memory_order_acquire) ||
-                // The physical-reload owner permits native firing, but owns
-                // the mechanism/hand cycle. Arming our local cycle here would
-                // make its next renewal reject the busy state we just created.
-                provider::physicalReloadActive()) {
-                return handled;
-            }
-
-            RE::TESObjectWEAP* weapon = nullptr;
-            const auto* weaponData = currentPlayerWeaponInstanceData(weapon);
-            if (!weapon || !weaponData) {
-                return handled;
-            }
-
-            const float watchdogSeconds = manualCycleWatchdogSeconds(*weaponData);
-            const auto watchdogMilliseconds = static_cast<std::uint32_t>(
-                watchdogSeconds * 1000.0f + 0.5f);
-            s_localManualCycleReloadStartSequenceAtArm.store(
-                reloadStartSequenceBeforeFire,
-                std::memory_order_release);
-            s_localManualCycleReloadEndSequenceAtArm.store(
-                reloadEndSequenceBeforeFire,
-                std::memory_order_release);
-            s_localManualCycleRequestedWatchdogMilliseconds.store(
-                watchdogMilliseconds,
-                std::memory_order_release);
-            s_localManualCycleTestRequestSequence.fetch_add(1, std::memory_order_acq_rel);
-            s_localManualCycleTestLeaseActive.store(true, std::memory_order_release);
             return handled;
         }
 
@@ -2220,7 +2179,7 @@ namespace paper::native_animation_authority
                 !s_weaponFireHookInstallFailed.load(std::memory_order_acquire)) {
                 if (!installWeaponFireHook()) {
                     PAPER_LOG_WARN(Init,
-                        "Native reload authority remains available, but manual-cycle hand-only animation is disabled because WeaponFireHandler was not installed");
+                        "Native reload and action-qualified cycle authority remain available; WeaponFire telemetry is unavailable");
                 }
             }
             return true;
@@ -2235,7 +2194,7 @@ namespace paper::native_animation_authority
         s_hookInstalled.store(true, std::memory_order_release);
         if (!installWeaponFireHook()) {
             PAPER_LOG_WARN(Init,
-                "Native reload authority remains available, but manual-cycle hand-only animation is disabled because WeaponFireHandler was not installed");
+                "Native reload and action-qualified cycle authority remain available; WeaponFire telemetry is unavailable");
         }
         PAPER_LOG_INFO(Init,
             "Native animation lifecycle hooks ready; graph capture=ROCK V1 NativeGraphOutput scope=arms,hands,Weapon/WeaponLeft lifecycle=WeaponFireHandler+ReloadStateChangeHandler");
@@ -2288,12 +2247,66 @@ namespace paper::native_animation_authority
     {
         const bool effectiveEnabled = enabled &&
             s_hookInstalled.load(std::memory_order_acquire) &&
-            s_weaponFireHookInstalled.load(std::memory_order_acquire);
+            manual_reload_only::physicalCycleReady();
         s_localManualCycleTestEnabled.store(effectiveEnabled, std::memory_order_release);
         if (!effectiveEnabled) {
             clearManualCycleRockGripState();
             cancelLocalManualCycleTestLease();
         }
+    }
+
+    NativeCycleActionBoundary captureNativeCycleActionBoundary()
+    {
+        if (!s_runtimeEnabled.load(std::memory_order_acquire) ||
+            !s_localManualCycleTestEnabled.load(std::memory_order_acquire) ||
+            !s_manualCycleHandAnimationEligible.load(std::memory_order_acquire) ||
+            localReloadLeaseActive() || s_playerReloadEventActive.load(std::memory_order_acquire) ||
+            provider::physicalReloadActive()) return {};
+        RE::TESObjectWEAP* weapon = nullptr;
+        const auto* instance = currentPlayerWeaponInstanceData(weapon);
+        if (!weapon || !instance) return {};
+        return { s_playerReloadStartSequence.load(std::memory_order_acquire),
+            s_playerReloadEndSequence.load(std::memory_order_acquire),
+            reinterpret_cast<std::uintptr_t>(instance), weapon->formID };
+    }
+
+    void completeNativeCycleAction(const NativeCycleActionBoundary& boundary, const bool accepted)
+    {
+        if (!boundary.weaponFormId) return;
+        const auto current = captureNativeCycleActionBoundary();
+        // Dispatch can synchronously enter reload or replace the weapon. Never
+        // transfer a pre-dispatch witness to that new owner or lose frame-zero
+        // ReloadEnd markers by sampling the bracket after the call.
+        if (!accepted || current.weaponFormId != boundary.weaponFormId ||
+            current.weaponInstance != boundary.weaponInstance ||
+            current.reloadStartSequence != boundary.reloadStartSequence) {
+            PAPER_LOG_DEBUG(Animation, "Native cycle action not leased form={:08X} accepted={} identityMatches={} reloadChanged={}",
+                boundary.weaponFormId, accepted,
+                current.weaponFormId == boundary.weaponFormId && current.weaponInstance == boundary.weaponInstance,
+                current.reloadStartSequence != boundary.reloadStartSequence);
+            return;
+        }
+        if (current.reloadEndSequence >= boundary.reloadEndSequence &&
+            current.reloadEndSequence - boundary.reloadEndSequence >= 2) {
+            // Both bracket events can run inside the native dispatcher. There
+            // is no remaining animation to own at its return boundary.
+            cancelLocalManualCycleTestLease();
+            PAPER_LOG_DEBUG(Animation, "Native cycle action completed synchronously form={:08X}; no lease published",
+                boundary.weaponFormId);
+            return;
+        }
+        RE::TESObjectWEAP* weapon = nullptr;
+        const auto* instance = currentPlayerWeaponInstanceData(weapon);
+        if (!weapon || !instance) return;
+        const float watchdogSeconds = manualCycleWatchdogSeconds(*instance);
+        s_localManualCycleReloadStartSequenceAtArm.store(boundary.reloadStartSequence, std::memory_order_release);
+        s_localManualCycleReloadEndSequenceAtArm.store(boundary.reloadEndSequence, std::memory_order_release);
+        s_localManualCycleRequestedWatchdogMilliseconds.store(
+            static_cast<std::uint32_t>(watchdogSeconds * 1000.0f + 0.5f), std::memory_order_release);
+        s_localManualCycleTestRequestSequence.fetch_add(1, std::memory_order_acq_rel);
+        s_localManualCycleTestLeaseActive.store(true, std::memory_order_release);
+        PAPER_LOG_DEBUG(Animation, "Native cycle action leased form={:08X} source=ActionBoltCharge watchdog={:.3f}s reloadEndBefore={} reloadEndAfter={}",
+            boundary.weaponFormId, watchdogSeconds, boundary.reloadEndSequence, current.reloadEndSequence);
     }
 
     void setLocalReloadTestEnabled(const bool enabled)

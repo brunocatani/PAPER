@@ -1033,6 +1033,15 @@ int main()
         cycleCompleted.endReason ==
         LocalManualCycleLeaseEndReason::CycleBracketEnded);
 
+    // The native action can emit both bracket markers before the next ROCK
+    // frame. Preserve the pre-dispatch sequence rather than losing entry and
+    // keeping collision suppression alive until the watchdog expires.
+    constexpr auto cycleCompletedWithinDispatch = advanceLocalManualCycleLease(
+        cycleArmed, LocalManualCycleLifecycleSignal{ 7, 22, 0.01f });
+    static_assert(!cycleCompletedWithinDispatch.active());
+    static_assert(cycleCompletedWithinDispatch.endReason ==
+        LocalManualCycleLeaseEndReason::CycleBracketEnded);
+
     constexpr auto cyclePreempted = advanceLocalManualCycleLease(
         cycleArmed,
         LocalManualCycleLifecycleSignal{ 8, 20, 0.25f });

@@ -1,4 +1,5 @@
 #include "reload_control/ManualReloadOnly.h"
+#include "animation/NativeAnimationAuthority.h"
 #include "api/PAPERProvider.h"
 #include "support/Fo4VrRuntime.h"
 
@@ -42,7 +43,13 @@ namespace paper::manual_reload_only
                 return false;
             }
             const auto original=s_originalBoltAction.load(std::memory_order_acquire);
-            return original?original(actor,action,target):false;
+            if (!original) return false;
+            const bool playerAction = actor == f4vr::getPlayer();
+            const auto boundary = playerAction ? native_animation_authority::captureNativeCycleActionBoundary() :
+                native_animation_authority::NativeCycleActionBoundary{};
+            const bool accepted = original(actor, action, target);
+            if (playerAction) native_animation_authority::completeNativeCycleAction(boundary, accepted);
+            return accepted;
         }
 
         // Fallout4VR.exe 1.2.72 PlayerControls::DoAction post-fire fallback.
@@ -579,7 +586,7 @@ namespace paper::manual_reload_only
         }catch(const std::exception& e){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook failed: {}",e.what());return false;}
         catch(...){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook failed");return false;}
         s_boltActionReady.store(true,std::memory_order_release);
-        PAPER_LOG_INFO(Reload,"Physical manual-cycle post-shot bolt action qualified at FO4VR E4EBCD; opt-in V2 leases only");return true;
+        PAPER_LOG_INFO(Reload,"Native post-shot cycle action qualified at FO4VR E4EBCD; accepted actions drive hand animation, physical owners retain cycle control");return true;
     }
 
     bool physicalCycleReady() noexcept {return s_boltActionReady.load(std::memory_order_acquire);}

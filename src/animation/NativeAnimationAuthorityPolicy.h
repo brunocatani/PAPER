@@ -457,8 +457,9 @@ namespace paper::native_animation_authority_policy
      * Bethesda's manual-cycle action is bracketed by two ReloadEnd graph
      * events: one at the start of the bolt/lever or revolver hammer clip and
      * one at its end. A
-     * player WeaponFire event arms this state with the event sequence sampled
-     * at that exact boundary. A real reload start wins immediately, while the
+     * accepted native ActionBoltCharge arms this state with the event sequence
+     * sampled before dispatch. WeaponFire alone never arms it. A real reload
+     * start wins immediately, while the
      * duration derived from the equipped weapon's live animation data remains
      * a bounded fallback for non-conforming replacement clips.
      */

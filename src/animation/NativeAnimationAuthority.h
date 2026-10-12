@@ -140,6 +140,17 @@ namespace paper::native_animation_authority
     void setLocalManualCycleTestEnabled(bool enabled);
     void setLocalReloadTestEnabled(bool enabled);
     void setManualCycleHandAnimationEligible(bool eligible);
+    // Value-only witness around the verified native ActionBoltCharge call.
+    // Kept on its caller's stack; no engine pointer is retained across frames.
+    struct NativeCycleActionBoundary
+    {
+        std::uint64_t reloadStartSequence{};
+        std::uint64_t reloadEndSequence{};
+        std::uintptr_t weaponInstance{};
+        std::uint32_t weaponFormId{};
+    };
+    [[nodiscard]] NativeCycleActionBoundary captureNativeCycleActionBoundary();
+    void completeNativeCycleAction(const NativeCycleActionBoundary& boundary, bool accepted);
     void setManualCycleRockGripSnapshot(
         const ManualCycleRockGripSnapshot& snapshot);
 
