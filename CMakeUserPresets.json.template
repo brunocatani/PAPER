@@ -13,17 +13,6 @@
         "COPY_PLUGIN_BASE_PATH": "C:/path/to/mods/PAPER",
         "COMMON_LIB_F4VR_PATH": "C:/path/to/CommonLibF4VR"
       }
-    },
-    {
-      "name": "custom-tests",
-      "inherits": "tests",
-      "environment": {
-        "VCPKG_ROOT": "C:/path/to/vcpkg"
-      },
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "COMMON_LIB_F4VR_PATH": "C:/path/to/CommonLibF4VR"
-      }
     }
   ]
 }
