@@ -18,7 +18,7 @@ cmake --preset custom-fast
 cmake --build build-fast --config Release --target PAPER
 ```
 
-Tests use `custom-tests` / `build-tests`. PAPER has no project release preset; do not invent one.
+Tests build in `build-fast` through the `build_tests` target. PAPER has no project release preset; do not invent one.
 
 ## Architecture
 
