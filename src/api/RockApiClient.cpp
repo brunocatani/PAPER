@@ -82,12 +82,16 @@ namespace paper
         if (_phaseCallbackToken != 0) {
             return true;
         }
-        return _animation->registerAnimationPhaseCallback(
-                   _ownerToken,
-                   callback,
-                   userData,
-                   &_phaseCallbackToken) ==
-               rock::api::Status::Ok;
+        const auto status = _animation->registerAnimationPhaseCallback(
+            _ownerToken,
+            callback,
+            userData,
+            &_phaseCallbackToken);
+        if (status != rock::api::Status::Ok) {
+            PAPER_LOG_ERROR(Api,"ROCK refused the animation-phase callback: status {}",static_cast<std::uint32_t>(status));
+            return false;
+        }
+        return true;
     }
 
     bool RockApiClient::setNativeAnimationAuthority(const std::uint32_t flags)
