@@ -9,7 +9,7 @@ namespace paper::reload_stages
 {
     void reset();
     void completeFrame(
-        const rock::api::core::AnimationPhaseContextV1& context);
+        const rock::api::animation::AnimationPhaseContext& context);
 
     [[nodiscard]] api::PaperResultV1 getState(
         api::PaperReloadStageStateV1& outState);

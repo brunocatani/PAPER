@@ -42,17 +42,17 @@ namespace paper::frik_visual_authority
                 return true;
             }
 
-            rock::api::animation::HandVisualAuthorityRequestV1 request{};
+            rock::api::animation::HandVisualAuthorityRequest request{};
             request.hand = providerHand(hand);
             request.priority = source.priority;
             if (source.worldValid) {
                 request.flags |= static_cast<std::uint32_t>(
-                    rock::api::animation::HandVisualAuthorityFlagV1::WorldTransform);
+                    rock::api::animation::HandVisualAuthorityFlag::WorldTransform);
                 api_transform::fromNi(source.world, request.worldTransform);
             }
             if (source.fingersValid && source.fingers.enabledMask != 0) {
                 request.flags |= static_cast<std::uint32_t>(
-                    rock::api::animation::HandVisualAuthorityFlagV1::FingerLocalTransforms);
+                    rock::api::animation::HandVisualAuthorityFlag::FingerLocalTransforms);
                 request.fingerLocalTransformMask = source.fingers.enabledMask;
                 for (std::size_t index = 0; index < source.fingers.localTransforms.size(); ++index) {
                     const auto bit = static_cast<std::uint16_t>(1u << index);
@@ -153,12 +153,12 @@ namespace paper::frik_visual_authority
         // from its controller/physics hand. getHandFrameV1 reports the latter.
         // Requested ROCK grip targets take precedence at the caller; this
         // readback serves hands without an available explicit grip target.
-        rock::api::hands::HandFrameV1 frame{};
+        rock::api::hands::HandFrame frame{};
         constexpr auto requiredFlags =
             static_cast<std::uint32_t>(
-                rock::api::hands::HandFrameFlagV1::Valid) |
+                rock::api::hands::HandFrameFlag::Valid) |
             static_cast<std::uint32_t>(
-                rock::api::hands::HandFrameFlagV1::PresentedVisual);
+                rock::api::hands::HandFrameFlag::PresentedVisual);
         if (!rockApiClient().queryPresentedHandFrame(providerHand(hand),frame) ||
             frame.hand != providerHand(hand) ||
             (frame.flags & requiredFlags) != requiredFlags) {

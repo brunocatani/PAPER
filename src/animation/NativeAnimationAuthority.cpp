@@ -505,7 +505,7 @@ namespace paper::native_animation_authority
                 return 0;
             }
 
-            rock::api::animation::NativeAnimationAuthorityStateV1 state{};
+            rock::api::animation::NativeAnimationAuthorityState state{};
             const std::uint32_t providerFlags =
                 rockApiClient().queryNativeAnimationAuthorityState(state) ?
                 state.activeFlags :
@@ -2633,7 +2633,7 @@ namespace paper::native_animation_authority
         captured.weaponGenerationKey = identity.weaponGenerationKey;
         captured.weaponFormId = identity.weaponFormId;
         for (const bool left : { false, true }) {
-            rock::api::hands::PresentedHandPoseV1 pose{};
+            rock::api::hands::PresentedHandPose pose{};
             if (!rockApiClient().queryPresentedHandPose(left ? rock::api::Hand::Left : rock::api::Hand::Right, pose) ||
                 pose.frameIndex != frameIndex || pose.presentationSequence != frameIndex) continue;
             const auto local = transform_math::composeTransforms(inverseWeapon, api_transform::toNi(pose.handWorld));

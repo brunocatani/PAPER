@@ -11,6 +11,12 @@ namespace paper
     namespace
     {
         constexpr std::uint32_t kRollingLeaseFrames = 3;
+
+        template<class... Permission>
+        [[nodiscard]] constexpr std::uint32_t permissions(Permission... values)
+        {
+            return (static_cast<std::uint32_t>(values) | ...);
+        }
     }
 
     RockApiClient& rockApiClient()
@@ -28,14 +34,17 @@ namespace paper
             PAPER_LOG_ERROR(Api,"ROCK modular registration failed: {}",static_cast<std::uint32_t>(status));
             return false;
         }
-        if (_client.acquire(5,_core)!=rock::api::Status::Ok ||
-            _client.acquire(1,_hands)!=rock::api::Status::Ok ||
-            _client.acquire(1,_grab)!=rock::api::Status::Ok ||
-            _client.acquire(1,_weapon)!=rock::api::Status::Ok ||
-            _client.acquire(1,_parts)!=rock::api::Status::Ok ||
-            _client.acquire(3,_animation)!=rock::api::Status::Ok ||
-            _client.acquire(2,_diagnostics)!=rock::api::Status::Ok) {
-            PAPER_LOG_ERROR(Api,"ROCK is missing a required modular PAPER interface");
+        namespace api=rock::api;
+        const char* missing{};
+        if ((status=_client.acquire(permissions(api::core::Permission::Read),_core))!=api::Status::Ok) missing="Core";
+        else if ((status=_client.acquire(permissions(api::hands::Permission::Read),_hands))!=api::Status::Ok) missing="Hands";
+        else if ((status=_client.acquire(permissions(api::grab::Permission::Read),_grab))!=api::Status::Ok) missing="Grab";
+        else if ((status=_client.acquire(permissions(api::weapon::Permission::Read),_weapon))!=api::Status::Ok) missing="Weapon";
+        else if ((status=_client.acquire(permissions(api::weaponparts::Permission::Read),_parts))!=api::Status::Ok) missing="WeaponParts";
+        else if ((status=_client.acquire(permissions(api::animation::Permission::Read,api::animation::Permission::Write,
+                     api::animation::Permission::Callbacks),_animation))!=api::Status::Ok) missing="Animation";
+        if (missing) {
+            PAPER_LOG_ERROR(Api,"ROCK {} interface unavailable for PAPER: {}",missing,static_cast<std::uint32_t>(status));
             (void)_client.close(); return false;
         }
         _ownerToken=_client.owner();
@@ -50,21 +59,21 @@ namespace paper
             PAPER_LOG_ERROR(Api,"ROCK owner teardown failed: {}",static_cast<std::uint32_t>(status)); return;
         }
         _ownerToken=0; _phaseCallbackToken=0; _publishedAuthorityFlags=0;
-        _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr; _diagnostics=nullptr;
+        _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr;
         _reloadObservationEvidenceReady=false; _sample={};
     }
     bool RockApiClient::ready() const { return _ownerToken && _client.owner()==_ownerToken; }
     std::uint64_t RockApiClient::ownerToken() const { return _ownerToken; }
-    void RockApiClient::setFrameContext(const rock::api::core::AnimationPhaseContextV1& context) {
+    void RockApiClient::setFrameContext(const rock::api::animation::AnimationPhaseContext& context) {
         _sample.frameIndex=context.frameIndex; _sample.worldGeneration=context.worldGeneration;
         _sample.skeletonGeneration=context.skeletonGeneration; _sample.providerGeneration=context.providerGeneration;
     }
-    bool RockApiClient::queryPresentedHandFrame(rock::api::Hand hand,rock::api::hands::HandFrameV1& output) const {
-        output={}; return ready() && _hands->getPresentedHandFrameV1(_ownerToken,hand,&output)==rock::api::Status::Ok;
+    bool RockApiClient::queryPresentedHandFrame(rock::api::Hand hand,rock::api::hands::HandFrame& output) const {
+        output={}; return ready() && _hands->getPresentedHandFrame(_ownerToken,hand,&output)==rock::api::Status::Ok;
     }
 
     bool RockApiClient::registerAnimationPhaseCallback(
-        rock::api::core::PhaseCallbackV1 callback,
+        rock::api::animation::PhaseCallback callback,
         void* userData)
     {
         if (!ready() || !callback) {
@@ -73,7 +82,7 @@ namespace paper
         if (_phaseCallbackToken != 0) {
             return true;
         }
-        return _core->registerAnimationPhaseCallbackV1(
+        return _animation->registerAnimationPhaseCallback(
                    _ownerToken,
                    callback,
                    userData,
@@ -90,11 +99,12 @@ namespace paper
             clearNativeAnimationAuthority();
             return true;
         }
-        rock::api::animation::NativeAnimationAuthorityRequestV1 request{};
+        rock::api::animation::NativeAnimationAuthorityRequest request{};
         request.flags = flags;
+        request.weaponSlot = kRockWeaponSlot;
         request.leaseFrames = kRollingLeaseFrames;
         stamp(request);
-        const auto result = _animation->setNativeAnimationAuthorityV1(
+        const auto result = _animation->setNativeAnimationAuthority(
             _ownerToken,
             &request);
         if (result != rock::api::Status::Ok) {
@@ -107,40 +117,40 @@ namespace paper
     void RockApiClient::clearNativeAnimationAuthority()
     {
         if (ready() && _publishedAuthorityFlags != 0) {
-            (void)_animation->clearNativeAnimationAuthorityV1(_ownerToken);
+            (void)_animation->clearNativeAnimationAuthority(_ownerToken);
         }
         _publishedAuthorityFlags = 0;
     }
 
     bool RockApiClient::queryNativeAnimationAuthorityState(
-        rock::api::animation::NativeAnimationAuthorityStateV1& outState) const
+        rock::api::animation::NativeAnimationAuthorityState& outState) const
     {
         outState = {};
-        return ready() && _animation->getNativeAnimationAuthorityStateV1(_ownerToken,&outState)==rock::api::Status::Ok;
+        return ready() && _animation->getNativeAnimationAuthorityState(_ownerToken,&outState)==rock::api::Status::Ok;
     }
 
     bool RockApiClient::queryEquippedWeaponGripState(paper::RockWeaponGripState& outState) const {
         outState={};
-        if (!ready() || _weapon->getEquippedWeaponGripStateV1(_ownerToken,&outState)!=rock::api::Status::Ok) return false;
+        if (!ready() || _weapon->getGrip(_ownerToken,kRockWeaponSlot,&outState)!=rock::api::Status::Ok) return false;
         outState.weaponNode=reinterpret_cast<std::uintptr_t>(fo4vr::getFirstPersonWeaponNode());
         return true;
     }
 
-    bool RockApiClient::queryEquippedWeaponHandlingState(
-        rock::api::weapon::EquippedWeaponHandlingStateV1& outState) const
+    bool RockApiClient::queryEquippedWeaponHandling(paper::RockWeaponHandling& outHandling) const
     {
-        outState = {};
+        outHandling = {};
         return ready() &&
-               _weapon->getEquippedWeaponHandlingStateV1(_ownerToken,&outState)==rock::api::Status::Ok;
+               _weapon->getWeaponState(_ownerToken,kRockWeaponSlot,&outHandling.state)==rock::api::Status::Ok &&
+               _weapon->getHandlingAuthority(_ownerToken,&outHandling.authority)==rock::api::Status::Ok;
     }
 
     bool RockApiClient::queryHandInteractionState(
         const rock::api::Hand hand,
-        rock::api::grab::HandInteractionStateV1& outState) const
+        rock::api::grab::HandInteractionState& outState) const
     {
         outState = {};
-        return ready() && _grab->getHandInteractionStateV1 &&
-               _grab->getHandInteractionStateV1(
+        return ready() &&
+               _grab->getHandInteractionState(
                    _ownerToken,
                    hand,
                    &outState) ==
@@ -149,30 +159,31 @@ namespace paper
 
     bool RockApiClient::queryWeaponPartGripState(
         const rock::api::Hand hand,
-        rock::api::weaponparts::WeaponPartGripStateV1& outState) const
+        rock::api::weaponparts::GripState& outState) const
     {
         outState = {};
-        return ready() && _parts->getWeaponPartGripStateV1(_ownerToken,hand,&outState)==rock::api::Status::Ok;
+        return ready() && _parts->getGripState(_ownerToken,hand,&outState)==rock::api::Status::Ok;
     }
 
     bool RockApiClient::querySelectedAuthoredGripPose(
-        rock::api::weapon::AuthoredGripPoseV1& outPose) const
+        rock::api::weapon::AuthoredGripPose& outPose) const
     {
         outPose = {};
         return ready() &&
-               _weapon->getSelectedAuthoredGripPoseV1(
+               _weapon->getAuthoredGripPose(
                    _ownerToken,
+                   kRockWeaponSlot,
                    &outPose) ==
                    rock::api::Status::Ok;
     }
 
     bool RockApiClient::queryPresentedHandPose(
         const rock::api::Hand hand,
-        rock::api::hands::PresentedHandPoseV1& outPose) const
+        rock::api::hands::PresentedHandPose& outPose) const
     {
         outPose = {};
-        return ready() && _hands->getPresentedHandPoseV1 &&
-               _hands->getPresentedHandPoseV1(
+        return ready() &&
+               _hands->getPresentedHandPose(
                    _ownerToken,
                    hand,
                    &outPose) ==
@@ -180,11 +191,11 @@ namespace paper
     }
 
     bool RockApiClient::queryEquippedWeaponClassification(
-        rock::api::weapon::WeaponClassificationV1& outClassification) const
+        rock::api::weapon::Classification& outClassification) const
     {
         outClassification = {};
         return ready() &&
-               _weapon->queryEquippedWeaponClassificationV1(_ownerToken,&outClassification)==rock::api::Status::Ok;
+               _weapon->getClassification(_ownerToken,kRockWeaponSlot,&outClassification)==rock::api::Status::Ok;
     }
 
     bool RockApiClient::reloadObservationEvidenceReady() const
@@ -192,32 +203,31 @@ namespace paper
         return ready() && _reloadObservationEvidenceReady;
     }
 
-    std::uint32_t RockApiClient::weaponEvidenceDetailCount() const {
-        std::uint32_t count=0;
-        if (reloadObservationEvidenceReady()) (void)_parts->getWeaponEvidenceDetailCountV1(_ownerToken,&count);
-        return count;
-    }
-    std::uint32_t RockApiClient::copyWeaponEvidenceDetails(rock::api::weaponparts::WeaponEvidenceDetailV1* output,std::uint32_t capacity) const {
+    std::uint32_t RockApiClient::copyWeaponEvidenceDetails(rock::api::weaponparts::EvidenceDetail* output,std::uint32_t capacity,std::uint32_t& outTotal) const {
+        outTotal=0;
         if (!reloadObservationEvidenceReady() || !output) return 0;
         const auto count=std::min(capacity,rock::api::weaponparts::kMaxEvidenceDetails);
         for (std::uint32_t i=0;i<count;++i) output[i]={};
-        std::uint32_t copied=0;
-        return _parts->copyWeaponEvidenceDetailsV1(_ownerToken,output,count,&copied)==rock::api::Status::Ok?copied:0;
+        if (_parts->copyEvidenceDetails(_ownerToken,kRockWeaponSlot,output,count,&outTotal)!=rock::api::Status::Ok) {
+            outTotal=0; return 0;
+        }
+        return std::min(outTotal,count);
     }
     std::uint32_t RockApiClient::copyWeaponEvidencePoints(std::uint32_t body,rock::api::Point3* output,std::uint32_t capacity) const {
         if (!reloadObservationEvidenceReady() || !output) return 0;
-        std::uint32_t copied=0;
-        return _parts->copyWeaponEvidenceDetailPointsV1(_ownerToken,body,output,std::min(capacity,rock::api::weaponparts::kMaxEvidencePoints),&copied)==rock::api::Status::Ok?copied:0;
+        const auto count=std::min(capacity,rock::api::weaponparts::kMaxEvidencePoints);
+        std::uint32_t total=0;
+        return _parts->copyEvidencePoints(_ownerToken,kRockWeaponSlot,body,output,count,&total)==rock::api::Status::Ok?std::min(total,count):0;
     }
 
     bool RockApiClient::setHandVisualAuthority(
-        const rock::api::animation::HandVisualAuthorityRequestV1& request) const
+        const rock::api::animation::HandVisualAuthorityRequest& request) const
     {
         auto leasedRequest = request;
         leasedRequest.leaseFrames = kRollingLeaseFrames;
         stamp(leasedRequest);
         return ready() &&
-               _animation->setHandVisualAuthorityV1(_ownerToken, &leasedRequest) ==
+               _animation->setHandVisualAuthority(_ownerToken, &leasedRequest) ==
                    rock::api::Status::Ok;
     }
 
@@ -225,18 +235,18 @@ namespace paper
         const rock::api::Hand hand) const
     {
         if (ready()) {
-            (void)_animation->clearHandVisualAuthorityV1(_ownerToken, hand);
+            (void)_animation->clearHandVisualAuthority(_ownerToken, hand);
         }
     }
 
     bool RockApiClient::publishNativeAnimationRuntime(
-        const rock::api::animation::NativeAnimationRuntimePublicationV1& publication) const
+        const rock::api::animation::NativeAnimationRuntimePublication& publication) const
     {
         auto leasedPublication = publication;
         leasedPublication.leaseFrames = kRollingLeaseFrames;
         stamp(leasedPublication);
         return ready() &&
-               _animation->publishNativeAnimationRuntimeV1(
+               _animation->publishNativeAnimationRuntime(
                    _ownerToken,
                    &leasedPublication) ==
                    rock::api::Status::Ok;
@@ -245,25 +255,7 @@ namespace paper
     void RockApiClient::clearNativeAnimationRuntime() const
     {
         if (ready()) {
-            (void)_animation->clearNativeAnimationRuntimeV1(_ownerToken);
-        }
-    }
-
-    bool RockApiClient::publishDebugOverlay(
-        const rock::api::diagnostics::DebugOverlayPublicationV1& publication) const
-    {
-        auto leasedPublication = publication;
-        leasedPublication.leaseFrames = kRollingLeaseFrames;
-        stamp(leasedPublication);
-        return ready() &&
-               _diagnostics->publishDebugOverlayV1(_ownerToken, &leasedPublication) ==
-                   rock::api::Status::Ok;
-    }
-
-    void RockApiClient::clearDebugOverlay() const
-    {
-        if (ready()) {
-            (void)_diagnostics->clearDebugOverlayV1(_ownerToken);
+            (void)_animation->clearNativeAnimationRuntime(_ownerToken);
         }
     }
 
@@ -273,7 +265,7 @@ namespace paper
         std::size_t depth=0;
         for (;;) {
             std::uint64_t parent{}; std::uint32_t index{};
-            if (_parts->querySourcePath(_ownerToken,generation,key,&parent,&index)!=rock::api::Status::Ok) return nullptr;
+            if (_parts->querySourcePath(_ownerToken,kRockWeaponSlot,generation,key,&parent,&index)!=rock::api::Status::Ok) return nullptr;
             if (!parent) break;
             if (depth==path.size()) return nullptr;
             path[depth++]=index; key=parent;

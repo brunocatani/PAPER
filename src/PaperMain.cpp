@@ -48,8 +48,7 @@ namespace
     bool s_weaponMotionDemandActive{ false };
     weapon_motion::RuntimeOptions s_weaponMotionOptions{};
     paper::RockWeaponGripState s_gripState{};
-    rock::api::weapon::EquippedWeaponHandlingStateV1
-        s_handlingState{};
+    paper::RockWeaponHandling s_handlingState{};
     bool s_gripStateValid{ false };
     bool s_handlingStateValid{ false };
     native_animation_authority_policy::NativeAnimationCompatibilityState
@@ -215,21 +214,21 @@ namespace
     }
 
     void recordPhasePerformance(
-        const rock::api::core::AnimationPhaseV1 phase,
+        const rock::api::animation::AnimationPhase phase,
         const std::uint64_t microseconds)
     {
         s_reloadPerformance.currentFrameMicroseconds += microseconds;
         switch (phase) {
-        case rock::api::core::AnimationPhaseV1::NativeGraphOutput:
+        case rock::api::animation::AnimationPhase::NativeGraphOutput:
             s_reloadPerformance.nativeGraphPhase.add(microseconds);
             break;
-        case rock::api::core::AnimationPhaseV1::BeforeRock:
+        case rock::api::animation::AnimationPhase::BeforeRock:
             s_reloadPerformance.beforeRockPhase.add(microseconds);
             break;
-        case rock::api::core::AnimationPhaseV1::AfterRock:
+        case rock::api::animation::AnimationPhase::AfterRock:
             s_reloadPerformance.afterRockPhase.add(microseconds);
             break;
-        case rock::api::core::AnimationPhaseV1::Complete:
+        case rock::api::animation::AnimationPhase::Complete:
             s_reloadPerformance.completePhase.add(microseconds);
             break;
         default:
@@ -266,7 +265,7 @@ namespace
     }
 
     void completePerformanceFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const EnrichmentDemand demand)
     {
         auto& performance = s_reloadPerformance;
@@ -507,52 +506,59 @@ namespace
 
     [[nodiscard]] bool hasContextFlag(
         const std::uint32_t flags,
-        const rock::api::core::AnimationPhaseContextFlagV1 flag)
+        const rock::api::animation::AnimationPhaseContextFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
     [[nodiscard]] bool hasGripFlag(
         const std::uint32_t flags,
-        const rock::api::weapon::EquippedWeaponGripStateFlagV1 flag)
+        const rock::api::weapon::GripFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
-    [[nodiscard]] bool hasHandlingRuntimeFlag(
+    [[nodiscard]] bool hasWeaponStateFlag(
         const std::uint32_t flags,
-        const rock::api::weapon::EquippedWeaponHandlingRuntimeFlagV1 flag)
+        const rock::api::weapon::WeaponStateFlag flag)
+    {
+        return (flags & static_cast<std::uint32_t>(flag)) != 0;
+    }
+
+    [[nodiscard]] bool hasHandlingStateFlag(
+        const std::uint32_t flags,
+        const rock::api::weapon::HandlingStateFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
     [[nodiscard]] bool hasHandInteractionFlag(
         const std::uint32_t flags,
-        const rock::api::grab::HandInteractionFlagV1 flag)
+        const rock::api::grab::HandInteractionFlag flag)
     {
         return (flags & static_cast<std::uint32_t>(flag)) != 0;
     }
 
     [[nodiscard]] bool isFixedSurfaceClimb(
-        const rock::api::grab::HandInteractionStateV1& state)
+        const rock::api::grab::HandInteractionState& state)
     {
         return state.phase ==
-                   rock::api::grab::HandInteractionPhaseV1::
+                   rock::api::grab::HandInteractionPhase::
                        Holding &&
                hasHandInteractionFlag(
                    state.flags,
-                   rock::api::grab::HandInteractionFlagV1::
+                   rock::api::grab::HandInteractionFlag::
                        TouchGrab) &&
                hasHandInteractionFlag(
                    state.flags,
-                   rock::api::grab::HandInteractionFlagV1::
+                   rock::api::grab::HandInteractionFlag::
                        FixedSurfaceLatch);
     }
 
     [[nodiscard]] bool refreshClimbingAnimationSuppression()
     {
-        rock::api::grab::HandInteractionStateV1 rightState{};
-        rock::api::grab::HandInteractionStateV1 leftState{};
+        rock::api::grab::HandInteractionState rightState{};
+        rock::api::grab::HandInteractionState leftState{};
         const bool rightStateValid =
             rockApiClient().queryHandInteractionState(
                 rock::api::Hand::Right,
@@ -560,7 +566,7 @@ namespace
             rightState.hand == rock::api::Hand::Right &&
             hasHandInteractionFlag(
                 rightState.flags,
-                rock::api::grab::HandInteractionFlagV1::Valid);
+                rock::api::grab::HandInteractionFlag::Valid);
         const bool leftStateValid =
             rockApiClient().queryHandInteractionState(
                 rock::api::Hand::Left,
@@ -568,7 +574,7 @@ namespace
             leftState.hand == rock::api::Hand::Left &&
             hasHandInteractionFlag(
                 leftState.flags,
-                rock::api::grab::HandInteractionFlagV1::Valid);
+                rock::api::grab::HandInteractionFlag::Valid);
         const bool rightFixedSurfaceLatch =
             rightStateValid && isFixedSurfaceClimb(rightState);
         const bool leftFixedSurfaceLatch =
@@ -595,13 +601,13 @@ namespace
     }
 
     [[nodiscard]] bool isSupportGripKind(
-        const rock::api::weaponparts::WeaponPartGripKindV1 kind)
+        const rock::api::weaponparts::GripKind kind)
     {
         return kind ==
-                   rock::api::weaponparts::WeaponPartGripKindV1::
+                   rock::api::weaponparts::GripKind::
                        SupportFullAuthority ||
                kind ==
-                   rock::api::weaponparts::WeaponPartGripKindV1::
+                   rock::api::weaponparts::GripKind::
                        SupportVisualOnly;
     }
 
@@ -656,47 +662,37 @@ namespace
     [[nodiscard]] native_animation_authority_policy::
         NativeAnimationCompatibilityObservation
     refreshWeaponState(
-        const rock::api::core::AnimationPhaseContextV1& context)
+        const rock::api::animation::AnimationPhaseContext& context)
     {
         s_handlingState = {};
         s_handlingStateValid =
-            rockApiClient().queryEquippedWeaponHandlingState(
+            rockApiClient().queryEquippedWeaponHandling(
                 s_handlingState);
+        const auto& weaponState = s_handlingState.state;
         s_gripState = {};
         const bool queried =
             rockApiClient().queryEquippedWeaponGripState(s_gripState);
         s_gripStateValid = queried && hasGripFlag(
             s_gripState.flags,
-            rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid);
-        const bool gripFiringHandIsLeft =
-            s_gripStateValid && hasGripFlag(
-                s_gripState.flags,
-                rock::api::weapon::EquippedWeaponGripStateFlagV1::
-                        FiringHandLeft);
-        const bool handlingFiringHandIsLeft =
+            rock::api::weapon::GripFlag::Valid);
+        // ROCK publishes the weapon's hands only in its weapon state.
+        const bool firingHandIsLeft =
             s_handlingStateValid &&
-            (s_handlingState.currentFiringHand ==
-                    rock::api::Hand::Left ||
-                hasHandlingRuntimeFlag(
-                    s_handlingState.runtimeFlags,
-                    rock::api::weapon::EquippedWeaponHandlingRuntimeFlagV1::
-                            FiringHandLeft));
+            weaponState.firingHand == rock::api::Hand::Left;
         const bool partCarryActive =
-            s_handlingStateValid && hasHandlingRuntimeFlag(
-                s_handlingState.runtimeFlags,
-                rock::api::weapon::EquippedWeaponHandlingRuntimeFlagV1::
-                        PartCarryActive);
+            s_handlingStateValid && hasHandlingStateFlag(
+                weaponState.handlingFlags,
+                rock::api::weapon::HandlingStateFlag::PartCarry);
         const bool weaponPresent =
-            s_handlingStateValid && hasHandlingRuntimeFlag(
-                s_handlingState.runtimeFlags,
-                rock::api::weapon::EquippedWeaponHandlingRuntimeFlagV1::
-                        WeaponPresent);
+            s_handlingStateValid && hasWeaponStateFlag(
+                weaponState.flags,
+                rock::api::weapon::WeaponStateFlag::WeaponPresent);
         const bool weaponIdentityCoherent =
             s_handlingStateValid &&
             (!s_gripStateValid ||
-                (s_handlingState.weaponFormId ==
+                (weaponState.weaponFormId ==
                         s_gripState.weaponFormId &&
-                    s_handlingState.weaponGenerationKey ==
+                    weaponState.weaponGenerationKey ==
                         s_gripState.weaponGenerationKey));
 
         // A retained world weapon and the equipped weapon are distinct items.
@@ -704,16 +700,16 @@ namespace
         bool handStatesValid = true;
         std::uint32_t heldWeapons[2]{};
         for (const auto hand : {rock::api::Hand::Right, rock::api::Hand::Left}) {
-            rock::api::grab::HandInteractionStateV1 held{};
+            rock::api::grab::HandInteractionState held{};
             const bool valid = rockApiClient().queryHandInteractionState(hand, held) &&
                 held.hand == hand && hasHandInteractionFlag(held.flags,
-                    rock::api::grab::HandInteractionFlagV1::Valid) &&
+                    rock::api::grab::HandInteractionFlag::Valid) &&
                 held.worldGeneration == context.worldGeneration &&
                 held.skeletonGeneration == context.skeletonGeneration &&
                 held.providerGeneration == context.providerGeneration;
             handStatesValid = handStatesValid && valid;
             if (valid && hasHandInteractionFlag(held.flags,
-                    rock::api::grab::HandInteractionFlagV1::LooseWeapon))
+                    rock::api::grab::HandInteractionFlag::LooseWeapon))
                 heldWeapons[hand == rock::api::Hand::Left ? 1 : 0] = held.targetFormId;
         }
         // Native equipment has one record per slot. Two copies of the same
@@ -739,17 +735,17 @@ namespace
         snapshot.weaponGenerationKey =
             s_gripStateValid ? s_gripState.weaponGenerationKey : 0;
         if (s_gripStateValid &&
-            weaponIdentityCoherent && !gripFiringHandIsLeft &&
-            !handlingFiringHandIsLeft && !partCarryActive && !akimboActive && handStatesValid) {
+            weaponIdentityCoherent && !firingHandIsLeft &&
+            !partCarryActive && !akimboActive && handStatesValid) {
             // Animation belongs to the weapon's canonical firing seat. A paired
             // grip snapshot may instead describe an arbitrary physical grab,
             // especially while the weapon is resting on its bipod.
-            rock::api::weapon::AuthoredGripPoseV1 authored{};
+            rock::api::weapon::AuthoredGripPose authored{};
             constexpr auto requiredFlags =
                 static_cast<std::uint32_t>(
-                    rock::api::weapon::AuthoredGripPoseFlagV1::Valid) |
+                    rock::api::weapon::AuthoredGripPoseFlag::Valid) |
                 static_cast<std::uint32_t>(
-                    rock::api::weapon::AuthoredGripPoseFlagV1::RightHandValid);
+                    rock::api::weapon::AuthoredGripPoseFlag::RightHandValid);
             if (rockApiClient().querySelectedAuthoredGripPose(authored) &&
                 (authored.flags & requiredFlags) == requiredFlags &&
                 authored.weaponFormId == s_gripState.weaponFormId &&
@@ -764,7 +760,7 @@ namespace
             }
         }
 
-        rock::api::weaponparts::WeaponPartGripStateV1 leftPartGrip{};
+        rock::api::weaponparts::GripState leftPartGrip{};
         const bool leftPartGripStateValid =
             s_gripStateValid &&
             s_gripState.weaponFormId != 0 &&
@@ -782,7 +778,7 @@ namespace
             isSupportGripKind(leftPartGrip.gripKind) &&
             leftPartGrip.hasHandPartLocal != 0 &&
             leftPartGrip.handPartLocalSpace ==
-                rock::api::weaponparts::WeaponPartGripLocalSpaceV1::
+                rock::api::weaponparts::GripLocalSpace::
                     WeaponRootLocal &&
             leftPartGrip.weaponGenerationKey ==
                 s_gripState.weaponGenerationKey;
@@ -798,18 +794,16 @@ namespace
             NativeAnimationCompatibilityObservation{
                 .weaponGenerationKey =
                     s_handlingStateValid ?
-                        s_handlingState.weaponGenerationKey :
+                        weaponState.weaponGenerationKey :
                         0,
                 .weaponNode = s_gripStateValid ? s_gripState.weaponNode : 0,
                 .weaponFormId =
                     s_handlingStateValid ?
-                        s_handlingState.weaponFormId :
+                        weaponState.weaponFormId :
                         0,
                 .handlingStateValid = s_handlingStateValid && handStatesValid,
                 .gripStateValid = s_gripStateValid,
-                .firingHandIsLeft =
-                    gripFiringHandIsLeft ||
-                    handlingFiringHandIsLeft,
+                .firingHandIsLeft = firingHandIsLeft,
                 .partCarryActive = partCarryActive,
                 .weaponPresent = weaponPresent,
                 .weaponIdentityCoherent =
@@ -832,7 +826,7 @@ namespace
     }
 
     void observeAnimationCompatibility(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const char* observationPoint,
         const native_animation_authority_policy::
             NativeAnimationCompatibilityObservation& observation,
@@ -841,12 +835,12 @@ namespace
         const PaperAnimationAuthorityObservation& authority)
     {
         const CompatibilityLogSnapshot snapshot{
-            .handlingOwnerToken = s_handlingState.ownerToken,
+            .handlingOwnerToken = s_handlingState.authority.owner,
             .weaponGenerationKey = observation.weaponGenerationKey,
             .gripWeaponGenerationKey =
                 s_gripStateValid ? s_gripState.weaponGenerationKey : 0,
-            .handlingAuthorityFlags = s_handlingState.authorityFlags,
-            .handlingRuntimeFlags = s_handlingState.runtimeFlags,
+            .handlingAuthorityFlags = s_handlingState.authority.features,
+            .handlingRuntimeFlags = s_handlingState.state.handlingFlags,
             .localAuthorityFlags = authority.localFlags,
             .consumerAuthorityFlags = authority.consumerFlags,
             .weaponFormId = observation.weaponFormId,
@@ -870,13 +864,10 @@ namespace
 
         const bool externalHandlingAuthorityActive =
             observation.handlingStateValid &&
-            hasHandlingRuntimeFlag(
-                s_handlingState.runtimeFlags,
-                rock::api::weapon::EquippedWeaponHandlingRuntimeFlagV1::
-                        AuthorityActive);
+            s_handlingState.authority.active != 0;
         PAPER_LOG_INFO(
             Animation,
-            "Weapon-animation compatibility point={} result={} animationAuthorityActive={} handlingValid={} gripValid={} identityCoherent={} externalHandlingAuthority={} owner={:016X} authorityFlags=0x{:08X} runtimeFlags=0x{:08X} localFlags=0x{:08X} consumerFlags=0x{:08X} weapon={:08X}/{:016X} gripWeapon={:08X}/{:016X} world={} skeleton={} provider={}",
+            "Weapon-animation compatibility point={} result={} animationAuthorityActive={} handlingValid={} gripValid={} identityCoherent={} externalHandlingAuthority={} owner={:016X} authorityFeatures=0x{:08X} handlingFlags=0x{:08X} localFlags=0x{:08X} consumerFlags=0x{:08X} weapon={:08X}/{:016X} gripWeapon={:08X}/{:016X} world={} skeleton={} provider={}",
             observationPoint,
             native_animation_authority_policy::
                 nativeAnimationCompatibilityReasonName(step.reason),
@@ -885,9 +876,9 @@ namespace
             observation.gripStateValid,
             observation.weaponIdentityCoherent,
             externalHandlingAuthorityActive,
-            s_handlingState.ownerToken,
-            s_handlingState.authorityFlags,
-            s_handlingState.runtimeFlags,
+            s_handlingState.authority.owner,
+            s_handlingState.authority.features,
+            s_handlingState.state.handlingFlags,
             authority.localFlags,
             authority.consumerFlags,
             observation.weaponFormId,
@@ -912,7 +903,7 @@ namespace
     [[nodiscard]] native_animation_authority_policy::
         NativeAnimationCompatibilityStep
     evaluateAnimationCompatibility(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const char* observationPoint,
         const native_animation_authority_policy::
             NativeAnimationCompatibilityObservation& observation,
@@ -966,7 +957,7 @@ namespace
             0);
     }
 
-    void publishPhysicalEnvironment(const rock::api::core::AnimationPhaseContextV1& context,
+    void publishPhysicalEnvironment(const rock::api::animation::AnimationPhaseContext& context,
         bool operational,const native_animation_authority_policy::NativeAnimationCompatibilityObservation& weapon)
     {
         physical_reload::Environment environment;
@@ -977,7 +968,7 @@ namespace
         environment.identity.skeletonGeneration=context.skeletonGeneration;
         environment.identity.rockProviderGeneration=context.providerGeneration;
         environment.identity.paperProviderGeneration=provider::generation();
-        using F=rock::api::core::AnimationPhaseContextFlagV1;
+        using F=rock::api::animation::AnimationPhaseContextFlag;
         environment.ready=physical_reload::physicalWeaponReady(operational&&
             native_animation_authority::isHookInstalled()&&!hasContextFlag(context.flags,F::MenuBlocking)&&
             !hasContextFlag(context.flags,F::ConfigBlocking)&&hasContextFlag(context.flags,F::VisualWritesAllowed),weapon);
@@ -985,7 +976,7 @@ namespace
     }
 
     void publishRuntimeState(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const bool rockConnected,
         const bool skeletonReady)
     {
@@ -994,7 +985,7 @@ namespace
             native_animation_authority::currentLocalAuthorityFlags();
         const auto consumerFlags = provider::currentConsumerAuthorityFlags();
 
-        rock::api::animation::NativeAnimationRuntimePublicationV1 rockState{};
+        rock::api::animation::NativeAnimationRuntimePublication rockState{};
         rockState.statusFlags = native.statusFlags;
         rockState.capturedTransformCount = native.capturedTransformCount;
         rockState.captureSequence = native.captureSequence;
@@ -1059,14 +1050,14 @@ namespace
         state.consumerAuthorityFlags = consumerFlags;
         state.capturedTransformCount = native.capturedTransformCount;
         state.weaponFormId = s_handlingStateValid ?
-            s_handlingState.weaponFormId :
+            s_handlingState.state.weaponFormId :
             s_gripState.weaponFormId;
         state.captureSequence = native.captureSequence;
         state.reloadStartSequence = native.reloadStartSequence;
         state.reloadEndSequence = native.reloadEndSequence;
         state.frameIndex = context.frameIndex;
         state.weaponGenerationKey = s_handlingStateValid ?
-            s_handlingState.weaponGenerationKey :
+            s_handlingState.state.weaponGenerationKey :
             s_gripState.weaponGenerationKey;
         state.worldGeneration = context.worldGeneration;
         state.skeletonGeneration = context.skeletonGeneration;
@@ -1076,7 +1067,7 @@ namespace
     }
 
     void ROCK_CALL onRockAnimationPhase(
-        const rock::api::core::AnimationPhaseContextV1* context,
+        const rock::api::animation::AnimationPhaseContext* context,
         void*)
     {
         if (!context || !s_gameLoaded.load(std::memory_order_acquire)) {
@@ -1087,7 +1078,7 @@ namespace
         const auto phaseStarted = PerformanceClock::now();
 
         if (context->phase ==
-                rock::api::core::AnimationPhaseV1::BeforeRock &&
+                rock::api::animation::AnimationPhase::BeforeRock &&
             g_config.processPendingReload()) {
             weapon_motion::setCacheAccess(g_config.weaponMotionCacheAccess);
             publishConfigState();
@@ -1096,20 +1087,20 @@ namespace
 
         const bool rockEnabled = hasContextFlag(
             context->flags,
-            rock::api::core::AnimationPhaseContextFlagV1::RockEnabled);
+            rock::api::animation::AnimationPhaseContextFlag::RockEnabled);
         const bool rockReady = hasContextFlag(
             context->flags,
-            rock::api::core::AnimationPhaseContextFlagV1::ProviderReady);
+            rock::api::animation::AnimationPhaseContextFlag::ProviderReady);
         const bool skeletonReady = hasContextFlag(
             context->flags,
-            rock::api::core::AnimationPhaseContextFlagV1::SkeletonReady);
+            rock::api::animation::AnimationPhaseContextFlag::SkeletonReady);
         frik_visual_authority::setSkeletonReadyHint(skeletonReady);
 
         const bool operational =
             g_config.enabled && rockEnabled && rockReady && skeletonReady;
         const auto enrichmentDemand = refreshEnrichmentDemand();
         switch (context->phase) {
-        case rock::api::core::AnimationPhaseV1::NativeGraphOutput: {
+        case rock::api::animation::AnimationPhase::NativeGraphOutput: {
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
             const bool runtimeOperational =
@@ -1125,7 +1116,7 @@ namespace
                 if (rockApiClient().queryEquippedWeaponGripState(gripState) &&
                     hasGripFlag(
                         gripState.flags,
-                        rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid)) {
+                        rock::api::weapon::GripFlag::Valid)) {
                     reload_observation::capturePhase(
                         *context,
                         gripState,
@@ -1139,7 +1130,7 @@ namespace
                 elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
-        case rock::api::core::AnimationPhaseV1::BeforeRock: {
+        case rock::api::animation::AnimationPhase::BeforeRock: {
             tactical_reload_bridge::prepareFrame();
             provider::beginFrame(context->frameIndex);
 
@@ -1241,7 +1232,7 @@ namespace
                 elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
-        case rock::api::core::AnimationPhaseV1::AfterRock: {
+        case rock::api::animation::AnimationPhase::AfterRock: {
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
             const auto weaponObservation = refreshWeaponState(*context);
@@ -1279,7 +1270,7 @@ namespace
                 elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
-        case rock::api::core::AnimationPhaseV1::Complete: {
+        case rock::api::animation::AnimationPhase::Complete: {
             if (enrichmentDemand.nativePosePipeline) {
                 const auto authority = currentPaperAnimationAuthority();
                 native_pose_pipeline::publishFrame(
@@ -1288,10 +1279,10 @@ namespace
                     authority.localFlags,
                     authority.consumerFlags,
                     s_handlingStateValid ?
-                        s_handlingState.weaponFormId :
+                        s_handlingState.state.weaponFormId :
                         s_gripState.weaponFormId,
                     s_handlingStateValid ?
-                        s_handlingState.weaponGenerationKey :
+                        s_handlingState.state.weaponGenerationKey :
                         s_gripState.weaponGenerationKey,
                     s_runtimeOperational);
             }
@@ -1342,14 +1333,14 @@ namespace
             completePerformanceFrame(*context, enrichmentDemand);
             break;
         }
-        case rock::api::core::AnimationPhaseV1::Presented: {
+        case rock::api::animation::AnimationPhase::Presented: {
             native_animation_authority::capturePresentedHandBaselines(context->frameIndex);
             if (enrichmentDemand.nativePosePipeline) {
                 const auto authority = currentPaperAnimationAuthority();
                 native_pose_pipeline::publishFrame(*context, s_lastAnimationCompatibilityReason,
                     authority.localFlags, authority.consumerFlags,
-                    s_handlingStateValid ? s_handlingState.weaponFormId : s_gripState.weaponFormId,
-                    s_handlingStateValid ? s_handlingState.weaponGenerationKey : s_gripState.weaponGenerationKey,
+                    s_handlingStateValid ? s_handlingState.state.weaponFormId : s_gripState.weaponFormId,
+                    s_handlingStateValid ? s_handlingState.state.weaponGenerationKey : s_gripState.weaponGenerationKey,
                     s_runtimeOperational);
                 provider::dispatchEvent(api::PaperEventKindV1::PresentationComplete);
             }

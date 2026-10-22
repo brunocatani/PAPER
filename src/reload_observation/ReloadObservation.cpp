@@ -95,7 +95,7 @@ namespace paper::reload_observation
 
         [[nodiscard]] bool hasGripFlag(
             const std::uint32_t flags,
-            const rock::api::weapon::EquippedWeaponGripStateFlagV1 value)
+            const rock::api::weapon::GripFlag value)
         {
             return (flags & flag(value)) != 0;
         }
@@ -105,7 +105,7 @@ namespace paper::reload_observation
         {
             return hasGripFlag(
                        gripState.flags,
-                       rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid) &&
+                       rock::api::weapon::GripFlag::Valid) &&
                    gripState.weaponFormId != 0 &&
                    gripState.weaponGenerationKey != 0 &&
                    gripState.weaponNode != 0;
@@ -324,63 +324,63 @@ namespace paper::reload_observation
             };
 
             for (const auto& record : building.evidence) {
-                const auto partKind = static_cast<rock::api::weaponparts::WeaponPartKindV1>(record.value.partKind);
+                const auto partKind = static_cast<rock::api::weaponparts::PartKind>(record.value.partKind);
                 switch (partKind) {
-                case rock::api::weaponparts::WeaponPartKindV1::Magazine:
+                case rock::api::weaponparts::PartKind::Magazine:
                     signals.magazinePart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Cylinder:
+                case rock::api::weaponparts::PartKind::Cylinder:
                     signals.cylinderPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Slide:
+                case rock::api::weaponparts::PartKind::Slide:
                     signals.slidePart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Stock:
+                case rock::api::weaponparts::PartKind::Stock:
                     signals.stockPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Handguard:
+                case rock::api::weaponparts::PartKind::Handguard:
                     signals.handguardPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Foregrip:
+                case rock::api::weaponparts::PartKind::Foregrip:
                     signals.foregripPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Lever:
+                case rock::api::weaponparts::PartKind::Lever:
                     signals.leverPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Pump:
+                case rock::api::weaponparts::PartKind::Pump:
                     signals.pumpPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::BreakAction:
+                case rock::api::weaponparts::PartKind::BreakAction:
                     signals.breakActionPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::LaserCell:
+                case rock::api::weaponparts::PartKind::LaserCell:
                     signals.laserCellPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Shell:
+                case rock::api::weaponparts::PartKind::Shell:
                     signals.shellPart = true;
                     break;
-                case rock::api::weaponparts::WeaponPartKindV1::Round:
+                case rock::api::weaponparts::PartKind::Round:
                     signals.looseRoundPart = true;
                     break;
                 default:
                     break;
                 }
 
-                const auto actionRole = static_cast<rock::api::weaponparts::WeaponActionRoleV1>(record.value.actionRole);
+                const auto actionRole = static_cast<rock::api::weaponparts::ActionRole>(record.value.actionRole);
                 switch (actionRole) {
-                case rock::api::weaponparts::WeaponActionRoleV1::Slide:
+                case rock::api::weaponparts::ActionRole::Slide:
                     signals.slidePart = true;
                     break;
-                case rock::api::weaponparts::WeaponActionRoleV1::Cylinder:
+                case rock::api::weaponparts::ActionRole::Cylinder:
                     signals.cylinderPart = true;
                     break;
-                case rock::api::weaponparts::WeaponActionRoleV1::Lever:
+                case rock::api::weaponparts::ActionRole::Lever:
                     signals.leverPart = true;
                     break;
-                case rock::api::weaponparts::WeaponActionRoleV1::Pump:
+                case rock::api::weaponparts::ActionRole::Pump:
                     signals.pumpPart = true;
                     break;
-                case rock::api::weaponparts::WeaponActionRoleV1::BreakAction:
+                case rock::api::weaponparts::ActionRole::BreakAction:
                     signals.breakActionPart = true;
                     break;
                 default:
@@ -585,7 +585,7 @@ namespace paper::reload_observation
         }
 
         [[nodiscard]] bool beginCatalog(
-            const rock::api::core::AnimationPhaseContextV1& context,
+            const rock::api::animation::AnimationPhaseContext& context,
             const paper::RockWeaponGripState& gripState,
             const std::uint32_t paperProviderGeneration,
             const bool collectEvidenceGeometry)
@@ -630,17 +630,17 @@ namespace paper::reload_observation
                 root->world,
                 building.state.weaponRootWorld);
 
-            rock::api::weapon::WeaponClassificationV1
+            rock::api::weapon::Classification
                 sourceClassification{};
             if (rockApiClient().queryEquippedWeaponClassification(
                     sourceClassification) &&
-                sourceClassification.formId == gripState.weaponFormId &&
+                sourceClassification.weaponFormId == gripState.weaponFormId &&
                 sourceClassification.weaponGenerationKey ==
                     gripState.weaponGenerationKey) {
                 auto& classification = building.state.classification;
                 classification.flags |= flag(
                     PaperWeaponClassificationFlagV1::Available);
-                classification.formId = sourceClassification.formId;
+                classification.formId = sourceClassification.weaponFormId;
                 classification.weaponGenerationKey =
                     sourceClassification.weaponGenerationKey;
                 classification.keywordFlags =
@@ -830,25 +830,18 @@ namespace paper::reload_observation
                 return false;
             }
 
-            building.state.reportedEvidenceCount =
-                rockApiClient().weaponEvidenceDetailCount();
-            const auto evidenceCapacity = std::min(
-                building.state.reportedEvidenceCount,
-                PAPER_MAX_RELOAD_EVIDENCE_V1);
             std::array<
-                rock::api::weaponparts::WeaponEvidenceDetailV1,
+                rock::api::weaponparts::EvidenceDetail,
                 PAPER_MAX_RELOAD_EVIDENCE_V1>
                 sourceEvidence{};
-            const auto copiedEvidence = evidenceCapacity > 0 ?
-                std::min(
-                    rockApiClient().copyWeaponEvidenceDetails(
-                        sourceEvidence.data(),
-                        evidenceCapacity),
-                    evidenceCapacity) :
-                0u;
-            if (building.state.reportedEvidenceCount >
-                    evidenceCapacity ||
-                copiedEvidence <
+            std::uint32_t reportedEvidence = 0;
+            const auto copiedEvidence =
+                rockApiClient().copyWeaponEvidenceDetails(
+                    sourceEvidence.data(),
+                    PAPER_MAX_RELOAD_EVIDENCE_V1,
+                    reportedEvidence);
+            building.state.reportedEvidenceCount = reportedEvidence;
+            if (copiedEvidence <
                     building.state.reportedEvidenceCount) {
                 building.state.statusFlags |= flag(
                     PaperReloadCatalogStatusFlagV1::EvidenceTruncated);
@@ -1016,7 +1009,7 @@ namespace paper::reload_observation
         }
 
         void beginWorkingFrame(
-            const rock::api::core::AnimationPhaseContextV1& context)
+            const rock::api::animation::AnimationPhaseContext& context)
         {
             if (s_workingFrame.active &&
                 s_workingFrame.state.frameIndex == context.frameIndex &&
@@ -1055,7 +1048,7 @@ namespace paper::reload_observation
         }
 
         [[nodiscard]] PhaseCapture captureCurrentPhase(
-            const rock::api::core::AnimationPhaseContextV1& context,
+            const rock::api::animation::AnimationPhaseContext& context,
             const paper::RockWeaponGripState& gripState,
             const PaperReloadObservationPhaseV1 phase)
         {
@@ -1258,7 +1251,7 @@ namespace paper::reload_observation
     }
 
     void advanceFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState* gripState,
         const std::uint32_t paperProviderGeneration,
         const bool collectEvidenceGeometry)
@@ -1312,7 +1305,7 @@ namespace paper::reload_observation
     }
 
     void capturePhase(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState& gripState,
         const PaperReloadObservationPhaseV1 phase)
     {
@@ -1354,7 +1347,7 @@ namespace paper::reload_observation
     }
 
     void completeFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const std::uint32_t paperProviderGeneration)
     {
         if (!s_catalog.valid || !s_workingFrame.active ||

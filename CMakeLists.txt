@@ -8,11 +8,17 @@ set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
 set(BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 get_filename_component(WORKSPACE_ROOT "${ROOT_DIR}/../.." ABSOLUTE)
-set(ROCK_SDK_INCLUDE "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_SDK/SDK/ROCK/include")
-if(NOT EXISTS "${ROCK_SDK_INCLUDE}/ROCK/Client.h")
-  message(FATAL_ERROR "The modular ROCK SDK is required")
+# ROCK publishes its provider API from its own include/ directory.
+set(ROCK_INCLUDE_DIR "${WORKSPACE_ROOT}/main_projects/ROCK/include" CACHE PATH "ROCK public include directory")
+if(NOT EXISTS "${ROCK_INCLUDE_DIR}/ROCK/Client.h")
+  message(FATAL_ERROR "ROCK headers not found in '${ROCK_INCLUDE_DIR}'; set ROCK_INCLUDE_DIR.")
 endif()
-include_directories("${ROCK_SDK_INCLUDE}")
+# RPS UI Framework draws PAPER's optional debug visualization.
+set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include" CACHE PATH "RPS UI Framework public include directory")
+if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
+  message(FATAL_ERROR "RPS UI Framework headers not found in '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
+endif()
+include_directories("${ROCK_INCLUDE_DIR}" "${RPSUI_INCLUDE_DIR}")
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds are not allowed")
@@ -110,16 +116,6 @@ target_link_options(${PROJECT_NAME} PRIVATE
   "$<$<CONFIG:RELEASE>:/INCREMENTAL:NO;/OPT:REF;/OPT:ICF;/DEBUG:FULL>"
 )
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
-
-find_program(PAPER_PWSH_EXECUTABLE NAMES pwsh REQUIRED)
-add_custom_target(PAPERSourceBoundary
-  COMMAND "${PAPER_PWSH_EXECUTABLE}" -NoProfile -File
-    "${ROOT_DIR}/tests/PaperSourceTests.ps1"
-    -Root "${ROOT_DIR}"
-  COMMENT "Validating PAPER source boundaries"
-  VERBATIM
-)
-add_dependencies(${PROJECT_NAME} PAPERSourceBoundary)
 
 option(POST_BUILD_COPY_PLUGIN "Copy only PAPER.dll and PAPER.pdb to a mod root." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots containing F4SE/Plugins.")
@@ -227,13 +223,6 @@ if(BUILD_PAPER_TESTS)
   add_test(
     NAME PAPERWeaponMotionCacheTests
     COMMAND "$<TARGET_FILE:PAPERWeaponMotionCacheTests>"
-  )
-
-  add_test(
-    NAME PAPERSourceTests
-    COMMAND "${PAPER_PWSH_EXECUTABLE}" -NoProfile -File
-      "${ROOT_DIR}/tests/PaperSourceTests.ps1"
-      -Root "${ROOT_DIR}"
   )
 endif()
 

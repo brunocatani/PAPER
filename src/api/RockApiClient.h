@@ -17,64 +17,61 @@ namespace paper
 
         [[nodiscard]] bool ready() const;
         [[nodiscard]] std::uint64_t ownerToken() const;
-        [[nodiscard]] bool queryPresentedHandFrame(rock::api::Hand hand,rock::api::hands::HandFrameV1& output) const;
-        void setFrameContext(const rock::api::core::AnimationPhaseContextV1& context);
+        [[nodiscard]] bool queryPresentedHandFrame(rock::api::Hand hand,rock::api::hands::HandFrame& output) const;
+        void setFrameContext(const rock::api::animation::AnimationPhaseContext& context);
         [[nodiscard]] RE::NiAVObject* resolveWeaponSource(std::uint64_t generation,std::uint64_t key) const;
 
 
         [[nodiscard]] bool registerAnimationPhaseCallback(
-            rock::api::core::PhaseCallbackV1 callback,
+            rock::api::animation::PhaseCallback callback,
             void* userData);
         [[nodiscard]] bool setNativeAnimationAuthority(std::uint32_t flags);
         void clearNativeAnimationAuthority();
         [[nodiscard]] bool queryNativeAnimationAuthorityState(
-            rock::api::animation::NativeAnimationAuthorityStateV1& outState) const;
+            rock::api::animation::NativeAnimationAuthorityState& outState) const;
         [[nodiscard]] bool queryEquippedWeaponGripState(
             paper::RockWeaponGripState& outState) const;
-        [[nodiscard]] bool queryEquippedWeaponHandlingState(
-            rock::api::weapon::EquippedWeaponHandlingStateV1& outState) const;
+        [[nodiscard]] bool queryEquippedWeaponHandling(
+            paper::RockWeaponHandling& outHandling) const;
         [[nodiscard]] bool queryHandInteractionState(
             rock::api::Hand hand,
-            rock::api::grab::HandInteractionStateV1& outState) const;
+            rock::api::grab::HandInteractionState& outState) const;
         [[nodiscard]] bool queryWeaponPartGripState(
             rock::api::Hand hand,
-            rock::api::weaponparts::WeaponPartGripStateV1& outState) const;
+            rock::api::weaponparts::GripState& outState) const;
         [[nodiscard]] bool querySelectedAuthoredGripPose(
-            rock::api::weapon::AuthoredGripPoseV1& outPose) const;
+            rock::api::weapon::AuthoredGripPose& outPose) const;
         [[nodiscard]] bool queryPresentedHandPose(
             rock::api::Hand hand,
-            rock::api::hands::PresentedHandPoseV1& outPose) const;
+            rock::api::hands::PresentedHandPose& outPose) const;
         [[nodiscard]] bool queryEquippedWeaponClassification(
-            rock::api::weapon::WeaponClassificationV1& outClassification) const;
+            rock::api::weapon::Classification& outClassification) const;
         [[nodiscard]] bool reloadObservationEvidenceReady() const;
-        [[nodiscard]] std::uint32_t weaponEvidenceDetailCount() const;
+        // Returns the records copied; outTotal receives ROCK's full count.
         [[nodiscard]] std::uint32_t copyWeaponEvidenceDetails(
-            rock::api::weaponparts::WeaponEvidenceDetailV1* outDetails,
-            std::uint32_t maxDetails) const;
+            rock::api::weaponparts::EvidenceDetail* outDetails,
+            std::uint32_t maxDetails,
+            std::uint32_t& outTotal) const;
         [[nodiscard]] std::uint32_t copyWeaponEvidencePoints(
             std::uint32_t bodyId,
             rock::api::Point3* outPoints,
             std::uint32_t maxPoints) const;
         [[nodiscard]] bool setHandVisualAuthority(
-            const rock::api::animation::HandVisualAuthorityRequestV1& request) const;
+            const rock::api::animation::HandVisualAuthorityRequest& request) const;
         void clearHandVisualAuthority(rock::api::Hand hand) const;
         [[nodiscard]] bool publishNativeAnimationRuntime(
-            const rock::api::animation::NativeAnimationRuntimePublicationV1& publication) const;
+            const rock::api::animation::NativeAnimationRuntimePublication& publication) const;
         void clearNativeAnimationRuntime() const;
-        [[nodiscard]] bool publishDebugOverlay(
-            const rock::api::diagnostics::DebugOverlayPublicationV1& publication) const;
-        void clearDebugOverlay() const;
 
     private:
         rock::api::Client _client;
-        const rock::api::core::ApiV1* _core{};
-        const rock::api::hands::ApiV1* _hands{};
-        const rock::api::grab::ApiV1* _grab{};
-        const rock::api::weapon::ApiV1* _weapon{};
-        const rock::api::weaponparts::ApiV1* _parts{};
-        const rock::api::animation::ApiV1* _animation{};
-        const rock::api::diagnostics::ApiV1* _diagnostics{};
-        rock::api::SampleV1 _sample{};
+        const rock::api::core::Api* _core{};
+        const rock::api::hands::Api* _hands{};
+        const rock::api::grab::Api* _grab{};
+        const rock::api::weapon::Api* _weapon{};
+        const rock::api::weaponparts::Api* _parts{};
+        const rock::api::animation::Api* _animation{};
+        rock::api::Sample _sample{};
         template<class T> void stamp(T& value) const {
             value.worldGeneration=_sample.worldGeneration;
             value.skeletonGeneration=_sample.skeletonGeneration;

@@ -29,7 +29,7 @@ namespace paper::native_pose_pipeline
 
         [[nodiscard]] constexpr bool hasPresentedFlag(
             const std::uint32_t flags,
-            const rock::api::hands::PresentedHandPoseFlagV1 flag)
+            const rock::api::hands::PresentedHandPoseFlag flag)
         {
             return (flags & static_cast<std::uint32_t>(flag)) != 0;
         }
@@ -236,23 +236,23 @@ namespace paper::native_pose_pipeline
         }
 
         [[nodiscard]] bool addPresentedPose(
-            const rock::api::core::AnimationPhaseContextV1& context,
+            const rock::api::animation::AnimationPhaseContext& context,
             PaperNativeHandSolutionV1& solution)
         {
-            if (context.phase != rock::api::core::AnimationPhaseV1::Presented) {
+            if (context.phase != rock::api::animation::AnimationPhase::Presented) {
                 return false;
             }
             const auto rockHand = solution.hand == PaperHandV1::Left ?
                 rock::api::Hand::Left :
                 rock::api::Hand::Right;
-            rock::api::hands::PresentedHandPoseV1 presented{};
+            rock::api::hands::PresentedHandPose presented{};
             if (!rockApiClient().queryPresentedHandPose(rockHand, presented) ||
                 !hasPresentedFlag(
                     presented.flags,
-                    rock::api::hands::PresentedHandPoseFlagV1::Valid) ||
+                    rock::api::hands::PresentedHandPoseFlag::Valid) ||
                 !hasPresentedFlag(
                     presented.flags,
-                    rock::api::hands::PresentedHandPoseFlagV1::HandWorldValid) ||
+                    rock::api::hands::PresentedHandPoseFlag::HandWorldValid) ||
                 presented.frameIndex != context.frameIndex ||
                 presented.worldGeneration != context.worldGeneration ||
                 presented.skeletonGeneration != context.skeletonGeneration ||
@@ -269,11 +269,13 @@ namespace paper::native_pose_pipeline
                 bit(PaperNativeHandSolutionFlagV1::PresentedPoseCoherent);
             if (hasPresentedFlag(
                     presented.flags,
-                    rock::api::hands::PresentedHandPoseFlagV1::
+                    rock::api::hands::PresentedHandPoseFlag::
                             FingerLocalsValid) &&
                 presented.fingerLocalTransformMask != 0) {
+                // ROCK's mask is 32-bit; only the 15 finger joints exist.
                 solution.presentedFingerLocalTransformMask =
-                    presented.fingerLocalTransformMask;
+                    static_cast<std::uint16_t>(presented.fingerLocalTransformMask &
+                        ((1u << rock::api::hands::kFingerLocalTransformCount) - 1u));
                 for (std::size_t index = 0;
                      index < PAPER_FINGER_TRANSFORM_COUNT_V1;
                      ++index) {
@@ -307,7 +309,7 @@ namespace paper::native_pose_pipeline
     }
 
     void publishFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const native_animation_authority_policy::
             NativeAnimationCompatibilityReason compatibilityReason,
         const std::uint32_t localAuthorityFlags,

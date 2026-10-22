@@ -222,7 +222,7 @@ namespace paper::animation_evidence
             const std::uint64_t weaponGenerationKey,
             const std::uint32_t paperProviderGeneration,
             const std::uint64_t reloadCatalogSequence,
-            const rock::api::core::AnimationPhaseContextV1& context)
+            const rock::api::animation::AnimationPhaseContext& context)
         {
             clearCatalog(state);
             state.catalog.statusFlags =
@@ -700,7 +700,7 @@ namespace paper::animation_evidence
 
         [[nodiscard]] bool hasGripFlag(
             const std::uint32_t flags,
-            const rock::api::weapon::EquippedWeaponGripStateFlagV1 value)
+            const rock::api::weapon::GripFlag value)
         {
             return (flags & static_cast<std::uint32_t>(value)) != 0;
         }
@@ -711,7 +711,7 @@ namespace paper::animation_evidence
             if (!gripState ||
                 !hasGripFlag(
                     gripState->flags,
-                    rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid) ||
+                    rock::api::weapon::GripFlag::Valid) ||
                 gripState->weaponFormId == 0 ||
                 gripState->weaponGenerationKey == 0 ||
                 gripState->weaponNode == 0) {
@@ -1130,7 +1130,7 @@ namespace paper::animation_evidence
     }
 
     void advanceFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState* gripState,
         const std::uint32_t paperProviderGeneration,
         const bool exactPreharvestDemand)
@@ -1249,7 +1249,7 @@ namespace paper::animation_evidence
     }
 
     void completeFrame(
-        const rock::api::core::AnimationPhaseContextV1& context)
+        const rock::api::animation::AnimationPhaseContext& context)
     {
         auto& state = runtime();
         if (!state.valid) {

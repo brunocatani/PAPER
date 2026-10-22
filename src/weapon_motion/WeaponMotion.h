@@ -36,7 +36,7 @@ namespace paper::weapon_motion
     [[nodiscard]] bool requiresExactAnimationEvidence(bool cacheReadRequested);
     void reset(ResetReason reason);
     void completeFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         RockApiClient& rockApi,
         std::uint32_t paperProviderGeneration,
         const RuntimeOptions& options);

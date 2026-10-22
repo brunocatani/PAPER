@@ -48,32 +48,32 @@ namespace paper::reload_stages
                         PaperWeaponClassificationFlagV1::Valid)) != 0 &&
                    catalog.classification.sizeClass ==
                        static_cast<std::uint32_t>(
-                           rock::api::weapon::WeaponSizeClassV1::Pistol);
+                           rock::api::weapon::SizeClass::Pistol);
         }
 
         [[nodiscard]] bool isMagazine(
             const reload_observation::EvidenceMotionSource& source)
         {
             return source.partKind == static_cast<std::uint32_t>(
-                rock::api::weaponparts::WeaponPartKindV1::Magazine);
+                rock::api::weaponparts::PartKind::Magazine);
         }
 
         [[nodiscard]] bool isSlide(
             const reload_observation::EvidenceMotionSource& source)
         {
             return source.partKind == static_cast<std::uint32_t>(
-                       rock::api::weaponparts::WeaponPartKindV1::Slide) ||
+                       rock::api::weaponparts::PartKind::Slide) ||
                    source.actionRole == static_cast<std::uint32_t>(
-                       rock::api::weaponparts::WeaponActionRoleV1::Slide);
+                       rock::api::weaponparts::ActionRole::Slide);
         }
 
         [[nodiscard]] bool isBolt(
             const reload_observation::EvidenceMotionSource& source)
         {
             return source.partKind == static_cast<std::uint32_t>(
-                       rock::api::weaponparts::WeaponPartKindV1::Bolt) ||
+                       rock::api::weaponparts::PartKind::Bolt) ||
                    source.actionRole == static_cast<std::uint32_t>(
-                       rock::api::weaponparts::WeaponActionRoleV1::Bolt);
+                       rock::api::weaponparts::ActionRole::Bolt);
         }
 
         [[nodiscard]] bool contributesToAggregate(
@@ -130,7 +130,7 @@ namespace paper::reload_stages
     }
 
     void completeFrame(
-        const rock::api::core::AnimationPhaseContextV1& context)
+        const rock::api::animation::AnimationPhaseContext& context)
     {
         PaperReloadCatalogStateV1 catalog{};
         PaperReloadFrameStateV1 frame{};

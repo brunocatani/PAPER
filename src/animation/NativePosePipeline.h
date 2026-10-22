@@ -8,7 +8,7 @@
 namespace paper::native_pose_pipeline
 {
     void publishFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         native_animation_authority_policy::NativeAnimationCompatibilityReason
             compatibilityReason,
         std::uint32_t localAuthorityFlags,

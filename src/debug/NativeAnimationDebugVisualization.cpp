@@ -6,6 +6,7 @@
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "support/TransformMath.h"
+#include "debug/WorldDrawClient.h"
 
 #include "RE/NetImmerse/NiPoint.h"
 #include "RE/NetImmerse/NiTransform.h"
@@ -39,13 +40,11 @@ namespace paper::debug_visualization
         constexpr Color kLeftTextColor{ 1.0f, 0.70f, 0.25f, 0.96f };
         constexpr float kGoodAppliedErrorGameUnits = 0.35f;
 
-        static_assert(
-            kLineCapacity <=
-            rock::api::diagnostics::kMaxLinesPerPublisher);
-        static_assert(
-            kTextCapacity <=
-            rock::api::diagnostics::kMaxTextPerPublisher);
+        static_assert(kLineCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES);
+        static_assert(kTextCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_TEXTS);
+        constexpr std::uint32_t kLeaseFrames = 3;
 
+        WorldDrawClient s_worldDraw{};
         bool s_published{ false };
         bool s_publishFailureReported{ false };
 
@@ -72,7 +71,7 @@ namespace paper::debug_visualization
 
         [[nodiscard]] bool hasGripFlag(
             const std::uint32_t flags,
-            const rock::api::weapon::EquippedWeaponGripStateFlagV1 flag)
+            const rock::api::weapon::GripFlag flag)
         {
             return (flags & static_cast<std::uint32_t>(flag)) != 0;
         }
@@ -89,12 +88,8 @@ namespace paper::debug_visualization
 
         struct Builder
         {
-            std::array<rock::api::diagnostics::DebugOverlayLineV1,
-                kLineCapacity>
-                lines{};
-            std::array<rock::api::diagnostics::DebugOverlayTextV1,
-                kTextCapacity>
-                textEntries{};
+            std::array<rpsui::sdk::WorldLineV1, kLineCapacity> lines{};
+            std::array<rpsui::sdk::WorldTextV1, kTextCapacity> textEntries{};
             std::uint32_t lineCount{ 0 };
             std::uint32_t textCount{ 0 };
 
@@ -108,12 +103,12 @@ namespace paper::debug_visualization
                     return;
                 }
                 auto& line = lines[lineCount++];
-                line.startGame[0] = start.x;
-                line.startGame[1] = start.y;
-                line.startGame[2] = start.z;
-                line.endGame[0] = end.x;
-                line.endGame[1] = end.y;
-                line.endGame[2] = end.z;
+                line.start[0] = start.x;
+                line.start[1] = start.y;
+                line.start[2] = start.z;
+                line.end[0] = end.x;
+                line.end[1] = end.y;
+                line.end[2] = end.z;
                 std::copy_n(color.data(), color.size(), line.color);
             }
 
@@ -169,30 +164,6 @@ namespace paper::debug_visualization
             }
 
             template <class... Args>
-            void addScreenText(
-                const float x,
-                const float y,
-                const Color& color,
-                const char* format,
-                Args&&... args)
-            {
-                if (!g_config.debugDrawNativeAnimationText || !format ||
-                    textCount >= textEntries.size()) {
-                    return;
-                }
-                auto& entry = textEntries[textCount++];
-                entry.x = x;
-                entry.y = y;
-                entry.textSize = 1.8f;
-                std::copy_n(color.data(), color.size(), entry.color);
-                std::snprintf(
-                    entry.text,
-                    sizeof(entry.text),
-                    format,
-                    std::forward<Args>(args)...);
-            }
-
-            template <class... Args>
             void addWorldText(
                 const RE::NiPoint3& anchor,
                 const Color& color,
@@ -204,13 +175,10 @@ namespace paper::debug_visualization
                     return;
                 }
                 auto& entry = textEntries[textCount++];
-                entry.flags = static_cast<std::uint32_t>(
-                    rock::api::diagnostics::DebugOverlayTextFlagV1::WorldAnchored);
-                entry.textSize = 2.0f;
                 std::copy_n(color.data(), color.size(), entry.color);
-                entry.worldAnchorGame[0] = anchor.x;
-                entry.worldAnchorGame[1] = anchor.y;
-                entry.worldAnchorGame[2] = anchor.z;
+                entry.anchor[0] = anchor.x;
+                entry.anchor[1] = anchor.y;
+                entry.anchor[2] = anchor.z;
                 std::snprintf(
                     entry.text,
                     sizeof(entry.text),
@@ -227,10 +195,10 @@ namespace paper::debug_visualization
                 if (!rockApiClient().ready()) {
                 return false;
             }
-            rock::api::hands::HandFrameV1 frame{};
+            rock::api::hands::HandFrame frame{};
             if (!rockApiClient().queryPresentedHandFrame(hand,frame) ||
                 (frame.flags & static_cast<std::uint32_t>(
-                    rock::api::hands::HandFrameFlagV1::PresentedVisual)) == 0) {
+                    rock::api::hands::HandFrameFlag::PresentedVisual)) == 0) {
                 return false;
             }
             outWorld = api_transform::toNi(frame.transform);
@@ -430,7 +398,7 @@ namespace paper::debug_visualization
     }
 
     void publish(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState& gripState)
     {
         if (!g_config.enabled || !g_config.debugDrawNativeAnimation ||
@@ -448,7 +416,7 @@ namespace paper::debug_visualization
         Builder builder{};
         const bool gripValid = hasGripFlag(
             gripState.flags,
-            rock::api::weapon::EquippedWeaponGripStateFlagV1::Valid);
+            rock::api::weapon::GripFlag::Valid);
         const RE::NiTransform rockWeaponWorld =
             api_transform::toNi(gripState.weaponWorld);
         const bool rockWeaponValid =
@@ -485,10 +453,10 @@ namespace paper::debug_visualization
 
         const bool rightGripValid = gripValid && hasGripFlag(
             gripState.flags,
-            rock::api::weapon::EquippedWeaponGripStateFlagV1::RightHandInWeaponValid);
+            rock::api::weapon::GripFlag::RightHandInWeaponValid);
         const bool leftGripValid = gripValid && hasGripFlag(
             gripState.flags,
-            rock::api::weapon::EquippedWeaponGripStateFlagV1::LeftHandInWeaponValid);
+            rock::api::weapon::GripFlag::LeftHandInWeaponValid);
         const bool nativeAuthorityActive =
             snapshot.frameCaptureReady &&
             snapshot.runtime.effectiveFlags != 0;
@@ -519,44 +487,39 @@ namespace paper::debug_visualization
             api_transform::toNi(gripState.leftHandInWeapon),
             leftGripValid);
 
-        builder.addScreenText(
-            20.0f,
-            76.0f,
-            kTextColor,
-            "PAPER %s cap=%llu flags=%X frame=%llu ready=%u applied=%u",
-            modeName(snapshot),
-            static_cast<unsigned long long>(snapshot.frameCaptureSequence),
-            snapshot.runtime.effectiveFlags,
-            static_cast<unsigned long long>(context.frameIndex),
-            snapshot.frameCaptureReady ? 1u : 0u,
-            snapshot.weaponFixedHandsApplied ? 1u : 0u);
-        builder.addScreenText(
-            20.0f,
-            96.0f,
-            kTextColor,
-            "weapon white=control magenta=native-base yellow=target | hand green=native blue=ROCK orange=resolved cyan=applied");
+        // VR text is anchored to the object it describes, never to the screen.
+        if (nativeWeaponValid || rockWeaponValid) {
+            builder.addWorldText(
+                nativeWeaponValid ? nativeWeaponWorld.translate : rockWeaponWorld.translate,
+                kTextColor,
+                "PAPER %s cap=%llu flags=%X frame=%llu ready=%u applied=%u",
+                modeName(snapshot),
+                static_cast<unsigned long long>(snapshot.frameCaptureSequence),
+                snapshot.runtime.effectiveFlags,
+                static_cast<unsigned long long>(context.frameIndex),
+                snapshot.frameCaptureReady ? 1u : 0u,
+                snapshot.weaponFixedHandsApplied ? 1u : 0u);
+        }
 
         if (builder.lineCount == 0 && builder.textCount == 0) {
             clear();
             return;
         }
 
-        rock::api::diagnostics::DebugOverlayPublicationV1 publication{};
+        rpsui::sdk::WorldDrawPublicationV1 publication{};
+        publication.leaseFrames = kLeaseFrames;
         publication.lineCount = builder.lineCount;
         publication.textCount = builder.textCount;
         publication.lines = builder.lines.data();
-        publication.textEntries = builder.textEntries.data();
-        publication.worldGeneration = context.worldGeneration;
-        publication.skeletonGeneration = context.skeletonGeneration;
-        publication.providerGeneration = context.providerGeneration;
-        if (!rockApiClient().publishDebugOverlay(publication)) {
+        publication.texts = builder.textEntries.data();
+        if (!s_worldDraw.submit(publication)) {
             // A rejected replacement must not leave the preceding successful
-            // frame frozen in ROCK's owner-scoped store.
-            rockApiClient().clearDebugOverlay();
+            // frame frozen in RPS UI's owner-scoped store.
+            s_worldDraw.clear();
             if (!s_publishFailureReported) {
                 PAPER_LOG_WARN(
                     Api,
-                    "ROCK rejected the Paper debug-overlay publication");
+                    "The PAPER debug publication was not drawn");
                 s_publishFailureReported = true;
             }
             s_published = false;
@@ -569,7 +532,7 @@ namespace paper::debug_visualization
     void clear()
     {
         if (s_published) {
-            rockApiClient().clearDebugOverlay();
+            s_worldDraw.clear();
         }
         s_published = false;
         s_publishFailureReported = false;

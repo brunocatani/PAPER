@@ -23,12 +23,12 @@ namespace paper::animation_evidence
     void reset();
 
     void advanceFrame(
-        const rock::api::core::AnimationPhaseContextV1& context,
+        const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState* gripState,
         std::uint32_t paperProviderGeneration,
         bool exactPreharvestDemand);
     void completeFrame(
-        const rock::api::core::AnimationPhaseContextV1& context);
+        const rock::api::animation::AnimationPhaseContext& context);
     [[nodiscard]] FrameDiagnostics snapshotFrameDiagnostics();
 
     [[nodiscard]] api::PaperResultV1 getLimits(
