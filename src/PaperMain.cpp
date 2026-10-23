@@ -306,11 +306,12 @@ namespace
             static_cast<double>(performance.frameCount) * 1000.0 /
                 static_cast<double>(wallMilliseconds) :
             0.0;
+        // A game frame over 20 ms occurs nearly every second in VR and is not
+        // Paper's cost; report only Paper demand or Paper's own spikes.
         const bool shouldReport =
             performance.observationDemandSeen ||
             performance.animationDemandSeen ||
             performance.exactAnimationDemandSeen ||
-            performance.gameDeltaMillisecondsMaximum >= 20.0 ||
             performance.paperFrame.maximumMicroseconds >= 1000;
         if (shouldReport) {
             PAPER_LOG_WARN(Performance,

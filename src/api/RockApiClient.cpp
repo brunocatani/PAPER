@@ -82,10 +82,14 @@ namespace paper
         if (_phaseCallbackToken != 0) {
             return true;
         }
+        // Paper's authority lifecycle spans every phase of the frame.
+        rock::api::animation::PhaseCallbackRegistration registration{};
+        registration.phaseMask = rock::api::animation::kAllPhases;
+        registration.callback = callback;
+        registration.userData = userData;
         const auto status = _animation->registerAnimationPhaseCallback(
             _ownerToken,
-            callback,
-            userData,
+            &registration,
             &_phaseCallbackToken);
         if (status != rock::api::Status::Ok) {
             PAPER_LOG_ERROR(Api,"ROCK refused the animation-phase callback: status {}",static_cast<std::uint32_t>(status));
