@@ -108,13 +108,17 @@ namespace paper::native_memory
             pageProtectionAllowsWrite);
     }
 
+    // SEH alone guards the copy: a VirtualQuery per read costs microseconds
+    // and a fault already fails closed. The target may be partially written
+    // on failure. Standalone range checks still query page protection.
     bool guardedCopyFromMemory(
         const void* source,
         void* target,
         const std::size_t byteCount)
     {
-        if (!source || !target || byteCount == 0 ||
-            !pointerRangeLooksReadable(source, byteCount)) {
+        const auto start = reinterpret_cast<std::uintptr_t>(source);
+        if (!target || byteCount == 0 || !pointerLooksReadable(source) ||
+            start + byteCount < start) {
             return false;
         }
 #if defined(_MSC_VER)
