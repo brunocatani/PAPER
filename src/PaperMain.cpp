@@ -810,6 +810,10 @@ namespace
                 .weaponIdentityCoherent =
                     weaponIdentityCoherent,
                 .akimboActive = akimboActive,
+                .userWeaponOffset =
+                    s_handlingStateValid && hasWeaponStateFlag(
+                        weaponState.flags,
+                        rock::api::weapon::WeaponStateFlag::UserWeaponOffset),
         };
     }
 

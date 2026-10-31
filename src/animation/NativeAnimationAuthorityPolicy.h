@@ -185,6 +185,7 @@ namespace paper::native_animation_authority_policy
         WeaponIdentityChanged,
         AnimationRequestResetRequired,
         Akimbo,
+        UserWeaponOffset,
     };
 
     struct NativeAnimationCompatibilityObservation
@@ -200,6 +201,9 @@ namespace paper::native_animation_authority_policy
         bool weaponPresent{ false };
         bool weaponIdentityCoherent{ false };
         bool akimboActive{ false };
+        // ROCK seats and scales the weapon from the player's FRIK offset file;
+        // PAPER's animation is authored for ROCK's own grip and does not fit.
+        bool userWeaponOffset{ false };
     };
 
     struct NativeAnimationCompatibilityState
@@ -231,6 +235,8 @@ namespace paper::native_animation_authority_policy
         switch (reason) {
         case NativeAnimationCompatibilityReason::Akimbo:
             return "akimbo";
+        case NativeAnimationCompatibilityReason::UserWeaponOffset:
+            return "frik-user-weapon-offset";
         case NativeAnimationCompatibilityReason::HandlingStateUnavailable:
             return "handling-state-unavailable";
         case NativeAnimationCompatibilityReason::LeftFiringHand:
@@ -285,6 +291,9 @@ namespace paper::native_animation_authority_policy
         }
         if (observation.akimboActive) {
             return { canceledState, NativeAnimationCompatibilityReason::Akimbo };
+        }
+        if (observation.userWeaponOffset) {
+            return { canceledState, NativeAnimationCompatibilityReason::UserWeaponOffset };
         }
         if (observation.firingHandIsLeft) {
             return {
@@ -361,7 +370,8 @@ namespace paper::native_animation_authority_policy
                (observation.weaponGenerationKey != 0 || observation.weaponNode != 0) &&
                !observation.firingHandIsLeft &&
                !observation.partCarryActive &&
-               !observation.akimboActive;
+               !observation.akimboActive &&
+               !observation.userWeaponOffset;
     }
 
     struct ManualCycleAuthoredSupportGripLatchState
