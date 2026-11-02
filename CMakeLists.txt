@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 4.2)
 
 set(NAME "PAPER")
 set(FRIENDLY_NAME "PAPER")
-set(VERSION 1.2.0)
+set(VERSION 2.0.0)
 
 set(ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(SOURCE_DIR "${ROOT_DIR}/src")
@@ -137,8 +137,8 @@ if(POST_BUILD_COPY_PLUGIN)
 endif()
 
 # Release packages are an explicit path (the release preset); the fast preset
-# never builds an archive. The package carries the public headers next to the
-# DLL because consumers build against exactly those files.
+# never builds an archive. The package carries only runtime files; see
+# cmake/package.cmake.
 option(PAPER_PACKAGE_RELEASE "Package Release builds into a .7z archive after PAPER is built." OFF)
 if(PAPER_PACKAGE_RELEASE)
   add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD

@@ -1,7 +1,8 @@
 # Post-build script: packages a Release build into a .7z for a mod manager.
-# Layout: F4SE/Plugins/PAPER.dll and .pdb, LICENSE, and include/PAPER (the
-# public provider API headers, which ship next to the DLL). INIs never ship:
-# PAPER creates its runtime INI from compiled defaults.
+# The package holds only what a player installs: F4SE/Plugins/PAPER.dll, its
+# PDB (crash loggers read it) and the GPL license. Development files never
+# ship: mod authors take include/PAPER from the repository at the release tag,
+# and PAPER creates its runtime INI from compiled defaults.
 
 string(TOLOWER "${CONFIG}" CONFIG_LOWER)
 if(NOT CONFIG_LOWER STREQUAL "release")
@@ -24,11 +25,13 @@ file(REMOVE_RECURSE "${STAGE_DIR}")
 file(MAKE_DIRECTORY "${STAGE_DIR}/F4SE/Plugins")
 file(COPY "${TARGET_FILE}" "${TARGET_PDB_FILE}" DESTINATION "${STAGE_DIR}/F4SE/Plugins")
 file(COPY "${ROOT_DIR}/LICENSE" DESTINATION "${STAGE_DIR}")
-file(COPY "${ROOT_DIR}/include/PAPER" DESTINATION "${STAGE_DIR}/include")
 
-file(GLOB_RECURSE STAGED_INIS LIST_DIRECTORIES false "${STAGE_DIR}/*.ini")
-if(STAGED_INIS)
-  message(FATAL_ERROR "package.cmake: an INI cannot ship in the package: ${STAGED_INIS}")
+file(GLOB_RECURSE STAGED_FILES LIST_DIRECTORIES false RELATIVE "${STAGE_DIR}" "${STAGE_DIR}/*")
+set(EXPECTED_FILES F4SE/Plugins/PAPER.dll F4SE/Plugins/PAPER.pdb LICENSE)
+list(SORT STAGED_FILES)
+list(SORT EXPECTED_FILES)
+if(NOT STAGED_FILES STREQUAL EXPECTED_FILES)
+  message(FATAL_ERROR "package.cmake: the package must hold only ${EXPECTED_FILES}; staged: ${STAGED_FILES}")
 endif()
 
 file(REMOVE "${TARGET_ARCHIVE}")

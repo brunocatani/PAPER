@@ -45,7 +45,7 @@ cmake --build build-fast --config Release --target PAPER
 
 Tests live in `build-fast` but outside the default build. Every test target name contains `Tests`. Build and run them with `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`. `PAPERPublicHeaderTests` compiles every public header on its own plus the consumer example; `PAPERDiscoveryTests` checks discovery and refused majors; `PAPERObservationApiTests` checks the ABI layout of the published records and tables.
 
-`custom-release` builds into `build-release` and packages a `.7z` (`cmake/package.cmake`) with the DLL and PDB, the license and `include/PAPER/`; it refuses to package an INI.
+`custom-release` builds into `build-release` and packages a `.7z` (`cmake/package.cmake`) with only the DLL, its PDB and the license; it refuses any other file. Headers and every other development file stay in the repository.
 
 ## Runtime files
 
