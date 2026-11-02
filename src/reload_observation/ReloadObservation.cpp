@@ -122,10 +122,10 @@ namespace paper::reload_observation
             return object ? object->IsNode() : nullptr;
         }
 
-        [[nodiscard]] PaperFormIdentityV1 describeForm(
+        [[nodiscard]] FormIdentity describeForm(
             const std::uint32_t runtimeFormId)
         {
-            PaperFormIdentityV1 identity{};
+            FormIdentity identity{};
             identity.runtimeFormId = runtimeFormId;
             if (runtimeFormId == 0) {
                 return identity;
@@ -135,7 +135,7 @@ namespace paper::reload_observation
             if (!form) {
                 return identity;
             }
-            identity.flags |= flag(PaperFormIdentityFlagV1::Resolved);
+            identity.flags |= flag(FormIdentityFlag::Resolved);
             identity.formType =
                 static_cast<std::uint32_t>(form->GetFormType());
 
@@ -144,12 +144,12 @@ namespace paper::reload_observation
                 if (!filename.empty()) {
                     identity.localFormId = form->GetLocalFormID();
                     identity.flags |= flag(
-                        PaperFormIdentityFlagV1::PluginIdentityValid);
+                        FormIdentityFlag::PluginIdentityValid);
                     if (copyFixedString(
                             identity.pluginName,
                             filename)) {
                         identity.flags |= flag(
-                            PaperFormIdentityFlagV1::
+                            FormIdentityFlag::
                                 PluginNameTruncated);
                     }
                 }
@@ -158,20 +158,20 @@ namespace paper::reload_observation
             if (const char* editorId = form->GetFormEditorID();
                 editorId && editorId[0] != '\0') {
                 identity.flags |= flag(
-                    PaperFormIdentityFlagV1::EditorIdValid);
+                    FormIdentityFlag::EditorIdValid);
                 if (copyFixedString(identity.editorId, editorId)) {
                     identity.flags |= flag(
-                        PaperFormIdentityFlagV1::EditorIdTruncated);
+                        FormIdentityFlag::EditorIdTruncated);
                 }
             }
 
             const auto fullName = RE::TESFullName::GetFullName(*form);
             if (!fullName.empty()) {
                 identity.flags |= flag(
-                    PaperFormIdentityFlagV1::DisplayNameValid);
+                    FormIdentityFlag::DisplayNameValid);
                 if (copyFixedString(identity.displayName, fullName)) {
                     identity.flags |= flag(
-                        PaperFormIdentityFlagV1::
+                        FormIdentityFlag::
                             DisplayNameTruncated);
                 }
             }
@@ -249,30 +249,30 @@ namespace paper::reload_observation
 
         struct NodeRecord
         {
-            PaperReloadNodeCatalogEntryV1 value{};
+            ReloadNodeCatalogEntry value{};
             std::string identityName;
         };
 
         struct EvidenceRecord
         {
-            PaperReloadEvidenceV1 value{};
-            std::vector<PaperPoint3V1> points;
+            ReloadEvidence value{};
+            std::vector<Point3> points;
             std::uint32_t scheduledPointCount{ 0 };
             std::uint32_t shortCopyAttempts{ 0 };
         };
 
         struct CatalogBuffer
         {
-            PaperReloadCatalogStateV1 state{};
+            ReloadCatalogState state{};
             std::vector<NodeRecord> nodes;
             std::vector<EvidenceRecord> evidence;
             std::array<
                 std::uint32_t,
-                PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1>
+                kMaxReloadObservationTargets>
                 targetNodeIds{};
             std::array<
                 std::int16_t,
-                PAPER_MAX_RELOAD_CATALOG_NODES_V1>
+                kMaxReloadCatalogNodes>
                 targetIndexByNode{};
             std::uint32_t targetCount{ 0 };
             std::uint32_t omittedTargetCount{ 0 };
@@ -288,10 +288,10 @@ namespace paper::reload_observation
             weapon_classification_policy::WeaponFamilySignals signals{
                 .rockClassificationAvailable =
                     (classification.flags & flag(
-                        PaperWeaponClassificationFlagV1::Available)) != 0,
+                        WeaponClassificationFlag::Available)) != 0,
                 .rockClassificationValid =
                     (classification.flags & flag(
-                        PaperWeaponClassificationFlagV1::Valid)) != 0,
+                        WeaponClassificationFlag::Valid)) != 0,
                 .keywordFlags = classification.keywordFlags,
                 .sizeClass = classification.sizeClass,
                 .weaponDataAvailable =
@@ -307,10 +307,10 @@ namespace paper::reload_observation
                     building.evidence.size() ==
                         building.state.reportedEvidenceCount &&
                     (building.state.statusFlags & flag(
-                        PaperReloadCatalogStatusFlagV1::
+                        ReloadCatalogStatusFlag::
                             EvidenceUnavailable)) == 0 &&
                     (building.state.statusFlags & flag(
-                        PaperReloadCatalogStatusFlagV1::
+                        ReloadCatalogStatusFlag::
                             EvidenceTruncated)) == 0,
                 .pluginName = fixedStringView(
                     building.state.weapon.pluginName,
@@ -395,23 +395,23 @@ namespace paper::reload_observation
             classification.familyEvidenceFlags = result.evidenceFlags;
             if (result.familyFlags != 0) {
                 classification.flags |= flag(
-                    PaperWeaponClassificationFlagV1::FamilyAvailable);
+                    WeaponClassificationFlag::FamilyAvailable);
                 building.state.statusFlags |= flag(
-                    PaperReloadCatalogStatusFlagV1::
+                    ReloadCatalogStatusFlag::
                         FamilyClassificationAvailable);
             }
             if (result.primaryFamily !=
-                PaperWeaponPrimaryFamilyV1::Unknown) {
+                WeaponPrimaryFamily::Unknown) {
                 classification.flags |= flag(
-                    PaperWeaponClassificationFlagV1::PrimaryFamilyValid);
+                    WeaponClassificationFlag::PrimaryFamilyValid);
             }
         }
 
         struct PhaseCapture
         {
             std::array<
-                PaperReloadNodeObservationV1,
-                PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1>
+                ReloadNodeObservation,
+                kMaxReloadObservationTargets>
                 observations{};
             std::uint32_t count{ 0 };
             bool captured{ false };
@@ -419,7 +419,7 @@ namespace paper::reload_observation
 
         struct WorkingFrame
         {
-            PaperReloadFrameStateV1 state{};
+            ReloadFrameState state{};
             PhaseCapture nativeGraphOutput{};
             PhaseCapture postRock{};
             bool active{ false };
@@ -427,10 +427,10 @@ namespace paper::reload_observation
 
         struct PublishedFrame
         {
-            PaperReloadFrameStateV1 state{};
+            ReloadFrameState state{};
             std::array<
-                PaperReloadNodeObservationV1,
-                PAPER_MAX_RELOAD_NODE_OBSERVATIONS_V1>
+                ReloadNodeObservation,
+                kMaxReloadNodeObservations>
                 observations{};
             bool valid{ false };
         };
@@ -501,16 +501,16 @@ namespace paper::reload_observation
                     static_cast<std::uint32_t>(evidence.points.size());
                 if (!evidence.points.empty()) {
                     evidence.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::GeometryPresent);
+                        ReloadEvidenceFlag::GeometryPresent);
                 }
                 if (evidence.value.copiedPointCount ==
                     evidence.value.providerPointCount) {
                     evidence.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::GeometryComplete);
+                        ReloadEvidenceFlag::GeometryComplete);
                 } else if (building.geometryRequested) {
                     geometryComplete = false;
                     evidence.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::GeometryTruncated);
+                        ReloadEvidenceFlag::GeometryTruncated);
                 } else {
                     geometryComplete = false;
                 }
@@ -553,10 +553,10 @@ namespace paper::reload_observation
                 static_cast<std::uint32_t>(building.evidence.size());
             building.state.copiedGeometryPointCount = copiedPointCount;
             building.state.statusFlags |= flag(
-                PaperReloadCatalogStatusFlagV1::Valid);
+                ReloadCatalogStatusFlag::Valid);
             building.state.statusFlags |= geometryComplete ?
-                flag(PaperReloadCatalogStatusFlagV1::GeometryComplete) :
-                flag(PaperReloadCatalogStatusFlagV1::GeometryIncomplete);
+                flag(ReloadCatalogStatusFlag::GeometryComplete) :
+                flag(ReloadCatalogStatusFlag::GeometryIncomplete);
             building.state.catalogSequence =
                 nextSequence(s_catalogSequence);
             building.valid = true;
@@ -603,7 +603,7 @@ namespace paper::reload_observation
             auto& building = s_buildingCatalog;
             building.geometryRequested = collectEvidenceGeometry;
             building.nodes.reserve(256);
-            building.evidence.reserve(PAPER_MAX_RELOAD_EVIDENCE_V1);
+            building.evidence.reserve(kMaxReloadEvidence);
             building.state.weaponFormId = gripState.weaponFormId;
             building.state.weaponGenerationKey =
                 gripState.weaponGenerationKey;
@@ -617,7 +617,7 @@ namespace paper::reload_observation
                 paperProviderGeneration;
             if (!rockApiClient().reloadObservationEvidenceReady()) {
                 building.state.statusFlags |= flag(
-                    PaperReloadCatalogStatusFlagV1::
+                    ReloadCatalogStatusFlag::
                         EvidenceUnavailable);
             }
             building.state.weapon = describeForm(
@@ -639,7 +639,7 @@ namespace paper::reload_observation
                     gripState.weaponGenerationKey) {
                 auto& classification = building.state.classification;
                 classification.flags |= flag(
-                    PaperWeaponClassificationFlagV1::Available);
+                    WeaponClassificationFlag::Available);
                 classification.formId = sourceClassification.weaponFormId;
                 classification.weaponGenerationKey =
                     sourceClassification.weaponGenerationKey;
@@ -654,13 +654,13 @@ namespace paper::reload_observation
                 classification.provenanceFlags =
                     sourceClassification.provenanceFlags;
                 building.state.statusFlags |= flag(
-                    PaperReloadCatalogStatusFlagV1::
+                    ReloadCatalogStatusFlag::
                         ClassificationAvailable);
                 if (sourceClassification.valid != 0) {
                     classification.flags |= flag(
-                        PaperWeaponClassificationFlagV1::Valid);
+                        WeaponClassificationFlag::Valid);
                     building.state.statusFlags |= flag(
-                        PaperReloadCatalogStatusFlagV1::
+                        ReloadCatalogStatusFlag::
                             ClassificationValid);
                 }
             }
@@ -681,7 +681,7 @@ namespace paper::reload_observation
                 if (!object || visitedNodeCount >= kMaxSceneVisits) {
                     if (object) {
                         building.state.statusFlags |= flag(
-                            PaperReloadCatalogStatusFlagV1::
+                            ReloadCatalogStatusFlag::
                                 NodeCatalogTruncated);
                     }
                     return;
@@ -722,7 +722,7 @@ namespace paper::reload_observation
                 std::int32_t thisNodeId = -1;
                 if (depth <= kMaxSceneDepth &&
                     building.nodes.size() <
-                        PAPER_MAX_RELOAD_CATALOG_NODES_V1) {
+                        kMaxReloadCatalogNodes) {
                     thisNodeId = static_cast<std::int32_t>(
                         building.nodes.size());
                     NodeRecord record{};
@@ -733,13 +733,13 @@ namespace paper::reload_observation
                     record.value.childIndex = childIndex;
                     if (copyFixedString(record.value.name, name)) {
                         record.value.flags |= flag(
-                            PaperReloadNodeFlagV1::NameTruncated);
+                            ReloadNodeFlag::NameTruncated);
                     }
                     if (copyFixedString(
                             record.value.rootRelativePath,
                             path)) {
                         record.value.flags |= flag(
-                            PaperReloadNodeFlagV1::PathTruncated);
+                            ReloadNodeFlag::PathTruncated);
                     }
 
                     if (object != root && object->parent) {
@@ -766,13 +766,13 @@ namespace paper::reload_observation
 
                     if (auto* asNode = object->IsNode()) {
                         record.value.flags |= flag(
-                            PaperReloadNodeFlagV1::IsNode);
+                            ReloadNodeFlag::IsNode);
                         record.value.childCount =
                             asNode->GetRuntimeData().children.size();
                     }
                     if (localValid) {
                         record.value.flags |= flag(
-                            PaperReloadNodeFlagV1::
+                            ReloadNodeFlag::
                                 LocalTransformValid);
                         api_transform::fromNi(
                             object->local,
@@ -780,7 +780,7 @@ namespace paper::reload_observation
                     }
                     if (weaponLocalValid) {
                         record.value.flags |= flag(
-                            PaperReloadNodeFlagV1::
+                            ReloadNodeFlag::
                                 WeaponLocalTransformValid);
                         api_transform::fromNi(
                             weaponLocal,
@@ -791,7 +791,7 @@ namespace paper::reload_observation
                 } else {
                     ++building.state.omittedNodeCount;
                     building.state.statusFlags |= flag(
-                        PaperReloadCatalogStatusFlagV1::
+                        ReloadCatalogStatusFlag::
                             NodeCatalogTruncated);
                 }
 
@@ -802,7 +802,7 @@ namespace paper::reload_observation
                         building.state.omittedNodeCount +=
                             asNode->GetRuntimeData().children.size();
                         building.state.statusFlags |= flag(
-                            PaperReloadCatalogStatusFlagV1::
+                            ReloadCatalogStatusFlag::
                                 NodeCatalogTruncated);
                     }
                     return;
@@ -832,19 +832,19 @@ namespace paper::reload_observation
 
             std::array<
                 rock::api::weaponparts::EvidenceDetail,
-                PAPER_MAX_RELOAD_EVIDENCE_V1>
+                kMaxReloadEvidence>
                 sourceEvidence{};
             std::uint32_t reportedEvidence = 0;
             const auto copiedEvidence =
                 rockApiClient().copyWeaponEvidenceDetails(
                     sourceEvidence.data(),
-                    PAPER_MAX_RELOAD_EVIDENCE_V1,
+                    kMaxReloadEvidence,
                     reportedEvidence);
             building.state.reportedEvidenceCount = reportedEvidence;
             if (copiedEvidence <
                     building.state.reportedEvidenceCount) {
                 building.state.statusFlags |= flag(
-                    PaperReloadCatalogStatusFlagV1::EvidenceTruncated);
+                    ReloadCatalogStatusFlag::EvidenceTruncated);
             }
 
             std::uint32_t scheduledPointCount = 0;
@@ -855,7 +855,7 @@ namespace paper::reload_observation
                 if (source.weaponGenerationKey !=
                     gripState.weaponGenerationKey) {
                     building.state.statusFlags |= flag(
-                        PaperReloadCatalogStatusFlagV1::
+                        ReloadCatalogStatusFlag::
                             EvidenceTruncated);
                     continue;
                 }
@@ -873,12 +873,12 @@ namespace paper::reload_observation
                     rockApiClient().resolveWeaponSource(source.weaponGenerationKey,source.interactionKey));
                 if (record.value.sourceNodeId >= 0) {
                     record.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::
+                        ReloadEvidenceFlag::
                             SourceNodeResolved);
                 }
                 if (record.value.interactionNodeId >= 0) {
                     record.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::
+                        ReloadEvidenceFlag::
                             InteractionNodeResolved);
                 }
                 record.value.partKind = source.partKind;
@@ -896,12 +896,12 @@ namespace paper::reload_observation
                             source.sourceName,
                             std::size(source.sourceName)))) {
                     record.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::
+                        ReloadEvidenceFlag::
                             SourceNameTruncated);
                 }
                 if (source.localBoundsGame.valid != 0) {
                     record.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::
+                        ReloadEvidenceFlag::
                             LocalBoundsValid);
                     record.value.localBoundsGame.valid = 1;
                     record.value.localBoundsGame.min = {
@@ -918,14 +918,14 @@ namespace paper::reload_observation
                 record.value.providerPointCount = source.pointCount;
                 const auto remainingPointCapacity =
                     scheduledPointCount <
-                            PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 ?
-                        PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1 -
+                            kMaxReloadEvidencePoints ?
+                        kMaxReloadEvidencePoints -
                             scheduledPointCount :
                         0u;
                 record.scheduledPointCount = collectEvidenceGeometry ?
                     std::min({
                         source.pointCount,
-                        PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1,
+                        kMaxReloadEvidencePointsPerDetail,
                         remainingPointCapacity,
                     }) :
                     0u;
@@ -933,7 +933,7 @@ namespace paper::reload_observation
                 if (collectEvidenceGeometry &&
                     record.scheduledPointCount < source.pointCount) {
                     record.value.flags |= flag(
-                        PaperReloadEvidenceFlagV1::
+                        ReloadEvidenceFlag::
                             GeometryTruncated);
                 }
                 record.value.omod = describeForm(source.omodFormId);
@@ -974,7 +974,7 @@ namespace paper::reload_observation
 
                 std::array<
                     rock::api::Point3,
-                    PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1>
+                    kMaxReloadEvidencePointsPerDetail>
                     sourcePoints{};
                 const auto copied = std::min(
                     rockApiClient().copyWeaponEvidencePoints(
@@ -1023,11 +1023,11 @@ namespace paper::reload_observation
             }
             auto& state = s_workingFrame.state;
             state.statusFlags =
-                flag(PaperReloadFrameStatusFlagV1::Valid) |
-                flag(PaperReloadFrameStatusFlagV1::CatalogValid);
+                flag(ReloadFrameStatusFlag::Valid) |
+                flag(ReloadFrameStatusFlag::CatalogValid);
             if (s_catalog.omittedTargetCount > 0) {
                 state.statusFlags |= flag(
-                    PaperReloadFrameStatusFlagV1::
+                    ReloadFrameStatusFlag::
                         ObservationsTruncated);
             }
             state.weaponFormId = s_catalog.state.weaponFormId;
@@ -1050,7 +1050,7 @@ namespace paper::reload_observation
         [[nodiscard]] PhaseCapture captureCurrentPhase(
             const rock::api::animation::AnimationPhaseContext& context,
             const paper::RockWeaponGripState& gripState,
-            const PaperReloadObservationPhaseV1 phase)
+            const ReloadObservationPhase phase)
         {
             PhaseCapture result{};
             auto* root = weaponRoot(gripState);
@@ -1059,12 +1059,12 @@ namespace paper::reload_observation
             }
 
             std::array<
-                PaperReloadNodeObservationV1,
-                PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1>
+                ReloadNodeObservation,
+                kMaxReloadObservationTargets>
                 captured{};
             std::array<
                 std::uint8_t,
-                PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1>
+                kMaxReloadObservationTargets>
                 present{};
             std::uint32_t catalogIndex = 0;
             std::uint32_t visitedCount = 0;
@@ -1090,7 +1090,7 @@ namespace paper::reload_observation
                 ++visitedCount;
                 if (catalogIndex >= s_catalog.nodes.size()) {
                     if ((s_catalog.state.statusFlags & flag(
-                            PaperReloadCatalogStatusFlagV1::
+                            ReloadCatalogStatusFlag::
                                 NodeCatalogTruncated)) != 0) {
                         stop = true;
                     } else {
@@ -1133,13 +1133,13 @@ namespace paper::reload_observation
                     weaponLocalValid = finiteTransform(weaponLocal);
                 }
                 if (targetIndex >= 0) {
-                    PaperReloadNodeObservationV1 observation{};
+                    ReloadNodeObservation observation{};
                     observation.nodeId = nodeId;
                     observation.phase = phase;
                     observation.frameIndex = context.frameIndex;
                     if (localValid) {
                         observation.flags |= flag(
-                            PaperReloadNodeObservationFlagV1::
+                            ReloadNodeObservationFlag::
                                 LocalTransformValid);
                         api_transform::fromNi(
                             object->local,
@@ -1147,7 +1147,7 @@ namespace paper::reload_observation
                     }
                     if (weaponLocalValid) {
                         observation.flags |= flag(
-                            PaperReloadNodeObservationFlagV1::
+                            ReloadNodeObservationFlag::
                                 WeaponLocalTransformValid);
                         api_transform::fromNi(
                             weaponLocal,
@@ -1163,7 +1163,7 @@ namespace paper::reload_observation
                         asNode &&
                         !asNode->GetRuntimeData().children.empty() &&
                         (s_catalog.state.statusFlags & flag(
-                            PaperReloadCatalogStatusFlagV1::
+                            ReloadCatalogStatusFlag::
                                 NodeCatalogTruncated)) == 0) {
                         mismatch = true;
                     }
@@ -1189,7 +1189,7 @@ namespace paper::reload_observation
 
             const bool catalogWasTruncated =
                 (s_catalog.state.statusFlags & flag(
-                    PaperReloadCatalogStatusFlagV1::
+                    ReloadCatalogStatusFlag::
                         NodeCatalogTruncated)) != 0;
             if (!catalogWasTruncated &&
                 catalogIndex != s_catalog.nodes.size()) {
@@ -1197,7 +1197,7 @@ namespace paper::reload_observation
             }
             if (mismatch) {
                 s_workingFrame.state.statusFlags |= flag(
-                    PaperReloadFrameStatusFlagV1::TopologyMismatch);
+                    ReloadFrameStatusFlag::TopologyMismatch);
                 s_rebuildRequested = true;
                 return result;
             }
@@ -1217,7 +1217,7 @@ namespace paper::reload_observation
         }
 
         template <class Value>
-        [[nodiscard]] PaperResultV1 copyRange(
+        [[nodiscard]] Status copyRange(
             const std::vector<Value>& source,
             const std::uint32_t first,
             Value* destination,
@@ -1226,13 +1226,13 @@ namespace paper::reload_observation
         {
             copied = 0;
             if (first > source.size()) {
-                return PaperResultV1::OutOfRange;
+                return Status::OutOfRange;
             }
             if (capacity == 0) {
-                return PaperResultV1::Ok;
+                return Status::Ok;
             }
             if (!destination) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             const auto count = std::min<std::size_t>(
                 capacity,
@@ -1241,7 +1241,7 @@ namespace paper::reload_observation
                 destination[index] = source[first + index];
             }
             copied = static_cast<std::uint32_t>(count);
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
     }
 
@@ -1307,7 +1307,7 @@ namespace paper::reload_observation
     void capturePhase(
         const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState& gripState,
-        const PaperReloadObservationPhaseV1 phase)
+        const ReloadObservationPhase phase)
     {
         if (!s_catalog.valid || !validWeaponGrip(gripState) ||
             s_catalog.state.weaponFormId != gripState.weaponFormId ||
@@ -1330,18 +1330,18 @@ namespace paper::reload_observation
             gripState,
             phase);
         if (phase ==
-            PaperReloadObservationPhaseV1::NativeGraphOutput) {
+            ReloadObservationPhase::NativeGraphOutput) {
             s_workingFrame.nativeGraphOutput = std::move(captured);
             if (s_workingFrame.nativeGraphOutput.captured) {
                 s_workingFrame.state.statusFlags |= flag(
-                    PaperReloadFrameStatusFlagV1::
+                    ReloadFrameStatusFlag::
                         NativeGraphOutputCaptured);
             }
         } else {
             s_workingFrame.postRock = std::move(captured);
             if (s_workingFrame.postRock.captured) {
                 s_workingFrame.state.statusFlags |= flag(
-                    PaperReloadFrameStatusFlagV1::PostRockCaptured);
+                    ReloadFrameStatusFlag::PostRockCaptured);
             }
         }
     }
@@ -1389,63 +1389,62 @@ namespace paper::reload_observation
         s_workingFrame = {};
     }
 
-    PaperResultV1 getLimits(
-        PaperReloadObservationLimitsV1& outLimits)
+    Status getLimits(
+        ReloadObservationLimits& outLimits)
     {
-        PaperReloadObservationLimitsV1 result{};
-        result.featureBits = PAPER_PROVIDER_FEATURE_BITS_V1;
-        result.maxCatalogNodes = PAPER_MAX_RELOAD_CATALOG_NODES_V1;
-        result.maxEvidenceRecords = PAPER_MAX_RELOAD_EVIDENCE_V1;
+        ReloadObservationLimits result{};
+        result.maxCatalogNodes = kMaxReloadCatalogNodes;
+        result.maxEvidenceRecords = kMaxReloadEvidence;
         result.maxObservationTargets =
-            PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1;
+            kMaxReloadObservationTargets;
         result.maxNodeObservations =
-            PAPER_MAX_RELOAD_NODE_OBSERVATIONS_V1;
+            kMaxReloadNodeObservations;
         result.maxEvidencePointsPerDetail =
-            PAPER_MAX_RELOAD_EVIDENCE_POINTS_PER_DETAIL_V1;
+            kMaxReloadEvidencePointsPerDetail;
         result.maxEvidencePointsTotal =
-            PAPER_MAX_RELOAD_EVIDENCE_POINTS_V1;
-        result.nodeNameCapacity = PAPER_RELOAD_NODE_NAME_CAPACITY_V1;
-        result.nodePathCapacity = PAPER_RELOAD_NODE_PATH_CAPACITY_V1;
-        result.pluginNameCapacity = PAPER_FORM_PLUGIN_NAME_CAPACITY_V1;
-        result.editorIdCapacity = PAPER_FORM_EDITOR_ID_CAPACITY_V1;
-        result.displayNameCapacity = PAPER_FORM_DISPLAY_NAME_CAPACITY_V1;
+            kMaxReloadEvidencePoints;
+        result.nodeNameCapacity = kReloadNodeNameCapacity;
+        result.nodePathCapacity = kReloadNodePathCapacity;
+        result.pluginNameCapacity = kFormPluginNameCapacity;
+        result.editorIdCapacity = kFormEditorIdCapacity;
+        result.displayNameCapacity = kFormDisplayNameCapacity;
         outLimits = result;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 getCatalogState(
-        PaperReloadCatalogStateV1& outState)
+    Status getCatalogState(
+        ReloadCatalogState& outState)
     {
         if (!s_catalog.valid) {
             outState = {};
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_catalog.state;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyCatalogNodes(
+    Status copyCatalogNodes(
         const std::uint64_t catalogSequence,
         const std::uint32_t firstNode,
-        PaperReloadNodeCatalogEntryV1* outNodes,
+        ReloadNodeCatalogEntry* outNodes,
         const std::uint32_t maxNodes,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_catalog.valid) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (catalogSequence != s_catalog.state.catalogSequence) {
-            return PaperResultV1::StaleSnapshot;
+            return Status::StaleSnapshot;
         }
         if (firstNode > s_catalog.nodes.size()) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxNodes == 0) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outNodes) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         const auto count = std::min<std::size_t>(
             maxNodes,
@@ -1454,31 +1453,31 @@ namespace paper::reload_observation
             outNodes[index] = s_catalog.nodes[firstNode + index].value;
         }
         outCopied = static_cast<std::uint32_t>(count);
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyEvidence(
+    Status copyEvidence(
         const std::uint64_t catalogSequence,
         const std::uint32_t firstEvidence,
-        PaperReloadEvidenceV1* outEvidence,
+        ReloadEvidence* outEvidence,
         const std::uint32_t maxEvidence,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_catalog.valid) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (catalogSequence != s_catalog.state.catalogSequence) {
-            return PaperResultV1::StaleSnapshot;
+            return Status::StaleSnapshot;
         }
         if (firstEvidence > s_catalog.evidence.size()) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxEvidence == 0) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outEvidence) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         const auto count = std::min<std::size_t>(
             maxEvidence,
@@ -1488,26 +1487,26 @@ namespace paper::reload_observation
                 s_catalog.evidence[firstEvidence + index].value;
         }
         outCopied = static_cast<std::uint32_t>(count);
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyEvidencePoints(
+    Status copyEvidencePoints(
         const std::uint64_t catalogSequence,
         const std::uint32_t evidenceId,
         const std::uint32_t firstPoint,
-        PaperPoint3V1* outPoints,
+        Point3* outPoints,
         const std::uint32_t maxPoints,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_catalog.valid) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (catalogSequence != s_catalog.state.catalogSequence) {
-            return PaperResultV1::StaleSnapshot;
+            return Status::StaleSnapshot;
         }
         if (evidenceId >= s_catalog.evidence.size()) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         return copyRange(
             s_catalog.evidence[evidenceId].points,
@@ -1517,41 +1516,41 @@ namespace paper::reload_observation
             outCopied);
     }
 
-    PaperResultV1 getFrameState(
-        PaperReloadFrameStateV1& outState)
+    Status getFrameState(
+        ReloadFrameState& outState)
     {
         if (!s_publishedFrame.valid) {
             outState = {};
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_publishedFrame.state;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyNodeObservations(
+    Status copyNodeObservations(
         const std::uint64_t snapshotSequence,
         const std::uint32_t firstObservation,
-        PaperReloadNodeObservationV1* outObservations,
+        ReloadNodeObservation* outObservations,
         const std::uint32_t maxObservations,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_publishedFrame.valid) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (snapshotSequence !=
             s_publishedFrame.state.snapshotSequence) {
-            return PaperResultV1::StaleSnapshot;
+            return Status::StaleSnapshot;
         }
         if (firstObservation >
             s_publishedFrame.state.observationCount) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxObservations == 0) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outObservations) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         const auto count = std::min<std::uint32_t>(
             maxObservations,
@@ -1562,27 +1561,27 @@ namespace paper::reload_observation
                 firstObservation + index];
         }
         outCopied = count;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyEvidenceMotionSources(
+    Status copyEvidenceMotionSources(
         EvidenceMotionSource* outSources,
         const std::uint32_t maxSources,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_catalog.valid || !s_publishedFrame.valid) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (maxSources == 0) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outSources) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
 
         const auto observationForNode = [](const std::int32_t nodeId)
-            -> const PaperReloadNodeObservationV1* {
+            -> const ReloadNodeObservation* {
             if (nodeId < 0) {
                 return nullptr;
             }
@@ -1594,7 +1593,7 @@ namespace paper::reload_observation
                 if (observation.nodeId ==
                         static_cast<std::uint32_t>(nodeId) &&
                     observation.phase ==
-                        PaperReloadObservationPhaseV1::
+                        ReloadObservationPhase::
                             NativeGraphOutput) {
                     return std::addressof(observation);
                 }
@@ -1615,7 +1614,7 @@ namespace paper::reload_observation
             source.partKind = evidence.partKind;
             source.actionRole = evidence.actionRole;
 
-            const PaperReloadNodeObservationV1* observation = nullptr;
+            const ReloadNodeObservation* observation = nullptr;
             if (evidence.sourceNodeId >= 0) {
                 source.selectedNodeId = evidence.sourceNodeId;
                 source.flags |= static_cast<std::uint32_t>(
@@ -1638,7 +1637,7 @@ namespace paper::reload_observation
                 const auto& node = s_catalog.nodes[
                     static_cast<std::size_t>(source.selectedNodeId)].value;
                 if ((node.flags & flag(
-                        PaperReloadNodeFlagV1::
+                        ReloadNodeFlag::
                             WeaponLocalTransformValid)) != 0) {
                     source.baselineWeaponLocal =
                         node.baselineWeaponLocal;
@@ -1648,7 +1647,7 @@ namespace paper::reload_observation
             }
             if (observation &&
                 (observation->flags & flag(
-                    PaperReloadNodeObservationFlagV1::
+                    ReloadNodeObservationFlag::
                         WeaponLocalTransformValid)) != 0) {
                 source.currentWeaponLocal = observation->weaponLocal;
                 source.flags |= static_cast<std::uint32_t>(
@@ -1657,6 +1656,6 @@ namespace paper::reload_observation
             outSources[index] = source;
         }
         outCopied = count;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 }

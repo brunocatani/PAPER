@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <algorithm>
 #include <array>
@@ -32,7 +32,7 @@ namespace paper::reload_observation_policy
     {
         std::array<
             std::uint32_t,
-            api::PAPER_MAX_RELOAD_OBSERVATION_TARGETS_V1>
+            api::kMaxReloadObservationTargets>
             nodeIds{};
         std::uint32_t count{ 0 };
         std::uint32_t candidateCount{ 0 };
@@ -48,11 +48,11 @@ namespace paper::reload_observation_policy
         ObservationTargetSelection result{};
         std::array<
             std::uint8_t,
-            api::PAPER_MAX_RELOAD_CATALOG_NODES_V1>
+            api::kMaxReloadCatalogNodes>
             selected{};
         const auto boundedNodeCount = (std::min)(
             nodeCount,
-            api::PAPER_MAX_RELOAD_CATALOG_NODES_V1);
+            api::kMaxReloadCatalogNodes);
 
         const auto append = [&](const std::int32_t candidate) {
             if (candidate < 0 ||

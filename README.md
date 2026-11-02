@@ -4,7 +4,7 @@
 
 **Propper Active Precision Engineered Reloads** · Part of the RPS Suite for Fallout 4 VR.
 
-[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) · [ROCK](https://www.nexusmods.com/fallout4/mods/108881) · [RPS SDK](https://github.com/brunocatani/RPS_SDK)
+[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) · [ROCK](https://www.nexusmods.com/fallout4/mods/108881)
 
 PAPER restores visible reload and weapon-cycling animations in Fallout 4 VR. Working with ROCK, it makes your arms, hands, and fingers follow the equipped weapon's animation while the default mode keeps the weapon following your controller.
 
@@ -36,7 +36,7 @@ PAPER creates its configuration on first use. Install the `.7z` asset from [GitH
 
 Custom animation replacers for vanilla weapons are recommended. Results depend on the equipped weapon's animation assets and their VR compatibility; some animations may already be broken in VR.
 
-**Virtual Reloads is currently incompatible**, as listed on the [PAPER Nexus page](https://www.nexusmods.com/fallout4/mods/108883). [PAPER Toolkit](https://github.com/brunocatani/PAPER_Toolkit) is a separate personal experimental development tool and is not recommended for normal use.
+**Virtual Reloads is currently incompatible**, as listed on the [PAPER Nexus page](https://www.nexusmods.com/fallout4/mods/108883).
 
 ## Configuration
 
@@ -63,7 +63,14 @@ The plugin log is at `Documents/My Games/Fallout4VR/F4SE/PAPER.log`. When report
 
 ## For developers
 
-PAPER consumes ROCK's modular Core animation phases and feature interfaces. Its own 50-call V1 API exposes reload stages, animation observations and weapon motion. Final-pose consumers use PresentationComplete with NativePosePipeline plus FrameCallbacks; FrameComplete remains the control/lease boundary. The [RPS SDK](https://github.com/brunocatani/RPS_SDK) contains integration documentation and examples; this repository also includes the [PAPER API header](SDK/PAPER/include/PAPERApi.h).
+PAPER consumes ROCK's provider API from ROCK's own `include/` directory.
+
+PAPER's provider API (version 2.0) is published in [`include/PAPER/`](include/PAPER) and documented per interface in [`docs/api/`](docs/api):
+
+- [Provider](docs/api/Provider.md): consumer registration, runtime state, native animation authority, frame events, reload observation and animation evidence, reload stages, the native pose pipeline, weapon motion and development capture.
+- [PhysicalReload](docs/api/PhysicalReload.md): leases the equipped weapon to a mod that drives a reload or manual cycle with the player's own hands.
+
+Add PAPER's `include/` directory to your build, include `<PAPER/Client.h>`, and resolve `PAPERAPI_QueryInterfaceV1` from `PAPER.dll`. [tests/ConsumerExample.cpp](tests/ConsumerExample.cpp) is a complete minimal consumer. Mods built against PAPER's pre-2.0 API are refused (PAPER logs the refusal) and must be rebuilt against these headers.
 
 <details>
 <summary>Building from source</summary>
@@ -75,16 +82,15 @@ Copy [CMakeUserPresets.json.template](CMakeUserPresets.json.template) to `CMakeU
 Run from the repository root:
 
 ```powershell
-cmake --preset custom-fast -B build-fast
-cmake --build build-fast --config Release --target PAPER -- /m:1 /p:CL_MPCount=2
+cmake --preset custom-fast
+cmake --build build-fast --config Release --target PAPER
 ```
 
-Build and run the existing tests separately:
+Tests share `build-fast` but stay out of the plugin build. Build and run them separately:
 
 ```powershell
-cmake --preset custom-tests -B build-tests
-cmake --build build-tests --config Release --target PAPERPolicyTests PAPERObservationApiTests PAPERConfigFileTests PAPERWeaponMotionCacheTests -- /m:1 /p:CL_MPCount=2
-ctest --test-dir build-tests -C Release --output-on-failure -j 4
+cmake --build build-fast --config Release --target build_tests
+ctest --test-dir build-fast -C Release --output-on-failure
 ```
 
 </details>

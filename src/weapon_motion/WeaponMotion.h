@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 #include "api/RockTypes.h"
 
 #include <cstdint>
@@ -32,7 +32,7 @@ namespace paper::weapon_motion
 
     void activate(const RuntimeOptions& options);
     void configureCache(const PaperConfig& config);
-    void setCacheAccess(api::PaperWeaponMotionCacheAccessV1 access);
+    void setCacheAccess(api::WeaponMotionCacheAccess access);
     [[nodiscard]] bool requiresExactAnimationEvidence(bool cacheReadRequested);
     void reset(ResetReason reason);
     void completeFrame(
@@ -41,61 +41,61 @@ namespace paper::weapon_motion
         std::uint32_t paperProviderGeneration,
         const RuntimeOptions& options);
 
-    [[nodiscard]] api::PaperResultV1 getLimits(
-        api::PaperWeaponMotionLimitsV1& outLimits);
-    [[nodiscard]] api::PaperResultV1 getCatalogState(
-        api::PaperWeaponMotionCatalogStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 copyParts(
+    [[nodiscard]] api::Status getLimits(
+        api::WeaponMotionLimits& outLimits);
+    [[nodiscard]] api::Status getCatalogState(
+        api::WeaponMotionCatalogState& outState);
+    [[nodiscard]] api::Status copyParts(
         std::uint64_t catalogSequence,
         std::uint32_t firstPart,
-        api::PaperWeaponMotionPartV1* outParts,
+        api::WeaponMotionPart* outParts,
         std::uint32_t maxParts,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyStages(
+    [[nodiscard]] api::Status copyStages(
         std::uint64_t catalogSequence,
         std::uint32_t firstStage,
-        api::PaperWeaponMotionStageV1* outStages,
+        api::WeaponMotionStage* outStages,
         std::uint32_t maxStages,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyStageKeys(
+    [[nodiscard]] api::Status copyStageKeys(
         std::uint64_t catalogSequence,
         std::uint32_t stageId,
         std::uint32_t firstKey,
-        api::PaperReloadQsTransformV1* outKeys,
+        api::ReloadQsTransform* outKeys,
         std::uint32_t maxKeys,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyFollowers(
+    [[nodiscard]] api::Status copyFollowers(
         std::uint64_t catalogSequence,
         std::uint32_t stageId,
         std::uint32_t firstFollower,
-        api::PaperWeaponMotionFollowerV1* outFollowers,
+        api::WeaponMotionFollower* outFollowers,
         std::uint32_t maxFollowers,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyFollowerKeys(
+    [[nodiscard]] api::Status copyFollowerKeys(
         std::uint64_t catalogSequence,
         std::uint32_t stageId,
         std::uint32_t followerIndex,
         std::uint32_t firstKey,
-        api::PaperReloadQsTransformV1* outKeys,
+        api::ReloadQsTransform* outKeys,
         std::uint32_t maxKeys,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 getLearningState(
-        api::PaperWeaponMotionLearningStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 copyRecorders(
+    [[nodiscard]] api::Status getLearningState(
+        api::WeaponMotionLearningState& outState);
+    [[nodiscard]] api::Status copyRecorders(
         std::uint64_t snapshotSequence,
         std::uint32_t firstRecorder,
-        api::PaperWeaponMotionRecorderV1* outRecorders,
+        api::WeaponMotionRecorder* outRecorders,
         std::uint32_t maxRecorders,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 getManipulationFrameState(
-        api::PaperWeaponManipulationFrameStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 getManipulationHandState(
-        api::PaperHandV1 hand,
-        api::PaperWeaponManipulationHandStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 getStoreState(
-        api::PaperWeaponMotionStoreStateV1& outState);
+    [[nodiscard]] api::Status getManipulationFrameState(
+        api::WeaponManipulationFrameState& outState);
+    [[nodiscard]] api::Status getManipulationHandState(
+        api::Hand hand,
+        api::WeaponManipulationHandState& outState);
+    [[nodiscard]] api::Status getStoreState(
+        api::WeaponMotionStoreState& outState);
 
     [[nodiscard]] std::uint32_t drainEvents(
-        api::PaperEventV1* outEvents,
+        api::Event* outEvents,
         std::uint32_t maxEvents);
 }

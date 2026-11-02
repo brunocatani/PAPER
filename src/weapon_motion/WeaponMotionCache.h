@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <array>
 #include <atomic>
@@ -20,7 +20,7 @@ namespace paper::weapon_motion_cache
     inline constexpr std::uint32_t kFormatVersion = 1;
     inline constexpr std::uint32_t kCompilerSchemaVersion = 2;
     inline constexpr std::uint32_t kMaximumAnimationPaths =
-        api::PAPER_MAX_RELOAD_ANIMATION_CLIPS_V1;
+        api::kMaxReloadAnimationClips;
 
     struct StablePartKey
     {
@@ -37,23 +37,23 @@ namespace paper::weapon_motion_cache
         StablePartKey part{};
         std::uint32_t flags{ 0 };
         std::array<
-            api::PaperReloadQsTransformV1,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+            api::ReloadQsTransform,
+            api::kWeaponMotionKeyCount> keys{};
     };
 
     struct CachedStage
     {
         StablePartKey part{};
-        api::PaperWeaponMotionStageKindV1 kind{
-            api::PaperWeaponMotionStageKindV1::Primary
+        api::WeaponMotionStageKind kind{
+            api::WeaponMotionStageKind::Primary
         };
         std::string sourceAnimationPath{};
         std::uint32_t sourceBoundary{ 0 };
         float totalArcLengthGameUnits{ 0.0f };
         float peakDeltaGameUnits{ 0.0f };
         std::array<
-            api::PaperReloadQsTransformV1,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+            api::ReloadQsTransform,
+            api::kWeaponMotionKeyCount> keys{};
         std::vector<CachedFollower> followers{};
     };
 

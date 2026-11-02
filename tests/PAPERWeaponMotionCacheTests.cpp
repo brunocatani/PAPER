@@ -24,9 +24,9 @@ namespace
         }
     }
 
-    [[nodiscard]] PaperReloadQsTransformV1 pose(const float x)
+    [[nodiscard]] ReloadQsTransform pose(const float x)
     {
-        PaperReloadQsTransformV1 value{};
+        ReloadQsTransform value{};
         value.translate[0] = x;
         value.rotate[3] = 1.0f;
         value.scale[0] = 1.0f;
@@ -66,7 +66,7 @@ namespace
         CachedFollower follower{
             .part = partKey("Follower"),
             .flags = static_cast<std::uint32_t>(
-                PaperWeaponMotionFollowerFlagV1::Rigid),
+                WeaponMotionFollowerFlag::Rigid),
         };
         for (std::size_t index = 0; index < follower.keys.size(); ++index) {
             follower.keys[index] = pose(

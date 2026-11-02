@@ -22,17 +22,7 @@ Tests build in `build-fast` through the `build_tests` target. PAPER has no proje
 
 ## Architecture
 
-- PAPER consumes ROCK's provider interfaces; ROCK owns those versions.
-- PAPER's own consumer API currently lives in `src/api/` and `SDK/`, mirrored in RPS_SDK.
+- PAPER consumes ROCK's provider interfaces from ROCK's own `include/`; ROCK owns those versions.
+- PAPER publishes its provider API (interfaces `Provider` and `PhysicalReload`, major 2) from `include/PAPER/`, compiled by PAPER itself, with one page per interface in `docs/api/`, standalone-header and discovery tests in `tests/`, and one consumer example (`tests/ConsumerExample.cpp`). `PAPERAPI_QueryInterfaceV1` serves only major 2; the retired pre-2.0 exports only refuse with a logged reason.
 - PAPER links `libraries_and_tools/CommonLibF4VR` directly and does not consume F4VR-CommonFramework.
-- Keep PAPER behaviour separate from PAPER_Toolkit and ROCK unless the task explicitly changes a shared contract.
-
-## Pending API rework
-
-When work on PAPER's API starts, rework it the way ROCK's 1.0 reset did (master `AGENTS.md`, section 15):
-
-- Move the public headers into `include/PAPER/`, self-contained, with `kMajor`/`kMinor` in each interface header and one page per interface in `docs/api/`. Drop every SDK copy and bind other providers from their own `include/` directories.
-- Squash every earlier version and minor of each interface into exactly 2.0. Every request for a major-1 version fails closed: discovery returns a logged unsupported-version status and never a table.
-- Whatever is not carried into the squashed version is deleted with its code, tests and docs. No code or behaviour is kept to serve an older version: it is either in the new version or dead.
-- `PhysicalReload`'s separate V1, V2 and V3 exports become one interface.
-- Update `providers/PAPER.toml` in the API release registry (headers, `headers_ready = true`) and run `check.py`.
+- Keep PAPER behaviour separate from ROCK unless the task explicitly changes a shared contract.

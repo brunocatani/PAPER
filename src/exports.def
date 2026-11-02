@@ -2,6 +2,10 @@ LIBRARY "PAPER"
 EXPORTS
     F4SEPlugin_Query
     F4SEPlugin_Load
+    PAPERAPI_QueryInterfaceV1
+    ; Retired pre-2.0 discovery: refuses outdated consumers with a logged reason.
     PAPERAPI_GetProviderApi
     PAPERAPI_GetProviderDescriptorV1
     PAPERAPI_QueryPhysicalReloadV1
+    PAPERAPI_QueryPhysicalReloadV2
+    PAPERAPI_QueryPhysicalReloadV3

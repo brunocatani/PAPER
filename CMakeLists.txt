@@ -18,7 +18,9 @@ set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include
 if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
   message(FATAL_ERROR "RPS UI Framework headers not found in '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
-include_directories("${ROCK_INCLUDE_DIR}" "${RPSUI_INCLUDE_DIR}")
+# PAPER's own provider API: self-contained headers PAPER compiles against.
+set(PAPER_PUBLIC_INCLUDE_DIR "${ROOT_DIR}/include")
+include_directories("${PAPER_PUBLIC_INCLUDE_DIR}" "${ROCK_INCLUDE_DIR}" "${RPSUI_INCLUDE_DIR}")
 
 if(PROJECT_SOURCE_DIR STREQUAL PROJECT_BINARY_DIR)
   message(FATAL_ERROR "In-source builds are not allowed")
@@ -66,9 +68,11 @@ configure_file("${ROOT_DIR}/cmake/Version.h.in" "${BUILD_DIR}/include/Version.h"
 file(GLOB_RECURSE headers CONFIGURE_DEPENDS "${SOURCE_DIR}/*.h")
 file(GLOB_RECURSE sources CONFIGURE_DEPENDS "${SOURCE_DIR}/*.cpp")
 file(GLOB_RECURSE inls CONFIGURE_DEPENDS "${SOURCE_DIR}/*.inl")
-source_group(TREE "${ROOT_DIR}" FILES ${headers} ${sources} ${inls})
+file(GLOB PAPER_PUBLIC_HEADERS CONFIGURE_DEPENDS "${PAPER_PUBLIC_INCLUDE_DIR}/PAPER/*.h")
+source_group(TREE "${ROOT_DIR}" FILES ${headers} ${sources} ${inls} ${PAPER_PUBLIC_HEADERS})
 
 add_library(${PROJECT_NAME} SHARED
+  ${PAPER_PUBLIC_HEADERS}
   ${headers}
   ${sources}
   ${inls}
@@ -78,7 +82,6 @@ add_library(${PROJECT_NAME} SHARED
 
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_compile_definitions(${PROJECT_NAME} PRIVATE
-  PAPER_API_EXPORTS
   UNICODE
   _UNICODE
   WIN32_LEAN_AND_MEAN
@@ -136,6 +139,30 @@ endif()
 option(BUILD_PAPER_TESTS "Build focused PAPER policy tests." OFF)
 if(BUILD_PAPER_TESTS)
   enable_testing()
+
+  # Public headers: each compiles alone inside a packed caller with only the
+  # public include directory (their layout asserts run there), and the one
+  # consumer example builds.
+  set(PAPER_PUBLIC_HEADER_SOURCES "${BUILD_DIR}/public-header-tests/Main.cpp")
+  file(CONFIGURE OUTPUT "${BUILD_DIR}/public-header-tests/Main.cpp" CONTENT "int main() { return 0; }\n")
+  foreach(PAPER_PUBLIC_HEADER IN LISTS PAPER_PUBLIC_HEADERS)
+    get_filename_component(PAPER_PUBLIC_HEADER_NAME "${PAPER_PUBLIC_HEADER}" NAME_WE)
+    set(PAPER_PUBLIC_HEADER_SOURCE "${BUILD_DIR}/public-header-tests/${PAPER_PUBLIC_HEADER_NAME}.cpp")
+    file(CONFIGURE OUTPUT "${PAPER_PUBLIC_HEADER_SOURCE}"
+      CONTENT "#pragma pack(push, 1)\n#include <PAPER/${PAPER_PUBLIC_HEADER_NAME}.h>\n#pragma pack(pop)\n")
+    list(APPEND PAPER_PUBLIC_HEADER_SOURCES "${PAPER_PUBLIC_HEADER_SOURCE}")
+  endforeach()
+  add_executable(PAPERPublicHeaderTests ${PAPER_PUBLIC_HEADER_SOURCES} "${ROOT_DIR}/tests/ConsumerExample.cpp")
+  set_target_properties(PAPERPublicHeaderTests PROPERTIES INCLUDE_DIRECTORIES "${PAPER_PUBLIC_INCLUDE_DIR}")
+  target_compile_features(PAPERPublicHeaderTests PRIVATE cxx_std_20)
+  target_compile_options(PAPERPublicHeaderTests PRIVATE /W4 /permissive-)
+  add_test(NAME PAPERPublicHeaderTests COMMAND "$<TARGET_FILE:PAPERPublicHeaderTests>")
+  add_executable(PAPERDiscoveryTests "${ROOT_DIR}/tests/DiscoveryTests.cpp")
+  target_compile_features(PAPERDiscoveryTests PRIVATE cxx_std_23)
+  target_compile_options(PAPERDiscoveryTests PRIVATE /UNDEBUG)
+  target_include_directories(PAPERDiscoveryTests PRIVATE "${SOURCE_DIR}")
+  add_test(NAME PAPERDiscoveryTests COMMAND "$<TARGET_FILE:PAPERDiscoveryTests>")
+
   add_executable(PAPERPhysicalReloadTests "${ROOT_DIR}/tests/PhysicalReloadLeaseTests.cpp")
   target_compile_features(PAPERPhysicalReloadTests PRIVATE cxx_std_23)
   target_compile_options(PAPERPhysicalReloadTests PRIVATE /UNDEBUG)

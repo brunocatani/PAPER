@@ -16,13 +16,13 @@ namespace paper::native_pose_pipeline
         using namespace api;
 
         [[nodiscard]] constexpr std::uint32_t bit(
-            const PaperNativePoseFrameFlagV1 flag)
+            const NativePoseFrameFlag flag)
         {
             return static_cast<std::uint32_t>(flag);
         }
 
         [[nodiscard]] constexpr std::uint32_t bit(
-            const PaperNativeHandSolutionFlagV1 flag)
+            const NativeHandSolutionFlag flag)
         {
             return static_cast<std::uint32_t>(flag);
         }
@@ -34,7 +34,7 @@ namespace paper::native_pose_pipeline
             return (flags & static_cast<std::uint32_t>(flag)) != 0;
         }
 
-        [[nodiscard]] constexpr PaperNativePoseCompatibilityReasonV1
+        [[nodiscard]] constexpr NativePoseCompatibilityReason
             publicCompatibilityReason(
                 const native_animation_authority_policy::
                     NativeAnimationCompatibilityReason reason)
@@ -43,66 +43,66 @@ namespace paper::native_pose_pipeline
                 NativeAnimationCompatibilityReason;
             switch (reason) {
             case Internal::HandlingStateUnavailable:
-                return PaperNativePoseCompatibilityReasonV1::
+                return NativePoseCompatibilityReason::
                     HandlingStateUnavailable;
             case Internal::LeftFiringHand:
-                return PaperNativePoseCompatibilityReasonV1::LeftFiringHand;
+                return NativePoseCompatibilityReason::LeftFiringHand;
             case Internal::PartCarry:
-                return PaperNativePoseCompatibilityReasonV1::PartCarry;
+                return NativePoseCompatibilityReason::PartCarry;
             case Internal::WeaponUnavailable:
-                return PaperNativePoseCompatibilityReasonV1::WeaponUnavailable;
+                return NativePoseCompatibilityReason::WeaponUnavailable;
             case Internal::WeaponIdentityChanged:
-                return PaperNativePoseCompatibilityReasonV1::
+                return NativePoseCompatibilityReason::
                     WeaponIdentityChanged;
             case Internal::AnimationRequestResetRequired:
-                return PaperNativePoseCompatibilityReasonV1::
+                return NativePoseCompatibilityReason::
                     AnimationRequestResetRequired;
             case Internal::None:
             default:
-                return PaperNativePoseCompatibilityReasonV1::None;
+                return NativePoseCompatibilityReason::None;
             }
         }
 
-        [[nodiscard]] PaperNativePoseModeV1 resolveMode(
+        [[nodiscard]] NativePoseMode resolveMode(
             const native_animation_authority::DebugAuthoritySnapshot& debug,
             const std::uint32_t localAuthorityFlags,
             const std::uint32_t consumerAuthorityFlags)
         {
             if ((localAuthorityFlags | consumerAuthorityFlags) == 0) {
-                return PaperNativePoseModeV1::Inactive;
+                return NativePoseMode::Inactive;
             }
             if (consumerAuthorityFlags != 0 && localAuthorityFlags == 0) {
-                return PaperNativePoseModeV1::ConsumerAuthority;
+                return NativePoseMode::ConsumerAuthority;
             }
             if (debug.runtime.localManualCycleLeaseActive) {
-                return PaperNativePoseModeV1::ManualCycle;
+                return NativePoseMode::ManualCycle;
             }
             if (debug.partialReloadExpected) {
-                return PaperNativePoseModeV1::PartialReload;
+                return NativePoseMode::PartialReload;
             }
-            return PaperNativePoseModeV1::FullReload;
+            return NativePoseMode::FullReload;
         }
 
-        [[nodiscard]] PaperNativePoseApplicationResultV1
+        [[nodiscard]] NativePoseApplicationResult
             resolveApplicationResult(
                 const native_animation_authority::DebugAuthoritySnapshot& debug,
                 const std::uint32_t requestedAuthorityFlags,
-                const PaperNativePoseCompatibilityReasonV1 compatibilityReason,
+                const NativePoseCompatibilityReason compatibilityReason,
                 const bool runtimeOperational)
         {
             if (requestedAuthorityFlags == 0) {
-                return PaperNativePoseApplicationResultV1::Inactive;
+                return NativePoseApplicationResult::Inactive;
             }
             if (compatibilityReason !=
-                PaperNativePoseCompatibilityReasonV1::None) {
-                return PaperNativePoseApplicationResultV1::
+                NativePoseCompatibilityReason::None) {
+                return NativePoseApplicationResult::
                     CompatibilityRejected;
             }
             if (!runtimeOperational) {
-                return PaperNativePoseApplicationResultV1::RuntimeUnavailable;
+                return NativePoseApplicationResult::RuntimeUnavailable;
             }
             if (!debug.frameCapturePrepared) {
-                return PaperNativePoseApplicationResultV1::WaitingForCapture;
+                return NativePoseApplicationResult::WaitingForCapture;
             }
             const bool applicationFailed =
                 (debug.beforeRockApplicationAttempted &&
@@ -110,33 +110,33 @@ namespace paper::native_pose_pipeline
                 (debug.afterRockApplicationAttempted &&
                     !debug.afterRockApplicationSucceeded);
             if (applicationFailed) {
-                return PaperNativePoseApplicationResultV1::ApplyFailed;
+                return NativePoseApplicationResult::ApplyFailed;
             }
             const bool applied = debug.weaponFixedHandsExpected ?
                 debug.afterRockApplicationSucceeded :
                 debug.beforeRockApplicationSucceeded &&
                     debug.afterRockApplicationSucceeded;
             return applied ?
-                PaperNativePoseApplicationResultV1::Applied :
-                PaperNativePoseApplicationResultV1::WaitingForCapture;
+                NativePoseApplicationResult::Applied :
+                NativePoseApplicationResult::WaitingForCapture;
         }
 
         void copyNativeHand(
             const native_animation_authority::DebugHandSnapshot& debug,
-            const PaperHandV1 hand,
+            const Hand hand,
             const std::uint64_t frameIndex,
             const std::uint64_t captureSequence,
             const std::uint32_t worldGeneration,
             const std::uint32_t skeletonGeneration,
             const std::uint32_t rockProviderGeneration,
             const std::uint32_t paperProviderGeneration,
-            PaperNativeHandSolutionV1& solution)
+            NativeHandSolution& solution)
         {
             solution.hand = hand;
-            solution.role = hand == PaperHandV1::Left ?
-                PaperNativeHandRoleV1::Support :
-                PaperNativeHandRoleV1::Primary;
-            solution.flags = bit(PaperNativeHandSolutionFlagV1::Valid);
+            solution.role = hand == Hand::Left ?
+                NativeHandRole::Support :
+                NativeHandRole::Primary;
+            solution.flags = bit(NativeHandSolutionFlag::Valid);
             solution.frameIndex = frameIndex;
             solution.captureSequence = captureSequence;
             solution.worldGeneration = worldGeneration;
@@ -152,7 +152,7 @@ namespace paper::native_pose_pipeline
                     debug.nativeHandInWeapon,
                     solution.nativeHandInWeapon);
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         NativeHandInWeaponValid);
             }
             if (debug.nativeBaselineValid) {
@@ -160,7 +160,7 @@ namespace paper::native_pose_pipeline
                     debug.nativeBaselineHandInWeapon,
                     solution.nativeBaselineHandInWeapon);
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         NativeBaselineHandInWeaponValid);
             }
             if (debug.liveBaselineValid) {
@@ -168,7 +168,7 @@ namespace paper::native_pose_pipeline
                     debug.liveBaselineHandInWeapon,
                     solution.rockBaselineHandInWeapon);
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         RockBaselineHandInWeaponValid);
             }
             if (debug.resolvedHandInWeaponValid) {
@@ -176,7 +176,7 @@ namespace paper::native_pose_pipeline
                     debug.resolvedHandInWeapon,
                     solution.resolvedTargetInWeapon);
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         ResolvedTargetInWeaponValid);
             }
             if (debug.resolvedHandWorldValid) {
@@ -184,7 +184,7 @@ namespace paper::native_pose_pipeline
                     debug.resolvedHandWorld,
                     solution.resolvedTargetWorld);
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         ResolvedTargetWorldValid);
             }
             if (debug.nativeFingerLocalMask != 0) {
@@ -198,51 +198,51 @@ namespace paper::native_pose_pipeline
                         solution.nativeFingerLocalTransforms[index]);
                 }
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::NativeFingerLocalsValid);
+                    NativeHandSolutionFlag::NativeFingerLocalsValid);
             }
             if (debug.motionGateApplicable) {
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::MotionGateApplicable);
+                    NativeHandSolutionFlag::MotionGateApplicable);
             }
             if (debug.motionQualified) {
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::MotionQualified);
+                    NativeHandSolutionFlag::MotionQualified);
             }
             if (debug.visualAuthorityPublished) {
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::TargetPublished);
+                    NativeHandSolutionFlag::TargetPublished);
             } else if (debug.motionGateApplicable &&
                        !debug.motionQualified &&
                        debug.resolvedHandWorldValid) {
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::TargetSuppressed);
+                    NativeHandSolutionFlag::TargetSuppressed);
             }
             switch (debug.targetMode) {
             case native_animation_authority::DebugHandTargetMode::
                 LiveGripDelta:
                 solution.targetMode =
-                    PaperNativeHandTargetModeV1::LiveGripDelta;
+                    NativeHandTargetMode::LiveGripDelta;
                 break;
             case native_animation_authority::DebugHandTargetMode::
                 NativeWeaponRelative:
                 solution.targetMode =
-                    PaperNativeHandTargetModeV1::NativeWeaponRelative;
+                    NativeHandTargetMode::NativeWeaponRelative;
                 break;
             case native_animation_authority::DebugHandTargetMode::None:
             default:
-                solution.targetMode = PaperNativeHandTargetModeV1::None;
+                solution.targetMode = NativeHandTargetMode::None;
                 break;
             }
         }
 
         [[nodiscard]] bool addPresentedPose(
             const rock::api::animation::AnimationPhaseContext& context,
-            PaperNativeHandSolutionV1& solution)
+            NativeHandSolution& solution)
         {
             if (context.phase != rock::api::animation::AnimationPhase::Presented) {
                 return false;
             }
-            const auto rockHand = solution.hand == PaperHandV1::Left ?
+            const auto rockHand = solution.hand == Hand::Left ?
                 rock::api::Hand::Left :
                 rock::api::Hand::Right;
             rock::api::hands::PresentedHandPose presented{};
@@ -265,8 +265,8 @@ namespace paper::native_pose_pipeline
                 solution.presentedHandWorld);
             solution.presentationSequence = presented.presentationSequence;
             solution.flags |=
-                bit(PaperNativeHandSolutionFlagV1::PresentedHandWorldValid) |
-                bit(PaperNativeHandSolutionFlagV1::PresentedPoseCoherent);
+                bit(NativeHandSolutionFlag::PresentedHandWorldValid) |
+                bit(NativeHandSolutionFlag::PresentedPoseCoherent);
             if (hasPresentedFlag(
                     presented.flags,
                     rock::api::hands::PresentedHandPoseFlag::
@@ -277,19 +277,19 @@ namespace paper::native_pose_pipeline
                     static_cast<std::uint16_t>(presented.fingerLocalTransformMask &
                         ((1u << rock::api::hands::kFingerLocalTransformCount) - 1u));
                 for (std::size_t index = 0;
-                     index < PAPER_FINGER_TRANSFORM_COUNT_V1;
+                     index < kFingerTransformCount;
                      ++index) {
                     api_transform::fromRock(
                         presented.fingerLocalTransforms[index],
                         solution.presentedFingerLocalTransforms[index]);
                 }
                 solution.flags |= bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         PresentedFingerLocalsValid);
             }
 
             if ((solution.flags & bit(
-                    PaperNativeHandSolutionFlagV1::
+                    NativeHandSolutionFlag::
                         ResolvedTargetWorldValid)) != 0) {
                 const auto residual = native_pose_pipeline_policy::
                     measurePoseResidual(
@@ -301,7 +301,7 @@ namespace paper::native_pose_pipeline
                     solution.residualRotationDegrees =
                         residual.rotationDegrees;
                     solution.flags |= bit(
-                        PaperNativeHandSolutionFlagV1::ResidualValid);
+                        NativeHandSolutionFlag::ResidualValid);
                 }
             }
             return true;
@@ -320,7 +320,7 @@ namespace paper::native_pose_pipeline
     {
         native_animation_authority::DebugAuthoritySnapshot debug{};
         if (!native_animation_authority::queryDebugAuthoritySnapshot(debug)) {
-            provider::clearNativePosePipeline();
+            paper::provider::clearNativePosePipeline();
             return;
         }
 
@@ -328,8 +328,8 @@ namespace paper::native_pose_pipeline
             localAuthorityFlags | consumerAuthorityFlags;
         const auto publicReason =
             publicCompatibilityReason(compatibilityReason);
-        PaperNativePoseFrameStateV1 frame{};
-        frame.flags = bit(PaperNativePoseFrameFlagV1::Valid);
+        NativePoseFrameState frame{};
+        frame.flags = bit(NativePoseFrameFlag::Valid);
         frame.mode = resolveMode(
             debug,
             localAuthorityFlags,
@@ -350,67 +350,67 @@ namespace paper::native_pose_pipeline
         frame.worldGeneration = context.worldGeneration;
         frame.skeletonGeneration = context.skeletonGeneration;
         frame.rockProviderGeneration = context.providerGeneration;
-        frame.paperProviderGeneration = provider::generation();
+        frame.paperProviderGeneration = paper::provider::generation();
 
         if (requestedAuthorityFlags != 0) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::AuthorityRequested);
+                NativePoseFrameFlag::AuthorityRequested);
         }
         if (runtimeOperational) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::RuntimeOperational);
+                NativePoseFrameFlag::RuntimeOperational);
         }
         if (debug.frameCapturePrepared) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::CapturePrepared);
+                NativePoseFrameFlag::CapturePrepared);
         }
         if (debug.beforeRockApplicationSucceeded) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::BeforeRockApplied);
+                NativePoseFrameFlag::BeforeRockApplied);
         }
         if (debug.afterRockApplicationSucceeded) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::AfterRockApplied);
+                NativePoseFrameFlag::AfterRockApplied);
         }
         if ((debug.runtime.effectiveFlags &
                 native_animation_authority_policy::kWeapon) != 0) {
-            frame.flags |= bit(PaperNativePoseFrameFlagV1::FullPose);
+            frame.flags |= bit(NativePoseFrameFlag::FullPose);
         }
         if (debug.weaponFixedHandsExpected) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::WeaponFixedHands);
+                NativePoseFrameFlag::WeaponFixedHands);
         }
         if (debug.partialReloadExpected) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::PartialReload);
+                NativePoseFrameFlag::PartialReload);
         }
         if (debug.runtime.localManualCycleLeaseActive) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::ManualCycle);
+                NativePoseFrameFlag::ManualCycle);
         }
-        if (publicReason != PaperNativePoseCompatibilityReasonV1::None &&
+        if (publicReason != NativePoseCompatibilityReason::None &&
             requestedAuthorityFlags != 0) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::CompatibilityRejected);
+                NativePoseFrameFlag::CompatibilityRejected);
         }
         if (frame.applicationResult ==
-            PaperNativePoseApplicationResultV1::ApplyFailed) {
+            NativePoseApplicationResult::ApplyFailed) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::ApplicationFailed);
+                NativePoseFrameFlag::ApplicationFailed);
         }
         if (debug.controllerWeaponValid) {
             api_transform::fromNi(
                 debug.controllerWeaponWorld,
                 frame.rockWeaponWorld);
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::RockWeaponWorldValid);
+                NativePoseFrameFlag::RockWeaponWorldValid);
         }
         if (debug.nativeBaselineWeaponValid) {
             api_transform::fromNi(
                 debug.nativeBaselineWeaponWorld,
                 frame.nativeWeaponBaselineWorld);
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::
+                NativePoseFrameFlag::
                     NativeWeaponBaselineWorldValid);
         }
         if (debug.desiredWeaponValid) {
@@ -418,37 +418,37 @@ namespace paper::native_pose_pipeline
                 debug.desiredWeaponWorld,
                 frame.resolvedWeaponWorld);
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::ResolvedWeaponWorldValid);
+                NativePoseFrameFlag::ResolvedWeaponWorldValid);
         }
 
-        PaperNativeHandSolutionV1 rightHand{};
-        PaperNativeHandSolutionV1 leftHand{};
+        NativeHandSolution rightHand{};
+        NativeHandSolution leftHand{};
         copyNativeHand(
             debug.rightHand,
-            PaperHandV1::Right,
+            Hand::Right,
             context.frameIndex,
             debug.frameCaptureSequence,
             context.worldGeneration,
             context.skeletonGeneration,
             context.providerGeneration,
-            provider::generation(),
+            paper::provider::generation(),
             rightHand);
         copyNativeHand(
             debug.leftHand,
-            PaperHandV1::Left,
+            Hand::Left,
             context.frameIndex,
             debug.frameCaptureSequence,
             context.worldGeneration,
             context.skeletonGeneration,
             context.providerGeneration,
-            provider::generation(),
+            paper::provider::generation(),
             leftHand);
         const bool rightPresented = addPresentedPose(context, rightHand);
         const bool leftPresented = addPresentedPose(context, leftHand);
         if (rightPresented || leftPresented) {
             frame.flags |= bit(
-                PaperNativePoseFrameFlagV1::PresentedReadbackAvailable);
+                NativePoseFrameFlag::PresentedReadbackAvailable);
         }
-        provider::publishNativePosePipeline(frame, rightHand, leftHand);
+        paper::provider::publishNativePosePipeline(frame, rightHand, leftHand);
     }
 }

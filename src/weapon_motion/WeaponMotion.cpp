@@ -87,31 +87,31 @@ namespace paper::weapon_motion
 
         struct FollowerRecord
         {
-            PaperWeaponMotionFollowerV1 value{};
+            WeaponMotionFollower value{};
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+                ReloadQsTransform,
+                kWeaponMotionKeyCount> keys{};
         };
 
         struct StageRecord
         {
-            PaperWeaponMotionStageV1 value{};
+            WeaponMotionStage value{};
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+                ReloadQsTransform,
+                kWeaponMotionKeyCount> keys{};
             std::array<
                 FollowerRecord,
-                PAPER_MAX_WEAPON_MOTION_FOLLOWERS_V1> followers{};
+                kMaxWeaponMotionFollowers> followers{};
             std::uint32_t followerCount{ 0 };
         };
 
         struct RecorderRecord
         {
-            PaperWeaponMotionRecorderV1 value{};
+            WeaponMotionRecorder value{};
             std::array<
-                PaperReloadQsTransformV1,
+                ReloadQsTransform,
                 kMaximumStrokeSamples> samples{};
-            PaperReloadQsTransformV1 previous{};
+            ReloadQsTransform previous{};
             std::uint32_t recordingCount{ 0 };
             bool previousValid{ false };
         };
@@ -123,20 +123,20 @@ namespace paper::weapon_motion
             std::uint32_t sourceClipId{ kInvalidId };
             std::uint32_t sourceBoundary{ 0 };
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> primary{};
+                ReloadQsTransform,
+                kWeaponMotionKeyCount> primary{};
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> returning{};
+                ReloadQsTransform,
+                kWeaponMotionKeyCount> returning{};
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1> sourcePoses{};
-            std::array<
-                float,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> primarySourcePositions{};
+                ReloadQsTransform,
+                kMaxReloadExactSamplesPerTrack> sourcePoses{};
             std::array<
                 float,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> returnSourcePositions{};
+                kWeaponMotionKeyCount> primarySourcePositions{};
+            std::array<
+                float,
+                kWeaponMotionKeyCount> returnSourcePositions{};
             std::uint32_t sampleCount{ 0 };
             float primaryLength{ 0.0f };
             float returnLength{ 0.0f };
@@ -146,20 +146,20 @@ namespace paper::weapon_motion
         struct ExactCursor
         {
             std::array<
-                PaperReloadAnimationClipV1,
-                PAPER_MAX_RELOAD_ANIMATION_CLIPS_V1> clips{};
+                ReloadAnimationClip,
+                kMaxReloadAnimationClips> clips{};
             std::array<
-                PaperReloadAnimationTrackV1,
-                PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1> tracks{};
+                ReloadAnimationTrack,
+                kMaxReloadExactTracksPerClip> tracks{};
             std::array<
-                PaperReloadAnimationSampleV1,
-                PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1> samples{};
+                ReloadAnimationSample,
+                kMaxReloadExactSamplesPerTrack> samples{};
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1> poses{};
+                ReloadQsTransform,
+                kMaxReloadExactSamplesPerTrack> poses{};
             std::array<
                 ExactTrackCandidate,
-                PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1> candidates{};
+                kMaxReloadExactTracksPerClip> candidates{};
             std::uint64_t catalogSequence{ 0 };
             std::uint64_t catalogRevision{ 0 };
             std::uint32_t clipCount{ 0 };
@@ -177,7 +177,7 @@ namespace paper::weapon_motion
 
         struct HandRuntime
         {
-            PaperWeaponManipulationHandStateV1 value{};
+            WeaponManipulationHandState value{};
             bool active{ false };
             bool atMaximum{ false };
             bool atRest{ false };
@@ -197,40 +197,40 @@ namespace paper::weapon_motion
 
         struct Runtime
         {
-            PaperWeaponMotionCatalogStateV1 catalog{};
+            WeaponMotionCatalogState catalog{};
             std::array<
-                PaperWeaponMotionPartV1,
-                PAPER_MAX_WEAPON_MOTION_PARTS_V1> parts{};
+                WeaponMotionPart,
+                kMaxWeaponMotionParts> parts{};
             std::array<
-                std::array<char, PAPER_RELOAD_NODE_NAME_CAPACITY_V1>,
-                PAPER_MAX_WEAPON_MOTION_PARTS_V1> partNodeNames{};
+                std::array<char, kReloadNodeNameCapacity>,
+                kMaxWeaponMotionParts> partNodeNames{};
             std::array<
-                std::array<char, PAPER_RELOAD_NODE_PATH_CAPACITY_V1>,
-                PAPER_MAX_WEAPON_MOTION_PARTS_V1> partNodePaths{};
+                std::array<char, kReloadNodePathCapacity>,
+                kMaxWeaponMotionParts> partNodePaths{};
             std::array<
-                PaperReloadNodeCatalogEntryV1,
-                PAPER_MAX_RELOAD_CATALOG_NODES_V1> catalogNodes{};
+                ReloadNodeCatalogEntry,
+                kMaxReloadCatalogNodes> catalogNodes{};
             std::array<
                 StageRecord,
-                PAPER_MAX_WEAPON_MOTION_STAGES_V1> stages{};
-            PaperWeaponMotionLearningStateV1 learning{};
+                kMaxWeaponMotionStages> stages{};
+            WeaponMotionLearningState learning{};
             std::array<
                 RecorderRecord,
-                PAPER_MAX_WEAPON_MOTION_RECORDERS_V1> recorders{};
-            PaperWeaponManipulationFrameStateV1 manipulation{};
+                kMaxWeaponMotionRecorders> recorders{};
+            WeaponManipulationFrameState manipulation{};
             std::array<HandRuntime, 2> hands{};
-            PaperWeaponMotionStoreStateV1 store{};
+            WeaponMotionStoreState store{};
             ExactCursor exact{};
             std::array<
-                PaperEventV1,
-                PAPER_MAX_WEAPON_MOTION_EVENTS_V1> events{};
+                Event,
+                kMaxWeaponMotionEvents> events{};
             std::uint32_t partCount{ 0 };
             std::uint32_t stageCount{ 0 };
             std::uint32_t recorderCount{ 0 };
             std::uint32_t eventCount{ 0 };
             std::uint64_t eventSequence{ 0 };
-            PaperFormIdentityV1 weaponIdentity{};
-            PaperWeaponClassificationV1 weaponClassification{};
+            FormIdentity weaponIdentity{};
+            WeaponClassification weaponClassification{};
             std::uint64_t cacheLoadoutKey{ 0 };
             std::uint64_t lastQueuedAuthoredRevision{ 0 };
             CacheLookupState cacheLookupState{ CacheLookupState::Uninitialized };
@@ -261,9 +261,9 @@ namespace paper::weapon_motion
 
         void queueEvent(
             Runtime& state,
-            const PaperEventKindV1 kind,
+            const EventKind kind,
             const std::uint32_t partId = kInvalidId,
-            const PaperHandV1 hand = PaperHandV1::Right,
+            const Hand hand = Hand::Right,
             const std::uint32_t motionFlags = 0,
             const float normalizedProgress = 0.0f)
         {
@@ -292,7 +292,7 @@ namespace paper::weapon_motion
             for (std::uint32_t index = 0; index < state.eventCount; ++index) {
                 auto& event = state.events[index];
                 if (event.kind !=
-                    PaperEventKindV1::WeaponMotionCatalogChanged) {
+                    EventKind::WeaponMotionCatalogChanged) {
                     continue;
                 }
                 event.relatedCatalogSequence = state.catalog.catalogSequence;
@@ -303,11 +303,11 @@ namespace paper::weapon_motion
             }
             queueEvent(
                 state,
-                PaperEventKindV1::WeaponMotionCatalogChanged,
+                EventKind::WeaponMotionCatalogChanged,
                 partId);
         }
 
-        [[nodiscard]] PaperWeaponMotionPartV1* findPart(
+        [[nodiscard]] WeaponMotionPart* findPart(
             Runtime& state,
             const std::uint32_t partId)
         {
@@ -316,7 +316,7 @@ namespace paper::weapon_motion
                 nullptr;
         }
 
-        [[nodiscard]] const PaperWeaponMotionPartV1* findPart(
+        [[nodiscard]] const WeaponMotionPart* findPart(
             const Runtime& state,
             const std::uint32_t partId)
         {
@@ -442,24 +442,24 @@ namespace paper::weapon_motion
             }
             part->stageCount = 0;
             part->flags &= ~(
-                flag(PaperWeaponMotionPartFlagV1::ExactAuthoredAvailable) |
-                flag(PaperWeaponMotionPartFlagV1::LearnedPrimaryAvailable) |
-                flag(PaperWeaponMotionPartFlagV1::LearnedReturnAvailable));
+                flag(WeaponMotionPartFlag::ExactAuthoredAvailable) |
+                flag(WeaponMotionPartFlag::LearnedPrimaryAvailable) |
+                flag(WeaponMotionPartFlag::LearnedReturnAvailable));
             for (std::uint32_t index = 0; index < state.stageCount; ++index) {
                 const auto& stage = state.stages[index].value;
                 if (stage.partId != partId) {
                     continue;
                 }
                 ++part->stageCount;
-                if (stage.source == PaperWeaponMotionSourceV1::ExactAuthored) {
+                if (stage.source == WeaponMotionSource::ExactAuthored) {
                     part->flags |= flag(
-                        PaperWeaponMotionPartFlagV1::ExactAuthoredAvailable);
-                } else if (stage.kind == PaperWeaponMotionStageKindV1::Primary) {
+                        WeaponMotionPartFlag::ExactAuthoredAvailable);
+                } else if (stage.kind == WeaponMotionStageKind::Primary) {
                     part->flags |= flag(
-                        PaperWeaponMotionPartFlagV1::LearnedPrimaryAvailable);
+                        WeaponMotionPartFlag::LearnedPrimaryAvailable);
                 } else {
                     part->flags |= flag(
-                        PaperWeaponMotionPartFlagV1::LearnedReturnAvailable);
+                        WeaponMotionPartFlag::LearnedReturnAvailable);
                 }
             }
         }
@@ -467,8 +467,8 @@ namespace paper::weapon_motion
         struct StageUpdate
         {
             std::uint32_t index{ kInvalidId };
-            PaperWeaponMotionServingDecisionV1 decision{
-                PaperWeaponMotionServingDecisionV1::None
+            WeaponMotionServingDecision decision{
+                WeaponMotionServingDecision::None
             };
             bool accepted{ false };
         };
@@ -476,13 +476,13 @@ namespace paper::weapon_motion
         [[nodiscard]] StageUpdate upsertStage(
             Runtime& state,
             const std::uint32_t partId,
-            const PaperWeaponMotionSourceV1 source,
-            const PaperWeaponMotionStageKindV1 kind,
+            const WeaponMotionSource source,
+            const WeaponMotionStageKind kind,
             const std::uint32_t sourceClipId,
             const std::uint32_t sourceBoundary,
             const std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1>& keys,
+                ReloadQsTransform,
+                kWeaponMotionKeyCount>& keys,
             const float totalArcLength,
             const float peakDelta)
         {
@@ -490,7 +490,7 @@ namespace paper::weapon_motion
                 !std::isfinite(totalArcLength) ||
                 totalArcLength < kMinimumExcursionGameUnits) {
                 return {
-                    .decision = PaperWeaponMotionServingDecisionV1::
+                    .decision = WeaponMotionServingDecision::
                         RejectedInvalidPath,
                 };
             }
@@ -506,14 +506,14 @@ namespace paper::weapon_motion
 
             if (existing != kInvalidId) {
                 const auto& current = state.stages[existing].value;
-                if (current.source == PaperWeaponMotionSourceV1::ExactAuthored &&
-                    source == PaperWeaponMotionSourceV1::Learned) {
+                if (current.source == WeaponMotionSource::ExactAuthored &&
+                    source == WeaponMotionSource::Learned) {
                     return {
                         .index = existing,
-                        .decision = kind == PaperWeaponMotionStageKindV1::Primary ?
-                            PaperWeaponMotionServingDecisionV1::
+                        .decision = kind == WeaponMotionStageKind::Primary ?
+                            WeaponMotionServingDecision::
                                 RejectedSmallerPrimary :
-                            PaperWeaponMotionServingDecisionV1::
+                            WeaponMotionServingDecision::
                                 RejectedSmallerReturn,
                     };
                 }
@@ -522,19 +522,19 @@ namespace paper::weapon_motion
                         current.totalArcLengthGameUnits * kReplaceRatio) {
                     return {
                         .index = existing,
-                        .decision = kind == PaperWeaponMotionStageKindV1::Primary ?
-                            PaperWeaponMotionServingDecisionV1::
+                        .decision = kind == WeaponMotionStageKind::Primary ?
+                            WeaponMotionServingDecision::
                                 RejectedSmallerPrimary :
-                            PaperWeaponMotionServingDecisionV1::
+                            WeaponMotionServingDecision::
                                 RejectedSmallerReturn,
                     };
                 }
             } else if (state.stageCount >= state.stages.size()) {
                 state.catalog.flags |=
-                    flag(PaperWeaponMotionCatalogFlagV1::StagesTruncated);
+                    flag(WeaponMotionCatalogFlag::StagesTruncated);
                 ++state.catalog.omittedStageCount;
                 return {
-                    .decision = PaperWeaponMotionServingDecisionV1::
+                    .decision = WeaponMotionServingDecision::
                         NoServingSlot,
                 };
             }
@@ -548,23 +548,23 @@ namespace paper::weapon_motion
             stage.value.source = source;
             stage.value.kind = kind;
             stage.value.flags =
-                flag(PaperWeaponMotionStageFlagV1::Valid) |
-                flag(PaperWeaponMotionStageFlagV1::TravelExtremeValid) |
-                (source == PaperWeaponMotionSourceV1::ExactAuthored ?
-                    flag(PaperWeaponMotionStageFlagV1::ExactAuthored) |
-                        flag(PaperWeaponMotionStageFlagV1::LiveRebased) :
-                    flag(PaperWeaponMotionStageFlagV1::Learned)) |
-                (kind == PaperWeaponMotionStageKindV1::Return ?
-                    flag(PaperWeaponMotionStageFlagV1::ReturnStage) : 0u);
+                flag(WeaponMotionStageFlag::Valid) |
+                flag(WeaponMotionStageFlag::TravelExtremeValid) |
+                (source == WeaponMotionSource::ExactAuthored ?
+                    flag(WeaponMotionStageFlag::ExactAuthored) |
+                        flag(WeaponMotionStageFlag::LiveRebased) :
+                    flag(WeaponMotionStageFlag::Learned)) |
+                (kind == WeaponMotionStageKind::Return ?
+                    flag(WeaponMotionStageFlag::ReturnStage) : 0u);
             stage.value.sourceClipId = sourceClipId;
             stage.value.sourceBoundary = sourceBoundary;
-            stage.value.keyCount = PAPER_WEAPON_MOTION_KEY_COUNT_V1;
+            stage.value.keyCount = kWeaponMotionKeyCount;
             stage.value.totalArcLengthGameUnits = totalArcLength;
             stage.value.maximumTravelArcPosition =
-                kind == PaperWeaponMotionStageKindV1::Primary ?
+                kind == WeaponMotionStageKind::Primary ?
                     totalArcLength : 0.0f;
             stage.value.restArcPosition =
-                kind == PaperWeaponMotionStageKindV1::Return ?
+                kind == WeaponMotionStageKind::Return ?
                     totalArcLength : 0.0f;
             stage.value.peakDeltaGameUnits = peakDelta;
             stage.value.restDeltaGameUnits = poseDistance(
@@ -572,11 +572,11 @@ namespace paper::weapon_motion
             stage.value.start = keys.front();
             stage.value.end = keys.back();
             stage.value.restReference =
-                kind == PaperWeaponMotionStageKindV1::Return ?
+                kind == WeaponMotionStageKind::Return ?
                     keys.back() : keys.front();
             stage.keys = keys;
 
-            if (source == PaperWeaponMotionSourceV1::Learned) {
+            if (source == WeaponMotionSource::Learned) {
                 ++state.catalog.learningRevision;
                 state.learning.learningRevision = state.catalog.learningRevision;
             } else {
@@ -587,20 +587,20 @@ namespace paper::weapon_motion
             return {
                 .index = stageIndex,
                 .decision = existing == kInvalidId ?
-                    (kind == PaperWeaponMotionStageKindV1::Primary ?
-                        PaperWeaponMotionServingDecisionV1::StoredPrimary :
-                        PaperWeaponMotionServingDecisionV1::StoredReturn) :
-                    (kind == PaperWeaponMotionStageKindV1::Primary ?
-                        PaperWeaponMotionServingDecisionV1::ReplacedPrimary :
-                        PaperWeaponMotionServingDecisionV1::ReplacedReturn),
+                    (kind == WeaponMotionStageKind::Primary ?
+                        WeaponMotionServingDecision::StoredPrimary :
+                        WeaponMotionServingDecision::StoredReturn) :
+                    (kind == WeaponMotionStageKind::Primary ?
+                        WeaponMotionServingDecision::ReplacedPrimary :
+                        WeaponMotionServingDecision::ReplacedReturn),
                 .accepted = true,
             };
         }
 
         void clearCatalogForNewObservation(
             Runtime& state,
-            const PaperReloadCatalogStateV1& catalog,
-            const PaperReloadFrameStateV1& frame)
+            const ReloadCatalogState& catalog,
+            const ReloadFrameState& frame)
         {
             for (const auto& hand : state.hands) {
                 if (!hand.active) {
@@ -608,10 +608,10 @@ namespace paper::weapon_motion
                 }
                 queueEvent(
                     state,
-                    PaperEventKindV1::WeaponManipulationEnded,
+                    EventKind::WeaponManipulationEnded,
                     hand.value.partId,
                     hand.value.hand,
-                    flag(PaperWeaponManipulationEndReasonV1::WeaponChanged),
+                    flag(WeaponManipulationEndReason::WeaponChanged),
                     hand.value.normalizedProgress);
             }
             state.catalog = {};
@@ -637,11 +637,11 @@ namespace paper::weapon_motion
             state.hands = {};
 
             std::array<
-                PaperReloadEvidenceV1,
-                PAPER_MAX_RELOAD_EVIDENCE_V1> evidence{};
+                ReloadEvidence,
+                kMaxReloadEvidence> evidence{};
             std::array<
                 reload_observation::EvidenceMotionSource,
-                PAPER_MAX_RELOAD_EVIDENCE_V1> sources{};
+                kMaxReloadEvidence> sources{};
             std::uint32_t evidenceCount = 0;
             std::uint32_t sourceCount = 0;
             std::uint32_t nodeCount = 0;
@@ -650,17 +650,17 @@ namespace paper::weapon_motion
                     0,
                     evidence.data(),
                     static_cast<std::uint32_t>(evidence.size()),
-                    evidenceCount) != PaperResultV1::Ok ||
+                    evidenceCount) != Status::Ok ||
                 reload_observation::copyEvidenceMotionSources(
                     sources.data(),
                     static_cast<std::uint32_t>(sources.size()),
-                    sourceCount) != PaperResultV1::Ok ||
+                    sourceCount) != Status::Ok ||
                 reload_observation::copyCatalogNodes(
                     catalog.catalogSequence,
                     0,
                     state.catalogNodes.data(),
                     static_cast<std::uint32_t>(state.catalogNodes.size()),
-                    nodeCount) != PaperResultV1::Ok) {
+                    nodeCount) != Status::Ok) {
                 return;
             }
 
@@ -669,7 +669,7 @@ namespace paper::weapon_motion
                  state.partCount < state.parts.size();
                  ++sourceIndex) {
                 const auto& source = sources[sourceIndex];
-                const PaperReloadEvidenceV1* metadata = nullptr;
+                const ReloadEvidence* metadata = nullptr;
                 for (std::uint32_t evidenceIndex = 0;
                      evidenceIndex < evidenceCount;
                      ++evidenceIndex) {
@@ -689,34 +689,34 @@ namespace paper::weapon_motion
                 part.sourceNodeId = source.sourceNodeId;
                 part.interactionNodeId = source.interactionNodeId;
                 part.selectedNodeId = source.selectedNodeId;
-                part.flags = flag(PaperWeaponMotionPartFlagV1::Valid);
+                part.flags = flag(WeaponMotionPartFlag::Valid);
                 if (hasFlag(
                         source.flags,
                         flag(reload_observation::
                             EvidenceMotionSourceFlag::BaselineValid))) {
                     part.flags |=
-                        flag(PaperWeaponMotionPartFlagV1::BaselineValid);
+                        flag(WeaponMotionPartFlag::BaselineValid);
                 }
                 if (hasFlag(
                         source.flags,
                         flag(reload_observation::
                             EvidenceMotionSourceFlag::CurrentValid))) {
                     part.flags |=
-                        flag(PaperWeaponMotionPartFlagV1::CurrentValid);
+                        flag(WeaponMotionPartFlag::CurrentValid);
                 }
                 if (hasFlag(
                         source.flags,
                         flag(reload_observation::
                             EvidenceMotionSourceFlag::SourceNodeSelected))) {
                     part.flags |=
-                        flag(PaperWeaponMotionPartFlagV1::SourceNodeSelected);
+                        flag(WeaponMotionPartFlag::SourceNodeSelected);
                 }
                 if (hasFlag(
                         source.flags,
                         flag(reload_observation::
                             EvidenceMotionSourceFlag::InteractionNodeFallback))) {
                     part.flags |= flag(
-                        PaperWeaponMotionPartFlagV1::InteractionNodeFallback);
+                        WeaponMotionPartFlag::InteractionNodeFallback);
                 }
                 part.partKind = metadata->partKind;
                 part.reloadRole = metadata->reloadRole;
@@ -749,10 +749,10 @@ namespace paper::weapon_motion
                 part.currentWeaponLocal = source.currentWeaponLocal;
                 ++state.partCount;
             }
-            state.catalog.flags = flag(PaperWeaponMotionCatalogFlagV1::Valid);
+            state.catalog.flags = flag(WeaponMotionCatalogFlag::Valid);
             if (state.options.liveMotionLearning) {
                 state.catalog.flags |=
-                    flag(PaperWeaponMotionCatalogFlagV1::LearningActive);
+                    flag(WeaponMotionCatalogFlag::LearningActive);
             }
             state.catalog.weaponFormId = catalog.weaponFormId;
             state.catalog.weaponGenerationKey = catalog.weaponGenerationKey;
@@ -767,7 +767,7 @@ namespace paper::weapon_motion
             state.catalog.omittedPartCount = sourceCount - state.partCount;
             if (state.catalog.omittedPartCount != 0) {
                 state.catalog.flags |=
-                    flag(PaperWeaponMotionCatalogFlagV1::PartsTruncated);
+                    flag(WeaponMotionCatalogFlag::PartsTruncated);
             }
             state.recorderCount = state.options.liveMotionLearning ?
                 (std::min)(
@@ -778,31 +778,31 @@ namespace paper::weapon_motion
                 state.recorders[index].value.recorderId = index;
                 state.recorders[index].value.partId = index;
                 state.recorders[index].value.flags =
-                    flag(PaperWeaponMotionRecorderFlagV1::Valid);
+                    flag(WeaponMotionRecorderFlag::Valid);
             }
             state.learning.flags = state.options.liveMotionLearning ?
-                flag(PaperWeaponMotionLearningFlagV1::Active) |
-                    flag(PaperWeaponMotionLearningFlagV1::
+                flag(WeaponMotionLearningFlag::Active) |
+                    flag(WeaponMotionLearningFlag::
                         NativeGraphObservations) :
                 0;
             state.learning.weaponFormId = catalog.weaponFormId;
             state.learning.weaponGenerationKey = catalog.weaponGenerationKey;
             state.learning.recorderCount = state.recorderCount;
-            state.store.flags = flag(PaperWeaponMotionStoreFlagV1::Active) |
-                flag(PaperWeaponMotionStoreFlagV1::InMemoryCatalog) |
-                flag(PaperWeaponMotionStoreFlagV1::RawObservationEvidenceAvailable);
+            state.store.flags = flag(WeaponMotionStoreFlag::Active) |
+                flag(WeaponMotionStoreFlag::InMemoryCatalog) |
+                flag(WeaponMotionStoreFlag::RawObservationEvidenceAvailable);
             if (s_cacheStore && s_cacheStore->readEnabled()) {
                 state.store.flags |= flag(
-                    PaperWeaponMotionStoreFlagV1::CompiledStageCacheEnabled);
+                    WeaponMotionStoreFlag::CompiledStageCacheEnabled);
             }
             if (s_cacheStore && s_cacheStore->writeEnabled()) {
                 state.store.flags |= flag(
-                    PaperWeaponMotionStoreFlagV1::
+                    WeaponMotionStoreFlag::
                         CompiledStageCacheWriteEnabled);
             }
             state.store.weaponFormId = catalog.weaponFormId;
             state.store.weaponGenerationKey = catalog.weaponGenerationKey;
-            queueEvent(state, PaperEventKindV1::WeaponMotionCatalogChanged);
+            queueEvent(state, EventKind::WeaponMotionCatalogChanged);
         }
 
         void beginCacheLookup(Runtime& state)
@@ -828,7 +828,7 @@ namespace paper::weapon_motion
             if (s_cacheStore->requestLoad(state.cacheLoadoutKey)) {
                 state.cacheLookupState = CacheLookupState::Pending;
                 state.store.flags |= flag(
-                    PaperWeaponMotionStoreFlagV1::CacheLookupPending);
+                    WeaponMotionStoreFlag::CacheLookupPending);
             }
         }
 
@@ -841,13 +841,13 @@ namespace paper::weapon_motion
                 record.stages.size() > state.stages.size()) {
                 return false;
             }
-            std::array<bool, PAPER_MAX_WEAPON_MOTION_PARTS_V1 * 2> occupied{};
+            std::array<bool, kMaxWeaponMotionParts * 2> occupied{};
             for (const auto& cachedStage : record.stages) {
                 const auto partId = findPartByStableKey(state, cachedStage.part);
                 if (partId == kInvalidId ||
                     !hasFlag(
                         state.parts[partId].flags,
-                        flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                        flag(WeaponMotionPartFlag::BaselineValid))) {
                     return false;
                 }
                 const auto baseline = fromTransform(
@@ -856,8 +856,8 @@ namespace paper::weapon_motion
                     return false;
                 }
                 std::array<
-                    PaperReloadQsTransformV1,
-                    PAPER_WEAPON_MOTION_KEY_COUNT_V1> rebasedKeys{};
+                    ReloadQsTransform,
+                    kWeaponMotionKeyCount> rebasedKeys{};
                 for (std::size_t key = 0; key < rebasedKeys.size(); ++key) {
                     rebasedKeys[key] = compose(
                         baseline, cachedStage.keys[key]);
@@ -869,7 +869,7 @@ namespace paper::weapon_motion
                     return false;
                 }
                 const auto kindIndex =
-                    cachedStage.kind == PaperWeaponMotionStageKindV1::Primary ?
+                    cachedStage.kind == WeaponMotionStageKind::Primary ?
                         0u : 1u;
                 const auto slot = partId * 2u + kindIndex;
                 if (slot >= occupied.size() || occupied[slot]) {
@@ -882,7 +882,7 @@ namespace paper::weapon_motion
                     if (followerPartId == kInvalidId ||
                         !hasFlag(
                             state.parts[followerPartId].flags,
-                            flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                            flag(WeaponMotionPartFlag::BaselineValid))) {
                         return false;
                     }
                     const auto followerBaseline = fromTransform(
@@ -912,8 +912,8 @@ namespace paper::weapon_motion
                 const auto baseline = fromTransform(
                     state.parts[partId].baselineWeaponLocal);
                 std::array<
-                    PaperReloadQsTransformV1,
-                    PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+                    ReloadQsTransform,
+                    kWeaponMotionKeyCount> keys{};
                 for (std::size_t key = 0; key < keys.size(); ++key) {
                     keys[key] = compose(baseline, cachedStage.keys[key]);
                     if (!finite(keys[key])) {
@@ -924,7 +924,7 @@ namespace paper::weapon_motion
                 const auto update = upsertStage(
                     state,
                     partId,
-                    PaperWeaponMotionSourceV1::ExactAuthored,
+                    WeaponMotionSource::ExactAuthored,
                     cachedStage.kind,
                     kInvalidId,
                     0,
@@ -936,7 +936,7 @@ namespace paper::weapon_motion
                 }
                 auto& stage = state.stages[update.index];
                 stage.value.flags |= flag(
-                    PaperWeaponMotionStageFlagV1::HydratedFromCache);
+                    WeaponMotionStageFlag::HydratedFromCache);
                 for (const auto& cachedFollower : cachedStage.followers) {
                     if (stage.followerCount >= stage.followers.size()) {
                         return false;
@@ -954,16 +954,16 @@ namespace paper::weapon_motion
                         state.parts[followerPartId].evidenceId;
                     follower.value.bodyId = state.parts[followerPartId].bodyId;
                     follower.value.flags =
-                        flag(PaperWeaponMotionFollowerFlagV1::Valid) |
-                        flag(PaperWeaponMotionFollowerFlagV1::CoTimed) |
-                        flag(PaperWeaponMotionFollowerFlagV1::EvidenceMapped) |
-                        flag(PaperWeaponMotionFollowerFlagV1::LiveRebased) |
-                        flag(PaperWeaponMotionFollowerFlagV1::
+                        flag(WeaponMotionFollowerFlag::Valid) |
+                        flag(WeaponMotionFollowerFlag::CoTimed) |
+                        flag(WeaponMotionFollowerFlag::EvidenceMapped) |
+                        flag(WeaponMotionFollowerFlag::LiveRebased) |
+                        flag(WeaponMotionFollowerFlag::
                             HydratedFromCache) |
                         (cachedFollower.flags &
-                            flag(PaperWeaponMotionFollowerFlagV1::Rigid));
+                            flag(WeaponMotionFollowerFlag::Rigid));
                     follower.value.keyCount =
-                        PAPER_WEAPON_MOTION_KEY_COUNT_V1;
+                        kWeaponMotionKeyCount;
                     copyText(
                         follower.value.sourceName,
                         boundedText(state.parts[followerPartId].sourceName));
@@ -995,7 +995,7 @@ namespace paper::weapon_motion
                 return;
             }
             state.store.flags &= ~flag(
-                PaperWeaponMotionStoreFlagV1::CacheLookupPending);
+                WeaponMotionStoreFlag::CacheLookupPending);
             const auto sessionHit =
                 result.status == weapon_motion_cache::LoadStatus::HitSession;
             const auto persistentHit =
@@ -1006,8 +1006,8 @@ namespace paper::weapon_motion
                     CacheLookupState::HitSession :
                     CacheLookupState::HitPersistent;
                 state.store.flags |= flag(sessionHit ?
-                    PaperWeaponMotionStoreFlagV1::SessionCacheHit :
-                    PaperWeaponMotionStoreFlagV1::PersistentCacheHit);
+                    WeaponMotionStoreFlag::SessionCacheHit :
+                    WeaponMotionStoreFlag::PersistentCacheHit);
                 PAPER_LOG_INFO(
                     MotionCache,
                     "Hydrated {} authored stages for loadout {:016X} from {} cache",
@@ -1046,7 +1046,7 @@ namespace paper::weapon_motion
             for (std::uint32_t index = 0; index < state.exact.clipCount; ++index) {
                 const auto& clip = state.exact.clips[index];
                 if (clip.acquisition !=
-                        PaperReloadAnimationAcquisitionV1::
+                        ReloadAnimationAcquisition::
                             ExactWeaponPreharvest) {
                     continue;
                 }
@@ -1068,13 +1068,13 @@ namespace paper::weapon_motion
             for (std::uint32_t index = 0; index < state.stageCount; ++index) {
                 const auto& stage = state.stages[index];
                 if (stage.value.source !=
-                    PaperWeaponMotionSourceV1::ExactAuthored) {
+                    WeaponMotionSource::ExactAuthored) {
                     continue;
                 }
                 const auto* part = findPart(state, stage.value.partId);
                 if (!part || !hasFlag(
                         part->flags,
-                        flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                        flag(WeaponMotionPartFlag::BaselineValid))) {
                     return {};
                 }
                 weapon_motion_cache::CachedStage cached{
@@ -1101,13 +1101,13 @@ namespace paper::weapon_motion
                         state, follower.value.partId);
                     if (!followerPart || !hasFlag(
                             followerPart->flags,
-                            flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                            flag(WeaponMotionPartFlag::BaselineValid))) {
                         return {};
                     }
                     weapon_motion_cache::CachedFollower cachedFollower{
                         .part = stablePartKey(state, follower.value.partId),
                         .flags = follower.value.flags &
-                            flag(PaperWeaponMotionFollowerFlagV1::Rigid),
+                            flag(WeaponMotionFollowerFlag::Rigid),
                     };
                     const auto inverseFollowerBaseline = inverse(
                         fromTransform(followerPart->baselineWeaponLocal));
@@ -1140,7 +1140,7 @@ namespace paper::weapon_motion
             if (state.catalog.authoredRevision == 0) {
                 state.cacheLookupState = CacheLookupState::ExactUnavailable;
                 state.store.flags &= ~flag(
-                    PaperWeaponMotionStoreFlagV1::
+                    WeaponMotionStoreFlag::
                         RawAnimationEvidenceAvailable);
                 state.store.rawAnimationCatalogSequence = 0;
                 state.store.rawAnimationCatalogRevision = 0;
@@ -1150,7 +1150,7 @@ namespace paper::weapon_motion
                 !state.exact.cacheEligible) {
                 state.cacheLookupState = CacheLookupState::Compiled;
                 state.store.flags &= ~flag(
-                    PaperWeaponMotionStoreFlagV1::
+                    WeaponMotionStoreFlag::
                         RawAnimationEvidenceAvailable);
                 state.store.rawAnimationCatalogSequence = 0;
                 state.store.rawAnimationCatalogRevision = 0;
@@ -1169,7 +1169,7 @@ namespace paper::weapon_motion
                     state.catalog.authoredRevision;
                 state.cacheLookupState = CacheLookupState::Compiled;
                 state.store.flags &= ~flag(
-                    PaperWeaponMotionStoreFlagV1::
+                    WeaponMotionStoreFlag::
                         RawAnimationEvidenceAvailable);
                 state.store.rawAnimationCatalogSequence = 0;
                 state.store.rawAnimationCatalogRevision = 0;
@@ -1185,10 +1185,10 @@ namespace paper::weapon_motion
             Runtime& state,
             const rock::api::animation::AnimationPhaseContext& context)
         {
-            PaperReloadCatalogStateV1 catalog{};
-            PaperReloadFrameStateV1 frame{};
-            if (reload_observation::getCatalogState(catalog) != PaperResultV1::Ok ||
-                reload_observation::getFrameState(frame) != PaperResultV1::Ok ||
+            ReloadCatalogState catalog{};
+            ReloadFrameState frame{};
+            if (reload_observation::getCatalogState(catalog) != Status::Ok ||
+                reload_observation::getFrameState(frame) != Status::Ok ||
                 catalog.catalogSequence == 0 || frame.snapshotSequence == 0 ||
                 catalog.weaponGenerationKey != frame.weaponGenerationKey) {
                 return false;
@@ -1206,17 +1206,17 @@ namespace paper::weapon_motion
 
             std::array<
                 reload_observation::EvidenceMotionSource,
-                PAPER_MAX_RELOAD_EVIDENCE_V1> sources{};
+                kMaxReloadEvidence> sources{};
             std::uint32_t sourceCount = 0;
             if (reload_observation::copyEvidenceMotionSources(
                     sources.data(),
                     static_cast<std::uint32_t>(sources.size()),
-                    sourceCount) != PaperResultV1::Ok) {
+                    sourceCount) != Status::Ok) {
                 return false;
             }
             for (std::uint32_t index = 0; index < state.partCount; ++index) {
                 auto& part = state.parts[index];
-                part.flags &= ~flag(PaperWeaponMotionPartFlagV1::CurrentValid);
+                part.flags &= ~flag(WeaponMotionPartFlag::CurrentValid);
                 for (std::uint32_t sourceIndex = 0;
                      sourceIndex < sourceCount;
                      ++sourceIndex) {
@@ -1230,7 +1230,7 @@ namespace paper::weapon_motion
                             flag(reload_observation::
                                 EvidenceMotionSourceFlag::CurrentValid))) {
                         part.flags |=
-                            flag(PaperWeaponMotionPartFlagV1::CurrentValid);
+                            flag(WeaponMotionPartFlag::CurrentValid);
                     }
                     break;
                 }
@@ -1249,33 +1249,33 @@ namespace paper::weapon_motion
         void completeCandidate(
             Runtime& state,
             RecorderRecord& recorder,
-            const PaperWeaponMotionStrokeTerminationV1 termination)
+            const WeaponMotionStrokeTermination termination)
         {
             auto& value = recorder.value;
             value.lastTermination = termination;
             ++state.learning.completedStrokeCount;
-            if (termination != PaperWeaponMotionStrokeTerminationV1::Settled &&
-                termination != PaperWeaponMotionStrokeTerminationV1::SampleCapacity) {
+            if (termination != WeaponMotionStrokeTermination::Settled &&
+                termination != WeaponMotionStrokeTermination::SampleCapacity) {
                 ++state.learning.interruptedStrokeCount;
                 value.lastDecision =
-                    PaperWeaponMotionServingDecisionV1::RejectedInvalidPath;
+                    WeaponMotionServingDecision::RejectedInvalidPath;
             } else if (recorder.recordingCount < 2) {
                 ++state.learning.rejectedStrokeCount;
                 value.lastDecision =
-                    PaperWeaponMotionServingDecisionV1::RejectedBelowNoise;
+                    WeaponMotionServingDecision::RejectedBelowNoise;
             } else {
                 const auto peak = peakIndex(
                     recorder.samples, recorder.recordingCount);
                 std::array<
-                    PaperReloadQsTransformV1,
-                    PAPER_WEAPON_MOTION_KEY_COUNT_V1> primary{};
+                    ReloadQsTransform,
+                    kWeaponMotionKeyCount> primary{};
                 const auto primaryLength = resamplePath(
                     recorder.samples, 0, peak, primary);
                 const auto update = upsertStage(
                     state,
                     value.partId,
-                    PaperWeaponMotionSourceV1::Learned,
-                    PaperWeaponMotionStageKindV1::Primary,
+                    WeaponMotionSource::Learned,
+                    WeaponMotionStageKind::Primary,
                     kInvalidId,
                     peak,
                     primary,
@@ -1290,8 +1290,8 @@ namespace paper::weapon_motion
                         recorder.samples[0]) <= kReturnToRestTolerance;
                 if (returnsToRest) {
                     std::array<
-                        PaperReloadQsTransformV1,
-                        PAPER_WEAPON_MOTION_KEY_COUNT_V1> returning{};
+                        ReloadQsTransform,
+                        kWeaponMotionKeyCount> returning{};
                     const auto returnLength = resamplePath(
                         recorder.samples,
                         peak,
@@ -1300,8 +1300,8 @@ namespace paper::weapon_motion
                     const auto returnUpdate = upsertStage(
                         state,
                         value.partId,
-                        PaperWeaponMotionSourceV1::Learned,
-                        PaperWeaponMotionStageKindV1::Return,
+                        WeaponMotionSource::Learned,
+                        WeaponMotionStageKind::Return,
                         kInvalidId,
                         peak,
                         returning,
@@ -1315,21 +1315,21 @@ namespace paper::weapon_motion
                 if (accepted) {
                     ++state.learning.acceptedStrokeCount;
                     value.flags |=
-                        flag(PaperWeaponMotionRecorderFlagV1::CandidateValid);
+                        flag(WeaponMotionRecorderFlag::CandidateValid);
                 } else {
                     ++state.learning.rejectedStrokeCount;
                     value.flags &= ~flag(
-                        PaperWeaponMotionRecorderFlagV1::CandidateValid);
+                        WeaponMotionRecorderFlag::CandidateValid);
                 }
             }
             queueEvent(
                 state,
-                PaperEventKindV1::WeaponMotionCandidateCompleted,
+                EventKind::WeaponMotionCandidateCompleted,
                 value.partId,
-                PaperHandV1::Right,
+                Hand::Right,
                 flag(value.lastDecision),
                 0.0f);
-            value.phase = PaperWeaponMotionRecorderPhaseV1::WaitingForRest;
+            value.phase = WeaponMotionRecorderPhase::WaitingForRest;
             value.sampleCount = recorder.recordingCount;
             value.stableFrameCount = 0;
             recorder.recordingCount = 0;
@@ -1349,16 +1349,16 @@ namespace paper::weapon_motion
                 const auto& part = state.parts[value.partId];
                 value.lastObservedFrameIndex = frameIndex;
                 value.flags &= ~flag(
-                    PaperWeaponMotionRecorderFlagV1::ObservationValid);
+                    WeaponMotionRecorderFlag::ObservationValid);
                 if (!hasFlag(
                         part.flags,
-                        flag(PaperWeaponMotionPartFlagV1::CurrentValid))) {
+                        flag(WeaponMotionPartFlag::CurrentValid))) {
                     if (value.phase ==
-                        PaperWeaponMotionRecorderPhaseV1::Recording) {
+                        WeaponMotionRecorderPhase::Recording) {
                         completeCandidate(
                             state,
                             recorder,
-                            PaperWeaponMotionStrokeTerminationV1::ObservationLost);
+                            WeaponMotionStrokeTermination::ObservationLost);
                     }
                     recorder.previousValid = false;
                     continue;
@@ -1368,7 +1368,7 @@ namespace paper::weapon_motion
                     continue;
                 }
                 value.flags |= flag(
-                    PaperWeaponMotionRecorderFlagV1::ObservationValid);
+                    WeaponMotionRecorderFlag::ObservationValid);
                 value.currentPose = current;
                 ++state.learning.observationCount;
                 if (!recorder.previousValid) {
@@ -1378,20 +1378,20 @@ namespace paper::weapon_motion
                 }
                 const auto frameStable = stable(recorder.previous, current);
                 switch (value.phase) {
-                case PaperWeaponMotionRecorderPhaseV1::WaitingForRest:
+                case WeaponMotionRecorderPhase::WaitingForRest:
                     value.stableFrameCount = frameStable ?
                         value.stableFrameCount + 1 : 0;
                     if (value.stableFrameCount >= kArmStableFrames) {
-                        value.phase = PaperWeaponMotionRecorderPhaseV1::Armed;
+                        value.phase = WeaponMotionRecorderPhase::Armed;
                         value.restPose = current;
                         value.stableFrameCount = 0;
                     }
                     break;
-                case PaperWeaponMotionRecorderPhaseV1::Armed: {
+                case WeaponMotionRecorderPhase::Armed: {
                     const auto excursion = poseDistance(value.restPose, current);
                     if (excursion >= kMinimumExcursionGameUnits) {
                         value.phase =
-                            PaperWeaponMotionRecorderPhaseV1::Recording;
+                            WeaponMotionRecorderPhase::Recording;
                         value.startFrameIndex = frameIndex;
                         value.peakExcursionGameUnits = excursion;
                         value.recordedArcLengthGameUnits = excursion;
@@ -1402,7 +1402,7 @@ namespace paper::weapon_motion
                     }
                     break;
                 }
-                case PaperWeaponMotionRecorderPhaseV1::Recording: {
+                case WeaponMotionRecorderPhase::Recording: {
                     ++state.learning.activeRecorderCount;
                     value.peakExcursionGameUnits = (std::max)(
                         value.peakExcursionGameUnits,
@@ -1419,12 +1419,12 @@ namespace paper::weapon_motion
                     value.sampleCount = recorder.recordingCount;
                     if (recorder.recordingCount >= recorder.samples.size()) {
                         state.learning.flags |= flag(
-                            PaperWeaponMotionLearningFlagV1::
+                            WeaponMotionLearningFlag::
                                 SampleCapacityReached);
                         completeCandidate(
                             state,
                             recorder,
-                            PaperWeaponMotionStrokeTerminationV1::
+                            WeaponMotionStrokeTermination::
                                 SampleCapacity);
                     } else if (value.stableFrameCount >= kSettleFrames) {
                         if (recorder.recordingCount == 0 ||
@@ -1436,7 +1436,7 @@ namespace paper::weapon_motion
                         completeCandidate(
                             state,
                             recorder,
-                            PaperWeaponMotionStrokeTerminationV1::Settled);
+                            WeaponMotionStrokeTermination::Settled);
                     }
                     break;
                 }
@@ -1452,11 +1452,11 @@ namespace paper::weapon_motion
 
         [[nodiscard]] bool rigidFollowers(
             const std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1>& leaderKeys,
+                ReloadQsTransform,
+                kWeaponMotionKeyCount>& leaderKeys,
             const std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1>& followerKeys)
+                ReloadQsTransform,
+                kWeaponMotionKeyCount>& followerKeys)
         {
             for (std::size_t key = 1; key < leaderKeys.size(); ++key) {
                 if (!relativeTransformStable(
@@ -1477,8 +1477,8 @@ namespace paper::weapon_motion
         {
             std::uint32_t candidateIndex{ kInvalidId };
             std::array<
-                PaperReloadQsTransformV1,
-                PAPER_WEAPON_MOTION_KEY_COUNT_V1> keys{};
+                ReloadQsTransform,
+                kWeaponMotionKeyCount> keys{};
             float overlap{ 0.0f };
             bool rigid{ false };
         };
@@ -1487,29 +1487,29 @@ namespace paper::weapon_motion
             Runtime& state,
             const std::uint32_t stageIndex,
             const ExactTrackCandidate& leader,
-            const PaperWeaponMotionStageKindV1 kind)
+            const WeaponMotionStageKind kind)
         {
             if (stageIndex >= state.stageCount) {
                 return;
             }
             auto& stage = state.stages[stageIndex];
             const auto& leaderKeys =
-                kind == PaperWeaponMotionStageKindV1::Primary ?
+                kind == WeaponMotionStageKind::Primary ?
                     leader.primary : leader.returning;
             const auto& sourcePositions =
-                kind == PaperWeaponMotionStageKindV1::Primary ?
+                kind == WeaponMotionStageKind::Primary ?
                     leader.primarySourcePositions :
                     leader.returnSourcePositions;
             std::array<
                 RankedFollower,
-                PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1> ranked{};
+                kMaxReloadExactTracksPerClip> ranked{};
             std::uint32_t rankedCount = 0;
             for (std::uint32_t index = 0;
                  index < state.exact.candidateCount;
                  ++index) {
                 const auto& candidate = state.exact.candidates[index];
                 if (!candidate.valid || candidate.partId == leader.partId ||
-                    (kind == PaperWeaponMotionStageKindV1::Return &&
+                    (kind == WeaponMotionStageKind::Return &&
                         candidate.returnLength < kMinimumExcursionGameUnits)) {
                     continue;
                 }
@@ -1553,9 +1553,9 @@ namespace paper::weapon_motion
                 static_cast<std::uint32_t>(stage.followers.size()));
             if (rankedCount > acceptedCount) {
                 stage.value.flags |= flag(
-                    PaperWeaponMotionStageFlagV1::FollowersTruncated);
+                    WeaponMotionStageFlag::FollowersTruncated);
                 state.catalog.flags |= flag(
-                    PaperWeaponMotionCatalogFlagV1::FollowersTruncated);
+                    WeaponMotionCatalogFlag::FollowersTruncated);
                 state.catalog.omittedFollowerCount += rankedCount - acceptedCount;
             }
             for (std::uint32_t rank = 0; rank < acceptedCount; ++rank) {
@@ -1576,15 +1576,15 @@ namespace paper::weapon_motion
                         boundedText(part->sourceName));
                 }
                 follower.value.flags =
-                    flag(PaperWeaponMotionFollowerFlagV1::Valid) |
-                    flag(PaperWeaponMotionFollowerFlagV1::CoTimed) |
-                    flag(PaperWeaponMotionFollowerFlagV1::EvidenceMapped) |
-                    flag(PaperWeaponMotionFollowerFlagV1::LiveRebased);
+                    flag(WeaponMotionFollowerFlag::Valid) |
+                    flag(WeaponMotionFollowerFlag::CoTimed) |
+                    flag(WeaponMotionFollowerFlag::EvidenceMapped) |
+                    flag(WeaponMotionFollowerFlag::LiveRebased);
                 if (rankedFollower.rigid) {
                     follower.value.flags |=
-                        flag(PaperWeaponMotionFollowerFlagV1::Rigid);
+                        flag(WeaponMotionFollowerFlag::Rigid);
                 }
-                follower.value.keyCount = PAPER_WEAPON_MOTION_KEY_COUNT_V1;
+                follower.value.keyCount = kWeaponMotionKeyCount;
                 follower.keys = rankedFollower.keys;
                 ++stage.followerCount;
             }
@@ -1604,8 +1604,8 @@ namespace paper::weapon_motion
                 const auto primary = upsertStage(
                     state,
                     candidate.partId,
-                    PaperWeaponMotionSourceV1::ExactAuthored,
-                    PaperWeaponMotionStageKindV1::Primary,
+                    WeaponMotionSource::ExactAuthored,
+                    WeaponMotionStageKind::Primary,
                     candidate.sourceClipId,
                     candidate.sourceBoundary,
                     candidate.primary,
@@ -1616,14 +1616,14 @@ namespace paper::weapon_motion
                         state,
                         primary.index,
                         candidate,
-                        PaperWeaponMotionStageKindV1::Primary);
+                        WeaponMotionStageKind::Primary);
                 }
                 if (candidate.returnLength >= kMinimumExcursionGameUnits) {
                     const auto returning = upsertStage(
                         state,
                         candidate.partId,
-                        PaperWeaponMotionSourceV1::ExactAuthored,
-                        PaperWeaponMotionStageKindV1::Return,
+                        WeaponMotionSource::ExactAuthored,
+                        WeaponMotionStageKind::Return,
                         candidate.sourceClipId,
                         candidate.sourceBoundary,
                         candidate.returning,
@@ -1634,7 +1634,7 @@ namespace paper::weapon_motion
                             state,
                             returning.index,
                             candidate,
-                        PaperWeaponMotionStageKindV1::Return);
+                        WeaponMotionStageKind::Return);
                     }
                 }
                 return;
@@ -1650,9 +1650,9 @@ namespace paper::weapon_motion
 
         void synchronizeExactCatalog(Runtime& state)
         {
-            PaperReloadAnimationCatalogStateV1 catalog{};
+            ReloadAnimationCatalogState catalog{};
             if (animation_evidence::getCatalogState(catalog) !=
-                    PaperResultV1::Ok ||
+                    Status::Ok ||
                 catalog.catalogSequence == 0 ||
                 catalog.weaponGenerationKey !=
                     state.catalog.weaponGenerationKey) {
@@ -1663,10 +1663,10 @@ namespace paper::weapon_motion
             state.store.rawAnimationCatalogSequence = catalog.catalogSequence;
             state.store.rawAnimationCatalogRevision = catalog.catalogRevision;
             state.store.flags |= flag(
-                PaperWeaponMotionStoreFlagV1::RawAnimationEvidenceAvailable);
+                WeaponMotionStoreFlag::RawAnimationEvidenceAvailable);
             const bool preharvestCompleted = hasFlag(
                 catalog.statusFlags,
-                flag(PaperReloadAnimationCatalogFlagV1::
+                flag(ReloadAnimationCatalogFlag::
                     ExactPreharvestCompleted));
             const bool cacheEligible = preharvestCompleted &&
                 catalog.omittedClipCount == 0 &&
@@ -1674,22 +1674,22 @@ namespace paper::weapon_motion
                 catalog.exactTargetTruncationCount == 0 &&
                 !hasFlag(
                     catalog.statusFlags,
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         ExactPreharvestFailed)) &&
                 !hasFlag(
                     catalog.statusFlags,
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         ClipCapacityTruncated)) &&
                 !hasFlag(
                     catalog.statusFlags,
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         SampleStorageTruncated));
             if (catalog.exactClipCount != 0) {
                 state.catalog.flags |= flag(
-                    PaperWeaponMotionCatalogFlagV1::ExactEvidenceAvailable);
+                    WeaponMotionCatalogFlag::ExactEvidenceAvailable);
             } else {
                 state.catalog.flags &= ~flag(
-                    PaperWeaponMotionCatalogFlagV1::ExactEvidenceAvailable);
+                    WeaponMotionCatalogFlag::ExactEvidenceAvailable);
             }
 
             if (state.exact.catalogSequence != catalog.catalogSequence) {
@@ -1717,7 +1717,7 @@ namespace paper::weapon_motion
                         state.exact.clipCount,
                         state.exact.clips.data() + state.exact.clipCount,
                         remaining,
-                        copied) == PaperResultV1::Ok) {
+                        copied) == Status::Ok) {
                     state.exact.clipCount += copied;
                 }
             }
@@ -1726,7 +1726,7 @@ namespace paper::weapon_motion
                  ++index) {
                 const auto& clip = state.exact.clips[index];
                 if (clip.acquisition !=
-                    PaperReloadAnimationAcquisitionV1::
+                    ReloadAnimationAcquisition::
                         ExactWeaponPreharvest) {
                     continue;
                 }
@@ -1734,14 +1734,14 @@ namespace paper::weapon_motion
                     !boundedText(clip.animationPath).empty() &&
                     !hasFlag(
                         clip.flags,
-                        flag(PaperReloadAnimationClipFlagV1::
+                        flag(ReloadAnimationClipFlag::
                             AnimationPathTruncated)) &&
                     !hasFlag(
                         clip.flags,
-                        flag(PaperReloadAnimationClipFlagV1::TracksTruncated)) &&
+                        flag(ReloadAnimationClipFlag::TracksTruncated)) &&
                     !hasFlag(
                         clip.flags,
-                        flag(PaperReloadAnimationClipFlagV1::SamplesTruncated));
+                        flag(ReloadAnimationClipFlag::SamplesTruncated));
             }
             state.exact.catalogRevision = catalog.catalogRevision;
         }
@@ -1752,10 +1752,10 @@ namespace paper::weapon_motion
                 const auto clipIndex = state.exact.nextClip++;
                 const auto& clip = state.exact.clips[clipIndex];
                 if (clip.acquisition !=
-                        PaperReloadAnimationAcquisitionV1::
+                        ReloadAnimationAcquisition::
                             ExactWeaponPreharvest ||
                     clip.trackSpace !=
-                        PaperReloadAnimationTrackSpaceV1::WeaponRootLocal ||
+                        ReloadAnimationTrackSpace::WeaponRootLocal ||
                     clip.trackCount == 0) {
                     continue;
                 }
@@ -1766,7 +1766,7 @@ namespace paper::weapon_motion
                         0,
                         state.exact.tracks.data(),
                         static_cast<std::uint32_t>(state.exact.tracks.size()),
-                        copied) != PaperResultV1::Ok || copied == 0) {
+                        copied) != Status::Ok || copied == 0) {
                     continue;
                 }
                 state.exact.currentClipIndex = clipIndex;
@@ -1801,7 +1801,7 @@ namespace paper::weapon_motion
                 state.exact.tracks[state.exact.nextTrack++];
             if (!hasFlag(
                     track.flags,
-                    flag(PaperReloadAnimationTrackFlagV1::SamplesAvailable)) ||
+                    flag(ReloadAnimationTrackFlag::SamplesAvailable)) ||
                 track.sampleCount < 2 ||
                 state.exact.candidateCount >= state.exact.candidates.size()) {
                 return;
@@ -1811,7 +1811,7 @@ namespace paper::weapon_motion
             const auto* part = findPart(state, partId);
             if (!part || !hasFlag(
                     part->flags,
-                    flag(PaperWeaponMotionPartFlagV1::BaselineValid))) {
+                    flag(WeaponMotionPartFlag::BaselineValid))) {
                 return;
             }
             std::uint32_t sampleCount = 0;
@@ -1822,7 +1822,7 @@ namespace paper::weapon_motion
                     0,
                     state.exact.samples.data(),
                     static_cast<std::uint32_t>(state.exact.samples.size()),
-                    sampleCount) != PaperResultV1::Ok || sampleCount < 2) {
+                    sampleCount) != Status::Ok || sampleCount < 2) {
                 return;
             }
             const auto liveRest = fromTransform(part->baselineWeaponLocal);
@@ -1888,28 +1888,28 @@ namespace paper::weapon_motion
             for (std::uint32_t index = 0; index < state.stageCount; ++index) {
                 const auto& stage = state.stages[index];
                 learned = learned ||
-                    stage.value.source == PaperWeaponMotionSourceV1::Learned;
+                    stage.value.source == WeaponMotionSource::Learned;
                 authored = authored ||
                     stage.value.source ==
-                        PaperWeaponMotionSourceV1::ExactAuthored;
+                        WeaponMotionSource::ExactAuthored;
                 state.catalog.followerCount += stage.followerCount;
             }
             state.catalog.flags &= ~(
-                flag(PaperWeaponMotionCatalogFlagV1::LearnedPathsAvailable) |
-                flag(PaperWeaponMotionCatalogFlagV1::AuthoredPathsAvailable) |
-                flag(PaperWeaponMotionCatalogFlagV1::BuildingAuthoredPaths));
+                flag(WeaponMotionCatalogFlag::LearnedPathsAvailable) |
+                flag(WeaponMotionCatalogFlag::AuthoredPathsAvailable) |
+                flag(WeaponMotionCatalogFlag::BuildingAuthoredPaths));
             if (learned) {
                 state.catalog.flags |= flag(
-                    PaperWeaponMotionCatalogFlagV1::LearnedPathsAvailable);
+                    WeaponMotionCatalogFlag::LearnedPathsAvailable);
             }
             if (authored) {
                 state.catalog.flags |= flag(
-                    PaperWeaponMotionCatalogFlagV1::AuthoredPathsAvailable);
+                    WeaponMotionCatalogFlag::AuthoredPathsAvailable);
             }
             if (state.exact.currentClipIndex != kInvalidId ||
                 state.exact.nextClip < state.exact.clipCount) {
                 state.catalog.flags |= flag(
-                    PaperWeaponMotionCatalogFlagV1::BuildingAuthoredPaths);
+                    WeaponMotionCatalogFlag::BuildingAuthoredPaths);
             }
             state.catalog.stageCount = state.stageCount;
             state.catalog.processedExactClipCount =
@@ -1934,11 +1934,11 @@ namespace paper::weapon_motion
                     statistics.droppedRequestCount;
                 if (statistics.persistentStorageAvailable) {
                     state.store.flags |= flag(
-                        PaperWeaponMotionStoreFlagV1::
+                        WeaponMotionStoreFlag::
                             PersistentStorageAvailable);
                 } else {
                     state.store.flags &= ~flag(
-                        PaperWeaponMotionStoreFlagV1::
+                        WeaponMotionStoreFlag::
                             PersistentStorageAvailable);
                 }
             }
@@ -1947,7 +1947,7 @@ namespace paper::weapon_motion
         [[nodiscard]] const StageRecord* selectProjectedStage(
             const Runtime& state,
             const std::uint32_t partId,
-            const PaperReloadQsTransformV1& current,
+            const ReloadQsTransform& current,
             Projection& outProjection)
         {
             const StageRecord* selected = nullptr;
@@ -1977,7 +1977,7 @@ namespace paper::weapon_motion
             if (!previous.active && current.active) {
                 queueEvent(
                     state,
-                    PaperEventKindV1::WeaponManipulationStarted,
+                    EventKind::WeaponManipulationStarted,
                     current.value.partId,
                     hand,
                     current.value.flags,
@@ -1986,7 +1986,7 @@ namespace paper::weapon_motion
             if (previous.active && !current.active) {
                 queueEvent(
                     state,
-                    PaperEventKindV1::WeaponManipulationEnded,
+                    EventKind::WeaponManipulationEnded,
                     previous.value.partId,
                     hand,
                     flag(current.value.lastEndReason),
@@ -2000,7 +2000,7 @@ namespace paper::weapon_motion
                 previous.value.stageId != current.value.stageId) {
                 queueEvent(
                     state,
-                    PaperEventKindV1::WeaponManipulationStageChanged,
+                    EventKind::WeaponManipulationStageChanged,
                     current.value.partId,
                     hand,
                     current.value.flags,
@@ -2009,7 +2009,7 @@ namespace paper::weapon_motion
             if (!previous.atMaximum && current.atMaximum) {
                 queueEvent(
                     state,
-                    PaperEventKindV1::WeaponManipulationReachedMaximum,
+                    EventKind::WeaponManipulationReachedMaximum,
                     current.value.partId,
                     hand,
                     current.value.flags,
@@ -2018,7 +2018,7 @@ namespace paper::weapon_motion
             if (previous.active && !previous.atRest && current.atRest) {
                 queueEvent(
                     state,
-                    PaperEventKindV1::WeaponManipulationReachedRest,
+                    EventKind::WeaponManipulationReachedRest,
                     current.value.partId,
                     hand,
                     current.value.flags,
@@ -2029,74 +2029,74 @@ namespace paper::weapon_motion
         void updateManipulationHand(
             Runtime& state,
             RockApiClient& rockApi,
-            const PaperHandV1 hand,
+            const Hand hand,
             const std::uint64_t frameIndex)
         {
-            const auto handIndex = hand == PaperHandV1::Left ? 1u : 0u;
+            const auto handIndex = hand == Hand::Left ? 1u : 0u;
             const auto previous = state.hands[handIndex];
             auto& current = state.hands[handIndex];
             current = {};
             current.value.hand = hand;
             current.value.snapshotSequence = state.manipulation.snapshotSequence;
             current.value.frameIndex = frameIndex;
-            current.value.flags = flag(PaperWeaponManipulationHandFlagV1::Valid);
+            current.value.flags = flag(WeaponManipulationHandFlag::Valid);
 
             rock::api::weaponparts::GripState grip{};
-            const auto rockHand = hand == PaperHandV1::Left ?
+            const auto rockHand = hand == Hand::Left ?
                 rock::api::Hand::Left :
                 rock::api::Hand::Right;
             if (!rockApi.queryWeaponPartGripState(rockHand, grip)) {
                 if (previous.active) {
                     current.value.lastEndReason =
-                        PaperWeaponManipulationEndReasonV1::GripEnded;
+                        WeaponManipulationEndReason::GripEnded;
                 }
                 emitHandTransitionEvents(state, previous, current);
                 return;
             }
             state.manipulation.flags |= flag(
-                PaperWeaponManipulationFrameFlagV1::RockGripStateAvailable);
+                WeaponManipulationFrameFlag::RockGripStateAvailable);
             if (grip.active == 0 ||
                 grip.gripKind ==
                     rock::api::weaponparts::GripKind::None) {
                 if (previous.active) {
                     current.value.lastEndReason =
-                        PaperWeaponManipulationEndReasonV1::GripEnded;
+                        WeaponManipulationEndReason::GripEnded;
                 }
                 emitHandTransitionEvents(state, previous, current);
                 return;
             }
 
             current.value.flags |=
-                flag(PaperWeaponManipulationHandFlagV1::GripActive);
+                flag(WeaponManipulationHandFlag::GripActive);
             current.value.rockGripKind = flag(grip.gripKind);
             current.value.gripSequence = grip.gripSequence;
             if (grip.attachOnly != 0) {
                 current.value.flags |=
-                    flag(PaperWeaponManipulationHandFlagV1::AttachOnly);
+                    flag(WeaponManipulationHandFlag::AttachOnly);
             }
             if (grip.weaponGenerationKey !=
                 state.catalog.weaponGenerationKey) {
                 current.value.lastEndReason =
-                    PaperWeaponManipulationEndReasonV1::WeaponChanged;
+                    WeaponManipulationEndReason::WeaponChanged;
                 current.active = false;
                 emitHandTransitionEvents(state, previous, current);
                 return;
             }
             ++state.manipulation.activeHandCount;
             state.manipulation.flags |=
-                flag(PaperWeaponManipulationFrameFlagV1::AnyGripActive);
+                flag(WeaponManipulationFrameFlag::AnyGripActive);
             const auto partId = findPartForGrip(state, grip);
             const auto* part = findPart(state, partId);
             if (!part || !hasFlag(
                     part->flags,
-                    flag(PaperWeaponMotionPartFlagV1::CurrentValid))) {
+                    flag(WeaponMotionPartFlag::CurrentValid))) {
                 current.value.lastEndReason =
-                    PaperWeaponManipulationEndReasonV1::PathUnavailable;
+                    WeaponManipulationEndReason::PathUnavailable;
                 emitHandTransitionEvents(state, previous, current);
                 return;
             }
             current.value.flags |=
-                flag(PaperWeaponManipulationHandFlagV1::PartMapped);
+                flag(WeaponManipulationHandFlag::PartMapped);
             current.value.partId = partId;
             current.value.evidenceId = part->evidenceId;
             current.value.bodyId = part->bodyId;
@@ -2110,14 +2110,14 @@ namespace paper::weapon_motion
                 projection);
             if (!stage) {
                 current.value.lastEndReason =
-                    PaperWeaponManipulationEndReasonV1::PathUnavailable;
+                    WeaponManipulationEndReason::PathUnavailable;
                 emitHandTransitionEvents(state, previous, current);
                 return;
             }
             current.active = true;
             current.value.flags |=
-                flag(PaperWeaponManipulationHandFlagV1::PathAvailable) |
-                flag(PaperWeaponManipulationHandFlagV1::ProgressValid);
+                flag(WeaponManipulationHandFlag::PathAvailable) |
+                flag(WeaponManipulationHandFlag::ProgressValid);
             current.value.source = stage->value.source;
             current.value.stageKind = stage->value.kind;
             current.value.stageId = stage->value.stageId;
@@ -2129,10 +2129,10 @@ namespace paper::weapon_motion
             current.value.restArcPosition = stage->value.restArcPosition;
             current.value.projectedPartWeaponLocal = projection.pose;
             const auto isReturn =
-                stage->value.kind == PaperWeaponMotionStageKindV1::Return;
+                stage->value.kind == WeaponMotionStageKind::Return;
             if (isReturn) {
                 current.value.flags |=
-                    flag(PaperWeaponManipulationHandFlagV1::ReturnStage);
+                    flag(WeaponManipulationHandFlag::ReturnStage);
             }
             current.atMaximum = isReturn ?
                 projection.normalizedProgress <= kRestProgressThreshold :
@@ -2142,15 +2142,15 @@ namespace paper::weapon_motion
                 projection.normalizedProgress <= kRestProgressThreshold;
             if (current.atMaximum) {
                 current.value.flags |= flag(
-                    PaperWeaponManipulationHandFlagV1::AtMaximumTravel);
+                    WeaponManipulationHandFlag::AtMaximumTravel);
             }
             if (current.atRest) {
                 current.value.flags |=
-                    flag(PaperWeaponManipulationHandFlagV1::AtRest);
+                    flag(WeaponManipulationHandFlag::AtRest);
             }
             ++state.manipulation.mappedHandCount;
             state.manipulation.flags |= flag(
-                PaperWeaponManipulationFrameFlagV1::AnyMappedManipulation);
+                WeaponManipulationFrameFlag::AnyMappedManipulation);
             emitHandTransitionEvents(state, previous, current);
         }
 
@@ -2162,7 +2162,7 @@ namespace paper::weapon_motion
         {
             state.manipulation = {};
             state.manipulation.flags =
-                flag(PaperWeaponManipulationFrameFlagV1::Valid);
+                flag(WeaponManipulationFrameFlag::Valid);
             state.manipulation.weaponFormId = state.catalog.weaponFormId;
             state.manipulation.weaponGenerationKey =
                 state.catalog.weaponGenerationKey;
@@ -2176,14 +2176,14 @@ namespace paper::weapon_motion
             state.manipulation.rockProviderGeneration = context.providerGeneration;
             state.manipulation.paperProviderGeneration = paperProviderGeneration;
             updateManipulationHand(
-                state, rockApi, PaperHandV1::Right, context.frameIndex);
+                state, rockApi, Hand::Right, context.frameIndex);
             updateManipulationHand(
-                state, rockApi, PaperHandV1::Left, context.frameIndex);
+                state, rockApi, Hand::Left, context.frameIndex);
             state.manipulation.eventSequence = state.eventSequence;
         }
 
         template <class Value, std::size_t Capacity>
-        [[nodiscard]] PaperResultV1 copyRange(
+        [[nodiscard]] Status copyRange(
             const std::array<Value, Capacity>& source,
             const std::uint32_t count,
             const std::uint32_t first,
@@ -2193,25 +2193,25 @@ namespace paper::weapon_motion
         {
             copied = 0;
             if (first > count) {
-                return PaperResultV1::OutOfRange;
+                return Status::OutOfRange;
             }
             if (first == count || maximum == 0) {
-                return PaperResultV1::Ok;
+                return Status::Ok;
             }
             if (!destination) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             copied = (std::min)(maximum, count - first);
             std::copy_n(source.data() + first, copied, destination);
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        [[nodiscard]] PaperResultV1 validateCatalogSequence(
+        [[nodiscard]] Status validateCatalogSequence(
             const Runtime& state,
             const std::uint64_t catalogSequence)
         {
             return catalogSequence == state.catalog.catalogSequence ?
-                PaperResultV1::Ok : PaperResultV1::StaleSnapshot;
+                Status::Ok : Status::StaleSnapshot;
         }
     }
 
@@ -2230,9 +2230,9 @@ namespace paper::weapon_motion
         const auto iniPath = std::filesystem::path(config.activePath);
         weapon_motion_cache::Settings settings{
             .readEnabled = config.weaponMotionCacheAccess !=
-                api::PaperWeaponMotionCacheAccessV1::Off,
+                api::WeaponMotionCacheAccess::Off,
             .writeEnabled = config.weaponMotionCacheAccess ==
-                api::PaperWeaponMotionCacheAccessV1::ReadWrite,
+                api::WeaponMotionCacheAccess::ReadWrite,
             .root = iniPath.parent_path() / "MotionCache" / "v1",
             .dataRoot = std::filesystem::current_path() / "Data",
             .maximumSessionBytes =
@@ -2267,14 +2267,14 @@ namespace paper::weapon_motion
             config.weaponMotionMaximumEntries);
     }
 
-    void setCacheAccess(const api::PaperWeaponMotionCacheAccessV1 access)
+    void setCacheAccess(const api::WeaponMotionCacheAccess access)
     {
         if (!s_cacheStore) {
             return;
         }
         s_cacheStore->setAccess(
-            access != api::PaperWeaponMotionCacheAccessV1::Off,
-            access == api::PaperWeaponMotionCacheAccessV1::ReadWrite);
+            access != api::WeaponMotionCacheAccess::Off,
+            access == api::WeaponMotionCacheAccess::ReadWrite);
     }
 
     bool requiresExactAnimationEvidence(const bool cacheReadRequested)
@@ -2330,47 +2330,43 @@ namespace paper::weapon_motion
         }
     }
 
-    PaperResultV1 getLimits(PaperWeaponMotionLimitsV1& outLimits)
+    Status getLimits(WeaponMotionLimits& outLimits)
     {
         outLimits = {};
-        outLimits.featureBits =
-            flag(PaperProviderFeatureBitV1::WeaponMotionCatalog) |
-            flag(PaperProviderFeatureBitV1::WeaponMotionDiagnostics) |
-            flag(PaperProviderFeatureBitV1::WeaponManipulationTelemetry);
-        outLimits.maxParts = PAPER_MAX_WEAPON_MOTION_PARTS_V1;
-        outLimits.maxStages = PAPER_MAX_WEAPON_MOTION_STAGES_V1;
-        outLimits.keysPerStage = PAPER_WEAPON_MOTION_KEY_COUNT_V1;
+        outLimits.maxParts = kMaxWeaponMotionParts;
+        outLimits.maxStages = kMaxWeaponMotionStages;
+        outLimits.keysPerStage = kWeaponMotionKeyCount;
         outLimits.maxFollowersPerStage =
-            PAPER_MAX_WEAPON_MOTION_FOLLOWERS_V1;
-        outLimits.maxRecorders = PAPER_MAX_WEAPON_MOTION_RECORDERS_V1;
-        outLimits.nameCapacity = PAPER_WEAPON_MOTION_NAME_CAPACITY_V1;
-        outLimits.maxPendingEvents = PAPER_MAX_WEAPON_MOTION_EVENTS_V1;
-        return PaperResultV1::Ok;
+            kMaxWeaponMotionFollowers;
+        outLimits.maxRecorders = kMaxWeaponMotionRecorders;
+        outLimits.nameCapacity = kWeaponMotionNameCapacity;
+        outLimits.maxPendingEvents = kMaxWeaponMotionEvents;
+        return Status::Ok;
     }
 
-    PaperResultV1 getCatalogState(PaperWeaponMotionCatalogStateV1& outState)
+    Status getCatalogState(WeaponMotionCatalogState& outState)
     {
         if (!s_runtime || s_runtime->catalog.catalogSequence == 0) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_runtime->catalog;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyParts(
+    Status copyParts(
         const std::uint64_t catalogSequence,
         const std::uint32_t firstPart,
-        PaperWeaponMotionPartV1* outParts,
+        WeaponMotionPart* outParts,
         const std::uint32_t maxParts,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_runtime) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         const auto validation = validateCatalogSequence(
             *s_runtime, catalogSequence);
-        return validation == PaperResultV1::Ok ?
+        return validation == Status::Ok ?
             copyRange(
                 s_runtime->parts,
                 s_runtime->partCount,
@@ -2380,97 +2376,97 @@ namespace paper::weapon_motion
                 outCopied) : validation;
     }
 
-    PaperResultV1 copyStages(
+    Status copyStages(
         const std::uint64_t catalogSequence,
         const std::uint32_t firstStage,
-        PaperWeaponMotionStageV1* outStages,
+        WeaponMotionStage* outStages,
         const std::uint32_t maxStages,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_runtime) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         const auto validation = validateCatalogSequence(
             *s_runtime, catalogSequence);
-        if (validation != PaperResultV1::Ok) {
+        if (validation != Status::Ok) {
             return validation;
         }
         if (firstStage > s_runtime->stageCount) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxStages == 0 || firstStage == s_runtime->stageCount) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outStages) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         outCopied = (std::min)(
             maxStages, s_runtime->stageCount - firstStage);
         for (std::uint32_t index = 0; index < outCopied; ++index) {
             outStages[index] = s_runtime->stages[firstStage + index].value;
         }
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyStageKeys(
+    Status copyStageKeys(
         const std::uint64_t catalogSequence,
         const std::uint32_t stageId,
         const std::uint32_t firstKey,
-        PaperReloadQsTransformV1* outKeys,
+        ReloadQsTransform* outKeys,
         const std::uint32_t maxKeys,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_runtime) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         const auto validation = validateCatalogSequence(
             *s_runtime, catalogSequence);
-        if (validation != PaperResultV1::Ok) {
+        if (validation != Status::Ok) {
             return validation;
         }
         if (stageId >= s_runtime->stageCount) {
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         return copyRange(
             s_runtime->stages[stageId].keys,
-            PAPER_WEAPON_MOTION_KEY_COUNT_V1,
+            kWeaponMotionKeyCount,
             firstKey,
             outKeys,
             maxKeys,
             outCopied);
     }
 
-    PaperResultV1 copyFollowers(
+    Status copyFollowers(
         const std::uint64_t catalogSequence,
         const std::uint32_t stageId,
         const std::uint32_t firstFollower,
-        PaperWeaponMotionFollowerV1* outFollowers,
+        WeaponMotionFollower* outFollowers,
         const std::uint32_t maxFollowers,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_runtime) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         const auto validation = validateCatalogSequence(
             *s_runtime, catalogSequence);
-        if (validation != PaperResultV1::Ok) {
+        if (validation != Status::Ok) {
             return validation;
         }
         if (stageId >= s_runtime->stageCount) {
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         const auto& stage = s_runtime->stages[stageId];
         if (firstFollower > stage.followerCount) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxFollowers == 0 || firstFollower == stage.followerCount) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outFollowers) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         outCopied = (std::min)(
             maxFollowers, stage.followerCount - firstFollower);
@@ -2478,72 +2474,72 @@ namespace paper::weapon_motion
             outFollowers[index] =
                 stage.followers[firstFollower + index].value;
         }
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyFollowerKeys(
+    Status copyFollowerKeys(
         const std::uint64_t catalogSequence,
         const std::uint32_t stageId,
         const std::uint32_t followerIndex,
         const std::uint32_t firstKey,
-        PaperReloadQsTransformV1* outKeys,
+        ReloadQsTransform* outKeys,
         const std::uint32_t maxKeys,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_runtime) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         const auto validation = validateCatalogSequence(
             *s_runtime, catalogSequence);
-        if (validation != PaperResultV1::Ok) {
+        if (validation != Status::Ok) {
             return validation;
         }
         if (stageId >= s_runtime->stageCount ||
             followerIndex >= s_runtime->stages[stageId].followerCount) {
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         return copyRange(
             s_runtime->stages[stageId].followers[followerIndex].keys,
-            PAPER_WEAPON_MOTION_KEY_COUNT_V1,
+            kWeaponMotionKeyCount,
             firstKey,
             outKeys,
             maxKeys,
             outCopied);
     }
 
-    PaperResultV1 getLearningState(PaperWeaponMotionLearningStateV1& outState)
+    Status getLearningState(WeaponMotionLearningState& outState)
     {
         if (!s_runtime || s_runtime->learning.snapshotSequence == 0) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_runtime->learning;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyRecorders(
+    Status copyRecorders(
         const std::uint64_t snapshotSequence,
         const std::uint32_t firstRecorder,
-        PaperWeaponMotionRecorderV1* outRecorders,
+        WeaponMotionRecorder* outRecorders,
         const std::uint32_t maxRecorders,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_runtime || s_runtime->learning.snapshotSequence == 0) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (snapshotSequence != s_runtime->learning.snapshotSequence) {
-            return PaperResultV1::StaleSnapshot;
+            return Status::StaleSnapshot;
         }
         if (firstRecorder > s_runtime->recorderCount) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxRecorders == 0 ||
             firstRecorder == s_runtime->recorderCount) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outRecorders) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         outCopied = (std::min)(
             maxRecorders, s_runtime->recorderCount - firstRecorder);
@@ -2551,44 +2547,44 @@ namespace paper::weapon_motion
             outRecorders[index] =
                 s_runtime->recorders[firstRecorder + index].value;
         }
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 getManipulationFrameState(
-        PaperWeaponManipulationFrameStateV1& outState)
+    Status getManipulationFrameState(
+        WeaponManipulationFrameState& outState)
     {
         if (!s_runtime || s_runtime->manipulation.snapshotSequence == 0) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_runtime->manipulation;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 getManipulationHandState(
-        const PaperHandV1 hand,
-        PaperWeaponManipulationHandStateV1& outState)
+    Status getManipulationHandState(
+        const Hand hand,
+        WeaponManipulationHandState& outState)
     {
         if (!s_runtime || s_runtime->manipulation.snapshotSequence == 0) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
-        if (hand != PaperHandV1::Right && hand != PaperHandV1::Left) {
-            return PaperResultV1::InvalidArgument;
+        if (hand != Hand::Right && hand != Hand::Left) {
+            return Status::InvalidArgument;
         }
-        outState = s_runtime->hands[hand == PaperHandV1::Left ? 1u : 0u].value;
-        return PaperResultV1::Ok;
+        outState = s_runtime->hands[hand == Hand::Left ? 1u : 0u].value;
+        return Status::Ok;
     }
 
-    PaperResultV1 getStoreState(PaperWeaponMotionStoreStateV1& outState)
+    Status getStoreState(WeaponMotionStoreState& outState)
     {
         if (!s_runtime || s_runtime->store.catalogSequence == 0) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_runtime->store;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
     std::uint32_t drainEvents(
-        PaperEventV1* outEvents,
+        Event* outEvents,
         const std::uint32_t maxEvents)
     {
         if (!s_runtime || !outEvents || maxEvents == 0) {

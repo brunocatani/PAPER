@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <algorithm>
 #include <array>
@@ -25,8 +25,8 @@ namespace paper::reload_stage_policy
     };
 
     [[nodiscard]] inline TransformDelta calculateTransformDelta(
-        const api::PaperTransformV1& baseline,
-        const api::PaperTransformV1& current)
+        const api::Transform& baseline,
+        const api::Transform& current)
     {
         const float dx = current.translate[0] - baseline.translate[0];
         const float dy = current.translate[1] - baseline.translate[1];
@@ -96,8 +96,8 @@ namespace paper::reload_stage_policy
     struct FireCorrelationStep
     {
         FireCorrelationState state{};
-        api::PaperReloadFireCorrelationV1 correlation{
-            api::PaperReloadFireCorrelationV1::None
+        api::ReloadFireCorrelation correlation{
+            api::ReloadFireCorrelation::None
         };
         std::uint32_t activeCorrelatedCount{ 0 };
         bool active{ false };
@@ -204,13 +204,13 @@ namespace paper::reload_stage_policy
             state.correlatedCount > 0;
         if (state.correlatedCount > 0) {
             result.correlation =
-                api::PaperReloadFireCorrelationV1::ActivityBound;
+                api::ReloadFireCorrelation::ActivityBound;
         } else if (result.newFireEvent) {
             result.correlation =
-                api::PaperReloadFireCorrelationV1::EventOnly;
+                api::ReloadFireCorrelation::EventOnly;
         } else if (state.admissionFramesRemaining > 0) {
             result.correlation =
-                api::PaperReloadFireCorrelationV1::PendingActivity;
+                api::ReloadFireCorrelation::PendingActivity;
         }
         result.state = state;
         return result;

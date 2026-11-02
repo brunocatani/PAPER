@@ -23,10 +23,10 @@ namespace paper::reload_stages
 
         struct PublishedStages
         {
-            PaperReloadStageStateV1 state{};
+            ReloadStageState state{};
             std::array<
-                PaperReloadStagePartV1,
-                PAPER_MAX_RELOAD_STAGE_PARTS_V1>
+                ReloadStagePart,
+                kMaxReloadStageParts>
                 parts{};
             bool valid{ false };
         };
@@ -42,10 +42,10 @@ namespace paper::reload_stages
         }
 
         [[nodiscard]] bool isPistol(
-            const PaperReloadCatalogStateV1& catalog)
+            const ReloadCatalogState& catalog)
         {
             return (catalog.classification.flags & flag(
-                        PaperWeaponClassificationFlagV1::Valid)) != 0 &&
+                        WeaponClassificationFlag::Valid)) != 0 &&
                    catalog.classification.sizeClass ==
                        static_cast<std::uint32_t>(
                            rock::api::weapon::SizeClass::Pistol);
@@ -78,7 +78,7 @@ namespace paper::reload_stages
 
         [[nodiscard]] bool contributesToAggregate(
             const PublishedStages& published,
-            const PaperReloadStagePartV1& candidate)
+            const ReloadStagePart& candidate)
         {
             if (candidate.selectedNodeId < 0) {
                 return true;
@@ -88,7 +88,7 @@ namespace paper::reload_stages
                  ++index) {
                 const auto& existing = published.parts[index];
                 if ((existing.flags & flag(
-                        PaperReloadStagePartFlagV1::
+                        ReloadStagePartFlag::
                             ContributesToAggregate)) != 0 &&
                     existing.selectedNodeId == candidate.selectedNodeId &&
                     existing.partKind == candidate.partKind) {
@@ -100,8 +100,8 @@ namespace paper::reload_stages
 
         [[nodiscard]] bool contributesToSemanticGroup(
             const PublishedStages& published,
-            const PaperReloadStagePartV1& candidate,
-            const PaperReloadStagePartFlagV1 groupFlag)
+            const ReloadStagePart& candidate,
+            const ReloadStagePartFlag groupFlag)
         {
             // Scene-node identity collapses colliders driven by the same
             // animated assembly. An untrackable classified collider remains a
@@ -132,12 +132,12 @@ namespace paper::reload_stages
     void completeFrame(
         const rock::api::animation::AnimationPhaseContext& context)
     {
-        PaperReloadCatalogStateV1 catalog{};
-        PaperReloadFrameStateV1 frame{};
+        ReloadCatalogState catalog{};
+        ReloadFrameState frame{};
         if (reload_observation::getCatalogState(catalog) !=
-                PaperResultV1::Ok ||
+                Status::Ok ||
             reload_observation::getFrameState(frame) !=
-                PaperResultV1::Ok ||
+                Status::Ok ||
             frame.catalogSequence != catalog.catalogSequence ||
             frame.weaponGenerationKey !=
                 catalog.weaponGenerationKey ||
@@ -161,38 +161,38 @@ namespace paper::reload_stages
             reload_stage_policy::kRestScaleTolerance;
 
         if ((catalog.classification.flags & flag(
-                PaperWeaponClassificationFlagV1::Available)) != 0) {
+                WeaponClassificationFlag::Available)) != 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     ClassificationAvailable);
         }
         if ((catalog.classification.flags & flag(
-                PaperWeaponClassificationFlagV1::Valid)) != 0) {
+                WeaponClassificationFlag::Valid)) != 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     ClassificationValid);
         }
         const bool pistol = isPistol(catalog);
         if (pistol) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::Pistol);
+                ReloadStageStatusFlag::Pistol);
         }
         const bool nativeOutputAvailable =
             (frame.statusFlags & flag(
-                PaperReloadFrameStatusFlagV1::
+                ReloadFrameStatusFlag::
                     NativeGraphOutputCaptured)) != 0 &&
             (frame.statusFlags & flag(
-                PaperReloadFrameStatusFlagV1::
+                ReloadFrameStatusFlag::
                     TopologyMismatch)) == 0;
         if (nativeOutputAvailable) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     NativeGraphOutputAvailable);
         }
 
         std::array<
             reload_observation::EvidenceMotionSource,
-            PAPER_MAX_RELOAD_STAGE_PARTS_V1>
+            kMaxReloadStageParts>
             sources{};
         std::uint32_t sourceCount = 0;
         const auto sourceResult =
@@ -200,15 +200,15 @@ namespace paper::reload_stages
                 sources.data(),
                 static_cast<std::uint32_t>(sources.size()),
                 sourceCount);
-        if (sourceResult != PaperResultV1::Ok) {
+        if (sourceResult != Status::Ok) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     PartDataIncomplete);
             sourceCount = 0;
         }
         if (catalog.evidenceCount > sources.size()) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     PartCapacityTruncated);
         }
 
@@ -230,7 +230,7 @@ namespace paper::reload_stages
                     reload_observation::
                         EvidenceMotionSourceFlag::SourceNodeSelected)) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::
+                    ReloadStagePartFlag::
                         SourceNodeSelected);
             }
             if (hasFlag(
@@ -238,7 +238,7 @@ namespace paper::reload_stages
                     reload_observation::
                         EvidenceMotionSourceFlag::InteractionNodeFallback)) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::
+                    ReloadStagePartFlag::
                         InteractionNodeFallback);
             }
             const bool baselineValid = hasFlag(
@@ -251,13 +251,13 @@ namespace paper::reload_stages
                     EvidenceMotionSourceFlag::CurrentValid);
             if (baselineValid) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::BaselineValid);
+                    ReloadStagePartFlag::BaselineValid);
                 part.baselineWeaponLocal =
                     source.baselineWeaponLocal;
             }
             if (currentValid) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::CurrentValid);
+                    ReloadStagePartFlag::CurrentValid);
                 part.currentWeaponLocal = source.currentWeaponLocal;
             }
 
@@ -266,15 +266,15 @@ namespace paper::reload_stages
             const bool bolt = isBolt(source);
             if (magazine) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::Magazine);
+                    ReloadStagePartFlag::Magazine);
             }
             if (slide) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::Slide);
+                    ReloadStagePartFlag::Slide);
             }
             if (bolt) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::Bolt);
+                    ReloadStagePartFlag::Bolt);
             }
 
             const bool aggregate = contributesToAggregate(next, part);
@@ -282,20 +282,20 @@ namespace paper::reload_stages
                 contributesToSemanticGroup(
                     next,
                     part,
-                    PaperReloadStagePartFlagV1::Magazine);
+                    ReloadStagePartFlag::Magazine);
             const bool slideGroupMember = slide &&
                 contributesToSemanticGroup(
                     next,
                     part,
-                    PaperReloadStagePartFlagV1::Slide);
+                    ReloadStagePartFlag::Slide);
             const bool boltGroupMember = bolt &&
                 contributesToSemanticGroup(
                     next,
                     part,
-                    PaperReloadStagePartFlagV1::Bolt);
+                    ReloadStagePartFlag::Bolt);
             if (aggregate) {
                 part.flags |= flag(
-                    PaperReloadStagePartFlagV1::
+                    ReloadStagePartFlag::
                         ContributesToAggregate);
                 ++next.state.aggregatePartCount;
             }
@@ -311,7 +311,7 @@ namespace paper::reload_stages
 
             if (!baselineValid || !currentValid) {
                 next.state.statusFlags |= flag(
-                    PaperReloadStageStatusFlagV1::
+                    ReloadStageStatusFlag::
                         PartDataIncomplete);
                 continue;
             }
@@ -321,11 +321,11 @@ namespace paper::reload_stages
                     source.currentWeaponLocal);
             if (!delta.valid) {
                 next.state.statusFlags |= flag(
-                    PaperReloadStageStatusFlagV1::
+                    ReloadStageStatusFlag::
                         PartDataIncomplete);
                 continue;
             }
-            part.flags |= flag(PaperReloadStagePartFlagV1::Valid);
+            part.flags |= flag(ReloadStagePartFlag::Valid);
             part.translationDeltaGameUnits =
                 delta.translationGameUnits;
             part.rotationDeltaDegrees = delta.rotationDegrees;
@@ -343,25 +343,25 @@ namespace paper::reload_stages
             const bool atRest = reload_stage_policy::isAtRest(delta);
             part.flags |= flag(
                 atRest ?
-                    PaperReloadStagePartFlagV1::AtRest :
-                    PaperReloadStagePartFlagV1::Displaced);
+                    ReloadStagePartFlag::AtRest :
+                    ReloadStagePartFlag::Displaced);
             if (magazine) {
                 part.flags |= flag(
                     atRest ?
-                        PaperReloadStagePartFlagV1::MagazineIn :
-                        PaperReloadStagePartFlagV1::MagazineOut);
+                        ReloadStagePartFlag::MagazineIn :
+                        ReloadStagePartFlag::MagazineOut);
             }
             if (slide) {
                 part.flags |= flag(
                     atRest ?
-                        PaperReloadStagePartFlagV1::SlideForward :
-                        PaperReloadStagePartFlagV1::SlideBack);
+                        ReloadStagePartFlag::SlideForward :
+                        ReloadStagePartFlag::SlideBack);
             }
             if (bolt) {
                 part.flags |= flag(
                     atRest ?
-                        PaperReloadStagePartFlagV1::BoltForward :
-                        PaperReloadStagePartFlagV1::BoltBack);
+                        ReloadStagePartFlag::BoltForward :
+                        ReloadStagePartFlag::BoltBack);
             }
             if (magazineGroupMember && atRest) {
                 ++next.state.magazineInCount;
@@ -394,16 +394,16 @@ namespace paper::reload_stages
 
         if (next.state.magazinePartCount > 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     MagazineObserved);
         }
         if (next.state.slidePartCount > 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::SlideObserved);
+                ReloadStageStatusFlag::SlideObserved);
         }
         if (next.state.boltPartCount > 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::BoltObserved);
+                ReloadStageStatusFlag::BoltObserved);
         }
 
         std::array<clip_telemetry::ActivityState, 8> rawActivities{};
@@ -433,7 +433,7 @@ namespace paper::reload_stages
             native_animation_authority::queryRuntimeStatus();
         if (native.weaponFireHookReady) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     WeaponFireHookReady);
         }
         const auto fireStep =
@@ -459,17 +459,17 @@ namespace paper::reload_stages
         next.state.fireCorrelation = fireStep.correlation;
         if (fireStep.newFireEvent) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     FireEventObserved);
         }
         if (fireStep.state.admissionFramesRemaining > 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     FireCorrelationPending);
         }
         if (fireStep.activeCorrelatedCount > 0) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::
+                ReloadStageStatusFlag::
                     FireActivityCorrelated);
         }
 
@@ -479,91 +479,91 @@ namespace paper::reload_stages
         const bool stageFrameValid = nativeOutputAvailable;
         if (stageFrameValid) {
             next.state.statusFlags |= flag(
-                PaperReloadStageStatusFlagV1::Valid);
+                ReloadStageStatusFlag::Valid);
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.aggregatePartCount,
                     next.state.atRestPartCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::Rest);
+                    ReloadStageFlag::Rest);
             }
             if (fireStep.active) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::Fire);
+                    ReloadStageFlag::Fire);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.slidePartCount,
                     next.state.slideBackCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::SlideBack);
+                    ReloadStageFlag::SlideBack);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.slidePartCount,
                     next.state.slideForwardCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::SlideForward);
+                    ReloadStageFlag::SlideForward);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.boltPartCount,
                     next.state.boltForwardCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::BoltForward);
+                    ReloadStageFlag::BoltForward);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.boltPartCount,
                     next.state.boltBackCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::BoltBack);
+                    ReloadStageFlag::BoltBack);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.magazinePartCount,
                     next.state.magazineInCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::MagazineIn);
+                    ReloadStageFlag::MagazineIn);
             }
             if (reload_stage_policy::allGroupMembersMatch(
                     next.state.magazinePartCount,
                     next.state.magazineOutCount)) {
                 next.state.stageFlags |= flag(
-                    PaperReloadStageFlagV1::MagazineOut);
+                    ReloadStageFlag::MagazineOut);
             }
         }
         next.valid = true;
         s_published = next;
     }
 
-    PaperResultV1 getState(PaperReloadStageStateV1& outState)
+    Status getState(ReloadStageState& outState)
     {
         if (!s_published.valid) {
             outState = {};
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = s_published.state;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyParts(
+    Status copyParts(
         const std::uint64_t snapshotSequence,
         const std::uint32_t firstPart,
-        PaperReloadStagePartV1* outParts,
+        ReloadStagePart* outParts,
         const std::uint32_t maxParts,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         if (!s_published.valid) {
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         if (snapshotSequence !=
             s_published.state.snapshotSequence) {
-            return PaperResultV1::StaleSnapshot;
+            return Status::StaleSnapshot;
         }
         if (firstPart > s_published.state.partCount) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxParts == 0) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outParts) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         const auto count = (std::min)(
             maxParts,
@@ -573,6 +573,6 @@ namespace paper::reload_stages
                 s_published.parts[firstPart + index];
         }
         outCopied = count;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 }

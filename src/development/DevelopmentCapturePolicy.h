@@ -1,32 +1,32 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <cstdint>
 
 namespace paper::development_capture_policy
 {
     [[nodiscard]] constexpr std::uint32_t flag(
-        const api::PaperDevelopmentCaptureScopeV1 scope)
+        const api::DevelopmentCaptureScope scope)
     {
         return static_cast<std::uint32_t>(scope);
     }
 
     inline constexpr std::uint32_t kAllScopes =
-        flag(api::PaperDevelopmentCaptureScopeV1::All);
+        flag(api::DevelopmentCaptureScope::All);
 
     [[nodiscard]] constexpr bool validMode(
-        const api::PaperDevelopmentCaptureModeV1 mode)
+        const api::DevelopmentCaptureMode mode)
     {
-        return mode >= api::PaperDevelopmentCaptureModeV1::User &&
-            mode <= api::PaperDevelopmentCaptureModeV1::Capture;
+        return mode >= api::DevelopmentCaptureMode::User &&
+            mode <= api::DevelopmentCaptureMode::Capture;
     }
 
     [[nodiscard]] constexpr bool validCacheAccess(
-        const api::PaperWeaponMotionCacheAccessV1 access)
+        const api::WeaponMotionCacheAccess access)
     {
-        return access >= api::PaperWeaponMotionCacheAccessV1::Off &&
-            access <= api::PaperWeaponMotionCacheAccessV1::ReadWrite;
+        return access >= api::WeaponMotionCacheAccess::Off &&
+            access <= api::WeaponMotionCacheAccess::ReadWrite;
     }
 
     [[nodiscard]] constexpr std::uint32_t expandDependencies(
@@ -34,22 +34,22 @@ namespace paper::development_capture_policy
     {
         scopes &= kAllScopes;
         const auto passive = flag(
-            api::PaperDevelopmentCaptureScopeV1::PassiveObservation);
+            api::DevelopmentCaptureScope::PassiveObservation);
         const auto compilation = flag(
-            api::PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation);
+            api::DevelopmentCaptureScope::WeaponMotionCompilation);
         const auto cacheRead = flag(
-            api::PaperDevelopmentCaptureScopeV1::CompiledCacheRead);
+            api::DevelopmentCaptureScope::CompiledCacheRead);
         const auto cacheWrite = flag(
-            api::PaperDevelopmentCaptureScopeV1::CompiledCacheWrite);
+            api::DevelopmentCaptureScope::CompiledCacheWrite);
         const auto dependent = flag(
-                api::PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest) |
+                api::DevelopmentCaptureScope::ExactAnimationHarvest) |
             compilation | cacheRead | cacheWrite |
-            flag(api::PaperDevelopmentCaptureScopeV1::LiveMotionLearning);
+            flag(api::DevelopmentCaptureScope::LiveMotionLearning);
         if ((scopes & dependent) != 0) {
             scopes |= passive;
         }
         if ((scopes & (cacheRead | cacheWrite |
-                          flag(api::PaperDevelopmentCaptureScopeV1::
+                          flag(api::DevelopmentCaptureScope::
                               LiveMotionLearning))) != 0) {
             scopes |= compilation;
         }
@@ -60,40 +60,40 @@ namespace paper::development_capture_policy
     }
 
     [[nodiscard]] constexpr std::uint32_t allowedScopes(
-        const api::PaperDevelopmentCaptureModeV1 mode,
-        const api::PaperWeaponMotionCacheAccessV1 cacheAccess)
+        const api::DevelopmentCaptureMode mode,
+        const api::WeaponMotionCacheAccess cacheAccess)
     {
         if (!validMode(mode) || !validCacheAccess(cacheAccess) ||
-            mode == api::PaperDevelopmentCaptureModeV1::User) {
+            mode == api::DevelopmentCaptureMode::User) {
             return 0;
         }
 
         std::uint32_t scopes = flag(
-            api::PaperDevelopmentCaptureScopeV1::PassiveObservation);
-        if (mode >= api::PaperDevelopmentCaptureModeV1::Harvest) {
+            api::DevelopmentCaptureScope::PassiveObservation);
+        if (mode >= api::DevelopmentCaptureMode::Harvest) {
             scopes |= flag(
-                api::PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest);
+                api::DevelopmentCaptureScope::ExactAnimationHarvest);
         }
-        if (cacheAccess != api::PaperWeaponMotionCacheAccessV1::Off) {
+        if (cacheAccess != api::WeaponMotionCacheAccess::Off) {
             scopes |= flag(
-                api::PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation) |
-                flag(api::PaperDevelopmentCaptureScopeV1::CompiledCacheRead);
+                api::DevelopmentCaptureScope::WeaponMotionCompilation) |
+                flag(api::DevelopmentCaptureScope::CompiledCacheRead);
         }
-        if (cacheAccess == api::PaperWeaponMotionCacheAccessV1::ReadWrite) {
+        if (cacheAccess == api::WeaponMotionCacheAccess::ReadWrite) {
             scopes |= flag(
-                api::PaperDevelopmentCaptureScopeV1::CompiledCacheWrite);
+                api::DevelopmentCaptureScope::CompiledCacheWrite);
         }
-        if (mode == api::PaperDevelopmentCaptureModeV1::Capture) {
+        if (mode == api::DevelopmentCaptureMode::Capture) {
             scopes |= flag(
-                api::PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation) |
-                flag(api::PaperDevelopmentCaptureScopeV1::LiveMotionLearning);
+                api::DevelopmentCaptureScope::WeaponMotionCompilation) |
+                flag(api::DevelopmentCaptureScope::LiveMotionLearning);
         }
         return expandDependencies(scopes);
     }
 
     [[nodiscard]] constexpr std::uint32_t autoStartScopes(
-        const api::PaperDevelopmentCaptureModeV1 mode,
-        const api::PaperWeaponMotionCacheAccessV1 cacheAccess,
+        const api::DevelopmentCaptureMode mode,
+        const api::WeaponMotionCacheAccess cacheAccess,
         const bool autoStart)
     {
         if (!autoStart) {
@@ -104,10 +104,10 @@ namespace paper::development_capture_policy
         // a compiled-cache miss. This keeps a valid hit from repeating the
         // expensive off-screen sampling pass. Harvest-only mode without a
         // compiler must retain its explicit exact-harvest behavior.
-        if ((scopes & flag(api::PaperDevelopmentCaptureScopeV1::
+        if ((scopes & flag(api::DevelopmentCaptureScope::
                            WeaponMotionCompilation)) != 0) {
             scopes &= ~flag(
-                api::PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest);
+                api::DevelopmentCaptureScope::ExactAnimationHarvest);
         }
         return scopes;
     }

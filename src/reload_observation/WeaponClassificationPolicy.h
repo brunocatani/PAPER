@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <cstdint>
 #include <string_view>
@@ -41,8 +41,8 @@ namespace paper::weapon_classification_policy
     struct WeaponFamilyClassification
     {
         std::uint64_t familyFlags{ 0 };
-        api::PaperWeaponPrimaryFamilyV1 primaryFamily{
-            api::PaperWeaponPrimaryFamilyV1::Unknown
+        api::WeaponPrimaryFamily primaryFamily{
+            api::WeaponPrimaryFamily::Unknown
         };
         std::uint32_t evidenceFlags{ 0 };
     };
@@ -144,166 +144,166 @@ namespace paper::weapon_classification_policy
     [[nodiscard]] constexpr WeaponFamilyClassification classifyWeaponFamily(
         const WeaponFamilySignals& signals) noexcept
     {
-        using api::PaperWeaponFamilyEvidenceFlagV1;
-        using api::PaperWeaponFamilyFlagV1;
-        using api::PaperWeaponKeywordFlagV1;
-        using api::PaperWeaponPrimaryFamilyV1;
-        using api::PaperWeaponSizeClassV1;
+        using api::WeaponFamilyEvidenceFlag;
+        using api::WeaponFamilyFlag;
+        using api::WeaponKeywordFlag;
+        using api::WeaponPrimaryFamily;
+        using api::WeaponSizeClass;
 
         WeaponFamilyClassification result{};
-        const auto evidence = [](const PaperWeaponFamilyEvidenceFlagV1 value) {
+        const auto evidence = [](const WeaponFamilyEvidenceFlag value) {
             return static_cast<std::uint32_t>(value);
         };
-        const auto family = [](const PaperWeaponFamilyFlagV1 value) {
+        const auto family = [](const WeaponFamilyFlag value) {
             return static_cast<std::uint64_t>(value);
         };
-        const auto keyword = [](const PaperWeaponKeywordFlagV1 value) {
+        const auto keyword = [](const WeaponKeywordFlag value) {
             return static_cast<std::uint64_t>(value);
         };
-        const auto add = [&](const PaperWeaponFamilyFlagV1 value,
-                             const PaperWeaponFamilyEvidenceFlagV1 source) {
+        const auto add = [&](const WeaponFamilyFlag value,
+                             const WeaponFamilyEvidenceFlag source) {
             result.familyFlags |= family(value);
             result.evidenceFlags |= evidence(source);
         };
-        const auto hasKeyword = [&](const PaperWeaponKeywordFlagV1 value) {
+        const auto hasKeyword = [&](const WeaponKeywordFlag value) {
             return (signals.keywordFlags & keyword(value)) != 0;
         };
-        const auto hasFamily = [&](const PaperWeaponFamilyFlagV1 value) {
+        const auto hasFamily = [&](const WeaponFamilyFlag value) {
             return (result.familyFlags & family(value)) != 0;
         };
 
         if (signals.rockClassificationAvailable) {
             const auto addKeywordFamily = [&](
-                                              const PaperWeaponKeywordFlagV1 source,
-                                              const PaperWeaponFamilyFlagV1 target) {
+                                              const WeaponKeywordFlag source,
+                                              const WeaponFamilyFlag target) {
                 if (hasKeyword(source)) {
-                    add(target, PaperWeaponFamilyEvidenceFlagV1::RockKeyword);
+                    add(target, WeaponFamilyEvidenceFlag::RockKeyword);
                 }
             };
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Pistol,
-                PaperWeaponFamilyFlagV1::Pistol);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Rifle,
-                PaperWeaponFamilyFlagV1::Rifle);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Shotgun,
-                PaperWeaponFamilyFlagV1::Shotgun);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::AssaultRifle,
-                PaperWeaponFamilyFlagV1::AssaultRifle);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Sniper,
-                PaperWeaponFamilyFlagV1::SniperRifle);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::GaussRifle,
-                PaperWeaponFamilyFlagV1::GaussRifle);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::LaserMusket,
-                PaperWeaponFamilyFlagV1::LaserMusket);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::HeavyGun,
-                PaperWeaponFamilyFlagV1::HeavyWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::HandToHand,
-                PaperWeaponFamilyFlagV1::HandToHand);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Melee1H,
-                PaperWeaponFamilyFlagV1::OneHandedMelee);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Melee2H,
-                PaperWeaponFamilyFlagV1::TwoHandedMelee);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Unarmed,
-                PaperWeaponFamilyFlagV1::UnarmedWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Minigun,
-                PaperWeaponFamilyFlagV1::Minigun);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Fatman,
-                PaperWeaponFamilyFlagV1::FatMan);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::MissileLauncher,
-                PaperWeaponFamilyFlagV1::MissileLauncher);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::GatlingLaser,
-                PaperWeaponFamilyFlagV1::GatlingLaser);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Flamer,
-                PaperWeaponFamilyFlagV1::Flamer);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Cryolater,
-                PaperWeaponFamilyFlagV1::Cryolator);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::JunkJet,
-                PaperWeaponFamilyFlagV1::JunkJet);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::RailwayRifle,
-                PaperWeaponFamilyFlagV1::RailwayRifle);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Broadsider,
-                PaperWeaponFamilyFlagV1::Broadsider);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Syringer,
-                PaperWeaponFamilyFlagV1::Syringer);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::FlareGun,
-                PaperWeaponFamilyFlagV1::FlareGun);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::GammaGun,
-                PaperWeaponFamilyFlagV1::GammaGun);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::AlienBlaster,
-                PaperWeaponFamilyFlagV1::AlienBlaster);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Ripper,
-                PaperWeaponFamilyFlagV1::Ripper);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Shishkebab,
-                PaperWeaponFamilyFlagV1::Shishkebab);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Laser,
-                PaperWeaponFamilyFlagV1::LaserWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Plasma,
-                PaperWeaponFamilyFlagV1::PlasmaWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Ballistic,
-                PaperWeaponFamilyFlagV1::BallisticWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Thrown,
-                PaperWeaponFamilyFlagV1::ThrownWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Grenade,
-                PaperWeaponFamilyFlagV1::Grenade);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Mine,
-                PaperWeaponFamilyFlagV1::Mine);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Explosive,
-                PaperWeaponFamilyFlagV1::ExplosiveWeapon);
-            addKeywordFamily(PaperWeaponKeywordFlagV1::Automatic,
-                PaperWeaponFamilyFlagV1::Automatic);
+            addKeywordFamily(WeaponKeywordFlag::Pistol,
+                WeaponFamilyFlag::Pistol);
+            addKeywordFamily(WeaponKeywordFlag::Rifle,
+                WeaponFamilyFlag::Rifle);
+            addKeywordFamily(WeaponKeywordFlag::Shotgun,
+                WeaponFamilyFlag::Shotgun);
+            addKeywordFamily(WeaponKeywordFlag::AssaultRifle,
+                WeaponFamilyFlag::AssaultRifle);
+            addKeywordFamily(WeaponKeywordFlag::Sniper,
+                WeaponFamilyFlag::SniperRifle);
+            addKeywordFamily(WeaponKeywordFlag::GaussRifle,
+                WeaponFamilyFlag::GaussRifle);
+            addKeywordFamily(WeaponKeywordFlag::LaserMusket,
+                WeaponFamilyFlag::LaserMusket);
+            addKeywordFamily(WeaponKeywordFlag::HeavyGun,
+                WeaponFamilyFlag::HeavyWeapon);
+            addKeywordFamily(WeaponKeywordFlag::HandToHand,
+                WeaponFamilyFlag::HandToHand);
+            addKeywordFamily(WeaponKeywordFlag::Melee1H,
+                WeaponFamilyFlag::OneHandedMelee);
+            addKeywordFamily(WeaponKeywordFlag::Melee2H,
+                WeaponFamilyFlag::TwoHandedMelee);
+            addKeywordFamily(WeaponKeywordFlag::Unarmed,
+                WeaponFamilyFlag::UnarmedWeapon);
+            addKeywordFamily(WeaponKeywordFlag::Minigun,
+                WeaponFamilyFlag::Minigun);
+            addKeywordFamily(WeaponKeywordFlag::Fatman,
+                WeaponFamilyFlag::FatMan);
+            addKeywordFamily(WeaponKeywordFlag::MissileLauncher,
+                WeaponFamilyFlag::MissileLauncher);
+            addKeywordFamily(WeaponKeywordFlag::GatlingLaser,
+                WeaponFamilyFlag::GatlingLaser);
+            addKeywordFamily(WeaponKeywordFlag::Flamer,
+                WeaponFamilyFlag::Flamer);
+            addKeywordFamily(WeaponKeywordFlag::Cryolater,
+                WeaponFamilyFlag::Cryolator);
+            addKeywordFamily(WeaponKeywordFlag::JunkJet,
+                WeaponFamilyFlag::JunkJet);
+            addKeywordFamily(WeaponKeywordFlag::RailwayRifle,
+                WeaponFamilyFlag::RailwayRifle);
+            addKeywordFamily(WeaponKeywordFlag::Broadsider,
+                WeaponFamilyFlag::Broadsider);
+            addKeywordFamily(WeaponKeywordFlag::Syringer,
+                WeaponFamilyFlag::Syringer);
+            addKeywordFamily(WeaponKeywordFlag::FlareGun,
+                WeaponFamilyFlag::FlareGun);
+            addKeywordFamily(WeaponKeywordFlag::GammaGun,
+                WeaponFamilyFlag::GammaGun);
+            addKeywordFamily(WeaponKeywordFlag::AlienBlaster,
+                WeaponFamilyFlag::AlienBlaster);
+            addKeywordFamily(WeaponKeywordFlag::Ripper,
+                WeaponFamilyFlag::Ripper);
+            addKeywordFamily(WeaponKeywordFlag::Shishkebab,
+                WeaponFamilyFlag::Shishkebab);
+            addKeywordFamily(WeaponKeywordFlag::Laser,
+                WeaponFamilyFlag::LaserWeapon);
+            addKeywordFamily(WeaponKeywordFlag::Plasma,
+                WeaponFamilyFlag::PlasmaWeapon);
+            addKeywordFamily(WeaponKeywordFlag::Ballistic,
+                WeaponFamilyFlag::BallisticWeapon);
+            addKeywordFamily(WeaponKeywordFlag::Thrown,
+                WeaponFamilyFlag::ThrownWeapon);
+            addKeywordFamily(WeaponKeywordFlag::Grenade,
+                WeaponFamilyFlag::Grenade);
+            addKeywordFamily(WeaponKeywordFlag::Mine,
+                WeaponFamilyFlag::Mine);
+            addKeywordFamily(WeaponKeywordFlag::Explosive,
+                WeaponFamilyFlag::ExplosiveWeapon);
+            addKeywordFamily(WeaponKeywordFlag::Automatic,
+                WeaponFamilyFlag::Automatic);
         }
 
         if (signals.magazinePart) {
-            add(PaperWeaponFamilyFlagV1::MagazineFed,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::MagazineFed,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.cylinderPart) {
-            add(PaperWeaponFamilyFlagV1::Revolver,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
-            add(PaperWeaponFamilyFlagV1::CylinderFed,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::Revolver,
+                WeaponFamilyEvidenceFlag::PartTopology);
+            add(WeaponFamilyFlag::CylinderFed,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.slidePart) {
-            add(PaperWeaponFamilyFlagV1::SlideOperated,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::SlideOperated,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.leverPart) {
-            add(PaperWeaponFamilyFlagV1::LeverAction,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::LeverAction,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.pumpPart) {
-            add(PaperWeaponFamilyFlagV1::PumpAction,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::PumpAction,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.breakActionPart) {
-            add(PaperWeaponFamilyFlagV1::BreakAction,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::BreakAction,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.laserCellPart) {
-            add(PaperWeaponFamilyFlagV1::LaserCellFed,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
-            add(PaperWeaponFamilyFlagV1::EnergyWeapon,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::LaserCellFed,
+                WeaponFamilyEvidenceFlag::PartTopology);
+            add(WeaponFamilyFlag::EnergyWeapon,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.shellPart) {
-            add(PaperWeaponFamilyFlagV1::ShellFed,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::ShellFed,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
         if (signals.looseRoundPart) {
-            add(PaperWeaponFamilyFlagV1::LooseRoundFed,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            add(WeaponFamilyFlag::LooseRoundFed,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
 
         if (signals.revolverAnimationKeyword) {
-            add(PaperWeaponFamilyFlagV1::Revolver,
-                PaperWeaponFamilyEvidenceFlagV1::AnimationKeyword);
+            add(WeaponFamilyFlag::Revolver,
+                WeaponFamilyEvidenceFlag::AnimationKeyword);
         }
         if (signals.boltActionWeaponFlag) {
-            add(PaperWeaponFamilyFlagV1::BoltAction,
-                PaperWeaponFamilyEvidenceFlagV1::WeaponFlags);
+            add(WeaponFamilyFlag::BoltAction,
+                WeaponFamilyEvidenceFlag::WeaponFlags);
         }
         if (signals.automaticWeaponFlag) {
-            add(PaperWeaponFamilyFlagV1::Automatic,
-                PaperWeaponFamilyEvidenceFlagV1::WeaponFlags);
+            add(WeaponFamilyFlag::Automatic,
+                WeaponFamilyEvidenceFlag::WeaponFlags);
         }
 
         const bool akPattern =
@@ -360,76 +360,76 @@ namespace paper::weapon_classification_policy
             anyIdentityContains(signals, "break action");
 
         const auto addNamedFamily = [&](const bool matched,
-                                        const PaperWeaponFamilyFlagV1 value) {
+                                        const WeaponFamilyFlag value) {
             if (matched) {
                 add(value,
-                    PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+                    WeaponFamilyEvidenceFlag::FormIdentityText);
             }
         };
-        addNamedFamily(namedPistol, PaperWeaponFamilyFlagV1::Pistol);
-        addNamedFamily(namedRevolver, PaperWeaponFamilyFlagV1::Revolver);
-        addNamedFamily(namedRifle, PaperWeaponFamilyFlagV1::Rifle);
+        addNamedFamily(namedPistol, WeaponFamilyFlag::Pistol);
+        addNamedFamily(namedRevolver, WeaponFamilyFlag::Revolver);
+        addNamedFamily(namedRifle, WeaponFamilyFlag::Rifle);
         addNamedFamily(namedAssaultRifle,
-            PaperWeaponFamilyFlagV1::AssaultRifle);
-        addNamedFamily(namedShotgun, PaperWeaponFamilyFlagV1::Shotgun);
-        addNamedFamily(namedSniper, PaperWeaponFamilyFlagV1::SniperRifle);
+            WeaponFamilyFlag::AssaultRifle);
+        addNamedFamily(namedShotgun, WeaponFamilyFlag::Shotgun);
+        addNamedFamily(namedSniper, WeaponFamilyFlag::SniperRifle);
         addNamedFamily(namedBoltAction,
-            PaperWeaponFamilyFlagV1::BoltAction);
+            WeaponFamilyFlag::BoltAction);
         addNamedFamily(namedLeverAction,
-            PaperWeaponFamilyFlagV1::LeverAction);
+            WeaponFamilyFlag::LeverAction);
         addNamedFamily(namedPumpAction,
-            PaperWeaponFamilyFlagV1::PumpAction);
+            WeaponFamilyFlag::PumpAction);
         addNamedFamily(namedBreakAction,
-            PaperWeaponFamilyFlagV1::BreakAction);
+            WeaponFamilyFlag::BreakAction);
 
         if (akPattern) {
-            add(PaperWeaponFamilyFlagV1::AKPattern,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::AKPattern,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (arPattern) {
-            add(PaperWeaponFamilyFlagV1::ARPattern,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::ARPattern,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (submachineGun) {
-            add(PaperWeaponFamilyFlagV1::SubmachineGun,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::SubmachineGun,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (machineGun) {
-            add(PaperWeaponFamilyFlagV1::MachineGun,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::MachineGun,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (lightMachineGun) {
-            add(PaperWeaponFamilyFlagV1::LightMachineGun,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::LightMachineGun,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (anyIdentityContains(signals, "bullpup")) {
-            add(PaperWeaponFamilyFlagV1::BullpupPattern,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::BullpupPattern,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (anyIdentityContains(signals, "beltfed") ||
             anyIdentityContains(signals, "belt-fed") ||
             anyIdentityContains(signals, "belt fed")) {
-            add(PaperWeaponFamilyFlagV1::BeltFed,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::BeltFed,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (anyIdentityContains(signals, "drumfed") ||
             anyIdentityContains(signals, "drum-fed") ||
             anyIdentityContains(signals, "drum fed")) {
-            add(PaperWeaponFamilyFlagV1::DrumFed,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::DrumFed,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (anyIdentityContains(signals, "tubefed") ||
             anyIdentityContains(signals, "tube-fed") ||
             anyIdentityContains(signals, "tube fed")) {
-            add(PaperWeaponFamilyFlagV1::TubeFed,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::TubeFed,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (anyIdentityContains(signals, "internalmag") ||
             anyIdentityContains(signals, "internal magazine") ||
             anyIdentityContains(signals, "fixedmag") ||
             anyIdentityContains(signals, "fixed magazine")) {
-            add(PaperWeaponFamilyFlagV1::InternalFeed,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::InternalFeed,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
         if (anyIdentityContains(signals, "singleload") ||
             anyIdentityContains(signals, "single-load") ||
@@ -437,215 +437,215 @@ namespace paper::weapon_classification_policy
             anyIdentityContains(signals, "singleshot") ||
             anyIdentityContains(signals, "single-shot") ||
             anyIdentityContains(signals, "single shot")) {
-            add(PaperWeaponFamilyFlagV1::SingleLoad,
-                PaperWeaponFamilyEvidenceFlagV1::FormIdentityText);
+            add(WeaponFamilyFlag::SingleLoad,
+                WeaponFamilyEvidenceFlag::FormIdentityText);
         }
 
-        if (hasFamily(PaperWeaponFamilyFlagV1::BoltAction)) {
+        if (hasFamily(WeaponFamilyFlag::BoltAction)) {
             if (signals.magazinePart) {
-                add(PaperWeaponFamilyFlagV1::BoltActionWithMagazine,
-                    PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+                add(WeaponFamilyFlag::BoltActionWithMagazine,
+                    WeaponFamilyEvidenceFlag::PartTopology);
             } else if (signals.partEvidenceComplete) {
-                add(PaperWeaponFamilyFlagV1::BoltActionWithoutMagazine,
-                    PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+                add(WeaponFamilyFlag::BoltActionWithoutMagazine,
+                    WeaponFamilyEvidenceFlag::PartTopology);
             }
         }
 
         const bool longGunTopology =
             signals.stockPart || signals.handguardPart ||
             signals.foregripPart ||
-            hasFamily(PaperWeaponFamilyFlagV1::BoltAction) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LeverAction);
+            hasFamily(WeaponFamilyFlag::BoltAction) ||
+            hasFamily(WeaponFamilyFlag::LeverAction);
         const bool explicitLongGunFamily =
-            hasFamily(PaperWeaponFamilyFlagV1::Rifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::AssaultRifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::AKPattern) ||
-            hasFamily(PaperWeaponFamilyFlagV1::ARPattern) ||
-            hasFamily(PaperWeaponFamilyFlagV1::SniperRifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Shotgun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::GaussRifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LaserMusket) ||
-            hasFamily(PaperWeaponFamilyFlagV1::RailwayRifle);
+            hasFamily(WeaponFamilyFlag::Rifle) ||
+            hasFamily(WeaponFamilyFlag::AssaultRifle) ||
+            hasFamily(WeaponFamilyFlag::AKPattern) ||
+            hasFamily(WeaponFamilyFlag::ARPattern) ||
+            hasFamily(WeaponFamilyFlag::SniperRifle) ||
+            hasFamily(WeaponFamilyFlag::Shotgun) ||
+            hasFamily(WeaponFamilyFlag::GaussRifle) ||
+            hasFamily(WeaponFamilyFlag::LaserMusket) ||
+            hasFamily(WeaponFamilyFlag::RailwayRifle);
 
-        if (hasFamily(PaperWeaponFamilyFlagV1::SlideOperated) &&
+        if (hasFamily(WeaponFamilyFlag::SlideOperated) &&
             !longGunTopology && !explicitLongGunFamily &&
-            !hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::Pistol);
+            !hasFamily(WeaponFamilyFlag::HeavyWeapon)) {
+            result.familyFlags |= family(WeaponFamilyFlag::Pistol);
         }
 
         if (longGunTopology &&
-            !hasFamily(PaperWeaponFamilyFlagV1::Pistol)) {
-            add(PaperWeaponFamilyFlagV1::Rifle,
-                PaperWeaponFamilyEvidenceFlagV1::PartTopology);
+            !hasFamily(WeaponFamilyFlag::Pistol)) {
+            add(WeaponFamilyFlag::Rifle,
+                WeaponFamilyEvidenceFlag::PartTopology);
         }
 
-        if (hasFamily(PaperWeaponFamilyFlagV1::AssaultRifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::AKPattern) ||
-            hasFamily(PaperWeaponFamilyFlagV1::ARPattern) ||
-            hasFamily(PaperWeaponFamilyFlagV1::SniperRifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::GaussRifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LaserMusket) ||
-            hasFamily(PaperWeaponFamilyFlagV1::RailwayRifle)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::Rifle);
+        if (hasFamily(WeaponFamilyFlag::AssaultRifle) ||
+            hasFamily(WeaponFamilyFlag::AKPattern) ||
+            hasFamily(WeaponFamilyFlag::ARPattern) ||
+            hasFamily(WeaponFamilyFlag::SniperRifle) ||
+            hasFamily(WeaponFamilyFlag::GaussRifle) ||
+            hasFamily(WeaponFamilyFlag::LaserMusket) ||
+            hasFamily(WeaponFamilyFlag::RailwayRifle)) {
+            result.familyFlags |= family(WeaponFamilyFlag::Rifle);
         }
-        if (hasFamily(PaperWeaponFamilyFlagV1::Revolver)) {
-            if (!hasFamily(PaperWeaponFamilyFlagV1::Rifle) &&
-                !hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon)) {
-                result.familyFlags |= family(PaperWeaponFamilyFlagV1::Pistol);
+        if (hasFamily(WeaponFamilyFlag::Revolver)) {
+            if (!hasFamily(WeaponFamilyFlag::Rifle) &&
+                !hasFamily(WeaponFamilyFlag::HeavyWeapon)) {
+                result.familyFlags |= family(WeaponFamilyFlag::Pistol);
             }
         }
-        if (hasFamily(PaperWeaponFamilyFlagV1::LaserWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::PlasmaWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::GatlingLaser) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LaserMusket) ||
-            hasFamily(PaperWeaponFamilyFlagV1::GammaGun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::AlienBlaster)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::EnergyWeapon);
+        if (hasFamily(WeaponFamilyFlag::LaserWeapon) ||
+            hasFamily(WeaponFamilyFlag::PlasmaWeapon) ||
+            hasFamily(WeaponFamilyFlag::GatlingLaser) ||
+            hasFamily(WeaponFamilyFlag::LaserMusket) ||
+            hasFamily(WeaponFamilyFlag::GammaGun) ||
+            hasFamily(WeaponFamilyFlag::AlienBlaster)) {
+            result.familyFlags |= family(WeaponFamilyFlag::EnergyWeapon);
         }
-        if (hasFamily(PaperWeaponFamilyFlagV1::Minigun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::GatlingLaser) ||
-            hasFamily(PaperWeaponFamilyFlagV1::MissileLauncher) ||
-            hasFamily(PaperWeaponFamilyFlagV1::FatMan) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Flamer) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Cryolator) ||
-            hasFamily(PaperWeaponFamilyFlagV1::JunkJet) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Broadsider)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::HeavyWeapon);
+        if (hasFamily(WeaponFamilyFlag::Minigun) ||
+            hasFamily(WeaponFamilyFlag::GatlingLaser) ||
+            hasFamily(WeaponFamilyFlag::MissileLauncher) ||
+            hasFamily(WeaponFamilyFlag::FatMan) ||
+            hasFamily(WeaponFamilyFlag::Flamer) ||
+            hasFamily(WeaponFamilyFlag::Cryolator) ||
+            hasFamily(WeaponFamilyFlag::JunkJet) ||
+            hasFamily(WeaponFamilyFlag::Broadsider)) {
+            result.familyFlags |= family(WeaponFamilyFlag::HeavyWeapon);
         }
-        if (hasFamily(PaperWeaponFamilyFlagV1::MissileLauncher) ||
-            hasFamily(PaperWeaponFamilyFlagV1::FatMan) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Broadsider) ||
-            hasFamily(PaperWeaponFamilyFlagV1::FlareGun)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::Launcher);
+        if (hasFamily(WeaponFamilyFlag::MissileLauncher) ||
+            hasFamily(WeaponFamilyFlag::FatMan) ||
+            hasFamily(WeaponFamilyFlag::Broadsider) ||
+            hasFamily(WeaponFamilyFlag::FlareGun)) {
+            result.familyFlags |= family(WeaponFamilyFlag::Launcher);
         }
-        if (hasFamily(PaperWeaponFamilyFlagV1::OneHandedMelee) ||
-            hasFamily(PaperWeaponFamilyFlagV1::TwoHandedMelee) ||
-            hasFamily(PaperWeaponFamilyFlagV1::HandToHand) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Ripper) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Shishkebab)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::MeleeWeapon);
+        if (hasFamily(WeaponFamilyFlag::OneHandedMelee) ||
+            hasFamily(WeaponFamilyFlag::TwoHandedMelee) ||
+            hasFamily(WeaponFamilyFlag::HandToHand) ||
+            hasFamily(WeaponFamilyFlag::Ripper) ||
+            hasFamily(WeaponFamilyFlag::Shishkebab)) {
+            result.familyFlags |= family(WeaponFamilyFlag::MeleeWeapon);
         }
-        if (hasFamily(PaperWeaponFamilyFlagV1::Grenade) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Mine)) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::ThrownWeapon);
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::ExplosiveWeapon);
+        if (hasFamily(WeaponFamilyFlag::Grenade) ||
+            hasFamily(WeaponFamilyFlag::Mine)) {
+            result.familyFlags |= family(WeaponFamilyFlag::ThrownWeapon);
+            result.familyFlags |= family(WeaponFamilyFlag::ExplosiveWeapon);
         }
 
         const bool semanticSizeKnown =
-            hasFamily(PaperWeaponFamilyFlagV1::Pistol) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Rifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Shotgun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::SubmachineGun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::MachineGun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LightMachineGun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Minigun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Launcher) ||
-            hasFamily(PaperWeaponFamilyFlagV1::MeleeWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::UnarmedWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::ThrownWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::ExplosiveWeapon);
+            hasFamily(WeaponFamilyFlag::Pistol) ||
+            hasFamily(WeaponFamilyFlag::Rifle) ||
+            hasFamily(WeaponFamilyFlag::Shotgun) ||
+            hasFamily(WeaponFamilyFlag::SubmachineGun) ||
+            hasFamily(WeaponFamilyFlag::MachineGun) ||
+            hasFamily(WeaponFamilyFlag::LightMachineGun) ||
+            hasFamily(WeaponFamilyFlag::HeavyWeapon) ||
+            hasFamily(WeaponFamilyFlag::Minigun) ||
+            hasFamily(WeaponFamilyFlag::Launcher) ||
+            hasFamily(WeaponFamilyFlag::MeleeWeapon) ||
+            hasFamily(WeaponFamilyFlag::UnarmedWeapon) ||
+            hasFamily(WeaponFamilyFlag::ThrownWeapon) ||
+            hasFamily(WeaponFamilyFlag::ExplosiveWeapon);
         if (signals.rockClassificationValid && !semanticSizeKnown) {
             // ROCK's size class is a coarse physical bucket. Preserve it in
             // the API, but use it as a semantic family only when stronger
             // keyword, identity, runtime, or part evidence found no family.
-            switch (static_cast<PaperWeaponSizeClassV1>(signals.sizeClass)) {
-            case PaperWeaponSizeClassV1::Melee:
-                add(PaperWeaponFamilyFlagV1::MeleeWeapon,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+            switch (static_cast<WeaponSizeClass>(signals.sizeClass)) {
+            case WeaponSizeClass::Melee:
+                add(WeaponFamilyFlag::MeleeWeapon,
+                    WeaponFamilyEvidenceFlag::RockSizeClass);
                 break;
-            case PaperWeaponSizeClassV1::Pistol:
-                add(PaperWeaponFamilyFlagV1::Pistol,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+            case WeaponSizeClass::Pistol:
+                add(WeaponFamilyFlag::Pistol,
+                    WeaponFamilyEvidenceFlag::RockSizeClass);
                 break;
-            case PaperWeaponSizeClassV1::Rifle:
-                add(PaperWeaponFamilyFlagV1::Rifle,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+            case WeaponSizeClass::Rifle:
+                add(WeaponFamilyFlag::Rifle,
+                    WeaponFamilyEvidenceFlag::RockSizeClass);
                 break;
-            case PaperWeaponSizeClassV1::Heavy:
-                add(PaperWeaponFamilyFlagV1::HeavyWeapon,
-                    PaperWeaponFamilyEvidenceFlagV1::RockSizeClass);
+            case WeaponSizeClass::Heavy:
+                add(WeaponFamilyFlag::HeavyWeapon,
+                    WeaponFamilyEvidenceFlag::RockSizeClass);
                 break;
             }
         }
 
         const bool manualCycle =
-            hasFamily(PaperWeaponFamilyFlagV1::Revolver) ||
-            hasFamily(PaperWeaponFamilyFlagV1::BoltAction) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LeverAction) ||
-            hasFamily(PaperWeaponFamilyFlagV1::PumpAction) ||
-            hasFamily(PaperWeaponFamilyFlagV1::BreakAction) ||
-            hasFamily(PaperWeaponFamilyFlagV1::LaserMusket);
+            hasFamily(WeaponFamilyFlag::Revolver) ||
+            hasFamily(WeaponFamilyFlag::BoltAction) ||
+            hasFamily(WeaponFamilyFlag::LeverAction) ||
+            hasFamily(WeaponFamilyFlag::PumpAction) ||
+            hasFamily(WeaponFamilyFlag::BreakAction) ||
+            hasFamily(WeaponFamilyFlag::LaserMusket);
         if (manualCycle) {
-            result.familyFlags |= family(PaperWeaponFamilyFlagV1::ManualCycle);
+            result.familyFlags |= family(WeaponFamilyFlag::ManualCycle);
         }
         const bool firearm =
-            hasFamily(PaperWeaponFamilyFlagV1::Pistol) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Rifle) ||
-            hasFamily(PaperWeaponFamilyFlagV1::Shotgun) ||
-            hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon) ||
-            hasFamily(PaperWeaponFamilyFlagV1::SubmachineGun);
+            hasFamily(WeaponFamilyFlag::Pistol) ||
+            hasFamily(WeaponFamilyFlag::Rifle) ||
+            hasFamily(WeaponFamilyFlag::Shotgun) ||
+            hasFamily(WeaponFamilyFlag::HeavyWeapon) ||
+            hasFamily(WeaponFamilyFlag::SubmachineGun);
         if (signals.weaponDataAvailable && signals.partEvidenceComplete &&
             firearm &&
             !signals.automaticWeaponFlag && !manualCycle) {
-            add(PaperWeaponFamilyFlagV1::SemiAutomatic,
-                PaperWeaponFamilyEvidenceFlagV1::WeaponFlags);
+            add(WeaponFamilyFlag::SemiAutomatic,
+                WeaponFamilyEvidenceFlag::WeaponFlags);
         }
         if (!signals.partEvidenceComplete) {
             result.evidenceFlags |= evidence(
-                PaperWeaponFamilyEvidenceFlagV1::PartEvidenceIncomplete);
+                WeaponFamilyEvidenceFlag::PartEvidenceIncomplete);
         }
 
-        if (hasFamily(PaperWeaponFamilyFlagV1::AKPattern)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::AKPattern;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::ARPattern)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::ARPattern;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::Revolver)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::Revolver;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::BoltActionWithMagazine)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::BoltActionWithMagazine;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::BoltActionWithoutMagazine)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::BoltActionWithoutMagazine;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::BoltAction)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::BoltAction;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::LeverAction)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::LeverAction;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::PumpAction)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::PumpAction;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::BreakAction)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::BreakAction;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::SubmachineGun)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::SubmachineGun;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::LightMachineGun)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::LightMachineGun;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::MachineGun)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::MachineGun;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::Minigun)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::Minigun;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::Launcher)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::Launcher;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::AssaultRifle)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::AssaultRifle;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::SniperRifle)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::SniperRifle;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::Shotgun)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::Shotgun;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::HeavyWeapon)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::HeavyWeapon;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::Pistol)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::Pistol;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::Rifle)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::Rifle;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::EnergyWeapon)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::EnergyWeapon;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::MeleeWeapon)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::MeleeWeapon;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::UnarmedWeapon)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::UnarmedWeapon;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::ThrownWeapon)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::ThrownWeapon;
-        } else if (hasFamily(PaperWeaponFamilyFlagV1::ExplosiveWeapon)) {
-            result.primaryFamily = PaperWeaponPrimaryFamilyV1::ExplosiveWeapon;
+        if (hasFamily(WeaponFamilyFlag::AKPattern)) {
+            result.primaryFamily = WeaponPrimaryFamily::AKPattern;
+        } else if (hasFamily(WeaponFamilyFlag::ARPattern)) {
+            result.primaryFamily = WeaponPrimaryFamily::ARPattern;
+        } else if (hasFamily(WeaponFamilyFlag::Revolver)) {
+            result.primaryFamily = WeaponPrimaryFamily::Revolver;
+        } else if (hasFamily(WeaponFamilyFlag::BoltActionWithMagazine)) {
+            result.primaryFamily = WeaponPrimaryFamily::BoltActionWithMagazine;
+        } else if (hasFamily(WeaponFamilyFlag::BoltActionWithoutMagazine)) {
+            result.primaryFamily = WeaponPrimaryFamily::BoltActionWithoutMagazine;
+        } else if (hasFamily(WeaponFamilyFlag::BoltAction)) {
+            result.primaryFamily = WeaponPrimaryFamily::BoltAction;
+        } else if (hasFamily(WeaponFamilyFlag::LeverAction)) {
+            result.primaryFamily = WeaponPrimaryFamily::LeverAction;
+        } else if (hasFamily(WeaponFamilyFlag::PumpAction)) {
+            result.primaryFamily = WeaponPrimaryFamily::PumpAction;
+        } else if (hasFamily(WeaponFamilyFlag::BreakAction)) {
+            result.primaryFamily = WeaponPrimaryFamily::BreakAction;
+        } else if (hasFamily(WeaponFamilyFlag::SubmachineGun)) {
+            result.primaryFamily = WeaponPrimaryFamily::SubmachineGun;
+        } else if (hasFamily(WeaponFamilyFlag::LightMachineGun)) {
+            result.primaryFamily = WeaponPrimaryFamily::LightMachineGun;
+        } else if (hasFamily(WeaponFamilyFlag::MachineGun)) {
+            result.primaryFamily = WeaponPrimaryFamily::MachineGun;
+        } else if (hasFamily(WeaponFamilyFlag::Minigun)) {
+            result.primaryFamily = WeaponPrimaryFamily::Minigun;
+        } else if (hasFamily(WeaponFamilyFlag::Launcher)) {
+            result.primaryFamily = WeaponPrimaryFamily::Launcher;
+        } else if (hasFamily(WeaponFamilyFlag::AssaultRifle)) {
+            result.primaryFamily = WeaponPrimaryFamily::AssaultRifle;
+        } else if (hasFamily(WeaponFamilyFlag::SniperRifle)) {
+            result.primaryFamily = WeaponPrimaryFamily::SniperRifle;
+        } else if (hasFamily(WeaponFamilyFlag::Shotgun)) {
+            result.primaryFamily = WeaponPrimaryFamily::Shotgun;
+        } else if (hasFamily(WeaponFamilyFlag::HeavyWeapon)) {
+            result.primaryFamily = WeaponPrimaryFamily::HeavyWeapon;
+        } else if (hasFamily(WeaponFamilyFlag::Pistol)) {
+            result.primaryFamily = WeaponPrimaryFamily::Pistol;
+        } else if (hasFamily(WeaponFamilyFlag::Rifle)) {
+            result.primaryFamily = WeaponPrimaryFamily::Rifle;
+        } else if (hasFamily(WeaponFamilyFlag::EnergyWeapon)) {
+            result.primaryFamily = WeaponPrimaryFamily::EnergyWeapon;
+        } else if (hasFamily(WeaponFamilyFlag::MeleeWeapon)) {
+            result.primaryFamily = WeaponPrimaryFamily::MeleeWeapon;
+        } else if (hasFamily(WeaponFamilyFlag::UnarmedWeapon)) {
+            result.primaryFamily = WeaponPrimaryFamily::UnarmedWeapon;
+        } else if (hasFamily(WeaponFamilyFlag::ThrownWeapon)) {
+            result.primaryFamily = WeaponPrimaryFamily::ThrownWeapon;
+        } else if (hasFamily(WeaponFamilyFlag::ExplosiveWeapon)) {
+            result.primaryFamily = WeaponPrimaryFamily::ExplosiveWeapon;
         }
 
         return result;

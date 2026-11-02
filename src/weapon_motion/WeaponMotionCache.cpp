@@ -111,7 +111,7 @@ namespace paper::weapon_motion_cache
                 data_.insert(data_.end(), first, first + value.size());
             }
 
-            void transform(const api::PaperReloadQsTransformV1& value)
+            void transform(const api::ReloadQsTransform& value)
             {
                 for (const auto component : value.translate) {
                     scalar(component);
@@ -175,7 +175,7 @@ namespace paper::weapon_motion_cache
             }
 
             [[nodiscard]] bool transform(
-                api::PaperReloadQsTransformV1& outValue)
+                api::ReloadQsTransform& outValue)
             {
                 for (auto& component : outValue.translate) {
                     if (!scalar(component)) {
@@ -224,7 +224,7 @@ namespace paper::weapon_motion_cache
         [[nodiscard]] bool validRecord(const CompiledRecord& record)
         {
             if (record.loadoutKey == 0 || record.stages.empty() ||
-                record.stages.size() > api::PAPER_MAX_WEAPON_MOTION_STAGES_V1 ||
+                record.stages.size() > api::kMaxWeaponMotionStages ||
                 record.animationPaths.size() > kMaximumAnimationPaths) {
                 return false;
             }
@@ -253,12 +253,12 @@ namespace paper::weapon_motion_cache
             for (const auto& stage : record.stages) {
                 if (!validPart(stage.part) ||
                     (stage.kind !=
-                            api::PaperWeaponMotionStageKindV1::Primary &&
+                            api::WeaponMotionStageKind::Primary &&
                         stage.kind !=
-                            api::PaperWeaponMotionStageKindV1::Return) ||
+                            api::WeaponMotionStageKind::Return) ||
                     stage.sourceAnimationPath.size() > kMaximumStringBytes ||
                     stage.followers.size() >
-                        api::PAPER_MAX_WEAPON_MOTION_FOLLOWERS_V1 ||
+                        api::kMaxWeaponMotionFollowers ||
                     !std::isfinite(stage.totalArcLengthGameUnits) ||
                     !std::isfinite(stage.peakDeltaGameUnits) ||
                     stage.totalArcLengthGameUnits <
@@ -612,7 +612,7 @@ namespace paper::weapon_motion_cache
         }
         std::uint32_t stageCount = 0;
         if (!reader.scalar(stageCount) || stageCount == 0 ||
-            stageCount > api::PAPER_MAX_WEAPON_MOTION_STAGES_V1) {
+            stageCount > api::kMaxWeaponMotionStages) {
             return false;
         }
         outRecord.stages.resize(stageCount);
@@ -620,16 +620,16 @@ namespace paper::weapon_motion_cache
             std::uint32_t kind = 0;
             if (!reader.part(stage.part) || !reader.scalar(kind) ||
                 (kind != static_cast<std::uint32_t>(
-                             api::PaperWeaponMotionStageKindV1::Primary) &&
+                             api::WeaponMotionStageKind::Primary) &&
                     kind != static_cast<std::uint32_t>(
-                                api::PaperWeaponMotionStageKindV1::Return)) ||
+                                api::WeaponMotionStageKind::Return)) ||
                 !reader.text(stage.sourceAnimationPath) ||
                 !reader.scalar(stage.sourceBoundary) ||
                 !reader.scalar(stage.totalArcLengthGameUnits) ||
                 !reader.scalar(stage.peakDeltaGameUnits)) {
                 return false;
             }
-            stage.kind = static_cast<api::PaperWeaponMotionStageKindV1>(kind);
+            stage.kind = static_cast<api::WeaponMotionStageKind>(kind);
             for (auto& key : stage.keys) {
                 if (!reader.transform(key)) {
                     return false;
@@ -637,7 +637,7 @@ namespace paper::weapon_motion_cache
             }
             std::uint32_t followerCount = 0;
             if (!reader.scalar(followerCount) ||
-                followerCount > api::PAPER_MAX_WEAPON_MOTION_FOLLOWERS_V1) {
+                followerCount > api::kMaxWeaponMotionFollowers) {
                 return false;
             }
             stage.followers.resize(followerCount);

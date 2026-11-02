@@ -57,35 +57,35 @@ namespace paper
             return result;
         }
 
-        [[nodiscard]] api::PaperDevelopmentCaptureModeV1 readMode(
+        [[nodiscard]] api::DevelopmentCaptureMode readMode(
             const CSimpleIniA& ini)
         {
             const auto value = normalized(ini.GetValue(
                 "DevelopmentCapture", "sMaximumMode", "User"));
             if (value == "observe") {
-                return api::PaperDevelopmentCaptureModeV1::Observe;
+                return api::DevelopmentCaptureMode::Observe;
             }
             if (value == "harvest") {
-                return api::PaperDevelopmentCaptureModeV1::Harvest;
+                return api::DevelopmentCaptureMode::Harvest;
             }
             if (value == "capture") {
-                return api::PaperDevelopmentCaptureModeV1::Capture;
+                return api::DevelopmentCaptureMode::Capture;
             }
-            return api::PaperDevelopmentCaptureModeV1::User;
+            return api::DevelopmentCaptureMode::User;
         }
 
-        [[nodiscard]] api::PaperWeaponMotionCacheAccessV1 readCacheAccess(
+        [[nodiscard]] api::WeaponMotionCacheAccess readCacheAccess(
             const CSimpleIniA& ini)
         {
             const auto value = normalized(ini.GetValue(
                 "WeaponMotionCache", "sAccess", "Off"));
             if (value == "readonly" || value == "read-only") {
-                return api::PaperWeaponMotionCacheAccessV1::ReadOnly;
+                return api::WeaponMotionCacheAccess::ReadOnly;
             }
             if (value == "readwrite" || value == "read-write") {
-                return api::PaperWeaponMotionCacheAccessV1::ReadWrite;
+                return api::WeaponMotionCacheAccess::ReadWrite;
             }
-            return api::PaperWeaponMotionCacheAccessV1::Off;
+            return api::WeaponMotionCacheAccess::Off;
         }
 
         [[nodiscard]] std::optional<PaperConfig> loadConfig(

@@ -1,4 +1,3 @@
-#define PAPER_API_EXPORTS
 #include "api/PAPERProvider.h"
 
 #include "animation/NativeAnimationAuthority.h"
@@ -10,8 +9,8 @@
 #include "reload_stages/ReloadStages.h"
 #include "weapon_motion/WeaponMotion.h"
 #include "reload_control/PhysicalReloadLease.h"
-#include "api/PAPERPhysicalReloadV3.h"
 #include "reload_control/ManualReloadOnly.h"
+#include "api/InterfaceNegotiation.h"
 #include "support/Fo4VrRuntime.h"
 
 #include <Windows.h>
@@ -48,33 +47,33 @@ namespace paper::provider
         {
             std::uint64_t token{ 0 };
             std::uint64_t ownerToken{ 0 };
-            PaperEventCallbackV1 callback{ nullptr };
+            EventCallback callback{ nullptr };
             void* userData{ nullptr };
         };
 
         constexpr std::uint32_t kAllCapabilities =
-            static_cast<std::uint32_t>(PaperConsumerCapabilityV1::All);
+            static_cast<std::uint32_t>(ConsumerCapability::All);
         constexpr std::uint32_t kReloadAnimationReadCapabilities =
             static_cast<std::uint32_t>(
-                PaperConsumerCapabilityV1::ReloadAnimationEvidence) |
+                ConsumerCapability::ReloadAnimationEvidence) |
             static_cast<std::uint32_t>(
-                PaperConsumerCapabilityV1::ReloadAnimationTelemetry);
+                ConsumerCapability::ReloadAnimationTelemetry);
         constexpr std::uint32_t kAllAuthorityFlags =
             static_cast<std::uint32_t>(
-                PaperNativeAnimationAuthorityFlagV1::ReloadPose);
+                NativeAnimationAuthorityFlag::ReloadPose);
 
-        std::array<ConsumerSlot, PAPER_MAX_CONSUMERS_V1> s_consumers{};
-        std::array<CallbackSlot, PAPER_MAX_CALLBACKS_V1> s_callbacks{};
+        std::array<ConsumerSlot, kMaxConsumers> s_consumers{};
+        std::array<CallbackSlot, kMaxCallbacks> s_callbacks{};
         std::atomic<std::uint64_t> s_nextToken{ 1 };
         std::atomic<bool> s_ready{ false };
         DWORD s_ownerThread{ 0 };
         std::uint64_t s_currentFrame{ 0 };
         std::uint32_t s_providerGeneration{ 0 };
-        PaperDevelopmentCaptureModeV1 s_captureMode{
-            PaperDevelopmentCaptureModeV1::User
+        DevelopmentCaptureMode s_captureMode{
+            DevelopmentCaptureMode::User
         };
-        PaperWeaponMotionCacheAccessV1 s_cacheAccess{
-            PaperWeaponMotionCacheAccessV1::Off
+        WeaponMotionCacheAccess s_cacheAccess{
+            WeaponMotionCacheAccess::Off
         };
         std::uint32_t s_captureConfigFlags{ 0 };
         std::uint32_t s_captureAllowedScopes{ 0 };
@@ -83,22 +82,21 @@ namespace paper::provider
         std::uint32_t s_captureActiveScopes{ 0 };
         std::uint64_t s_captureConfigRevision{ 0 };
 
-        PaperRuntimeStateV1 s_runtimeState{};
-        physical_reload::Lease s_physicalReload;
-        physical_reload::Environment s_physicalEnvironment;
+        RuntimeState s_runtimeState{};
+        paper::physical_reload::Lease s_physicalReload;
         const void* s_physicalEquippedData{};
         const void* s_physicalInstance{};
-        PaperConfigStateV1 s_configState{};
+        ConfigState s_configState{};
         std::atomic<std::uint64_t> s_runtimeSequence{ 0 };
         std::atomic<std::uint64_t> s_configSequence{ 0 };
 
         struct NativePosePipelineSnapshot
         {
-            PaperNativePoseFrameStateV1 frame{};
-            PaperNativeHandSolutionV1 rightHand{};
-            PaperNativeHandSolutionV1 leftHand{
-                .hand = PaperHandV1::Left,
-                .role = PaperNativeHandRoleV1::Support,
+            NativePoseFrameState frame{};
+            NativeHandSolution rightHand{};
+            NativeHandSolution leftHand{
+                .hand = Hand::Left,
+                .role = NativeHandRole::Support,
             };
         };
 
@@ -141,14 +139,14 @@ namespace paper::provider
 
         [[nodiscard]] bool hasCapability(
             const ConsumerSlot& consumer,
-            const PaperConsumerCapabilityV1 capability)
+            const ConsumerCapability capability)
         {
             return (consumer.capabilities &
                        static_cast<std::uint32_t>(capability)) != 0;
         }
 
         [[nodiscard]] bool hasCaptureConfigFlag(
-            const PaperDevelopmentCaptureConfigFlagV1 flag)
+            const DevelopmentCaptureConfigFlag flag)
         {
             return (s_captureConfigFlags &
                        static_cast<std::uint32_t>(flag)) != 0;
@@ -216,14 +214,10 @@ namespace paper::provider
             return false;
         }
 
-        std::uint32_t PAPER_CALL getVersion()
+        const char* PAPER_CALL getModVersion()
         {
-            return PAPER_API_VERSION;
-        }
-
-        std::uint32_t PAPER_CALL getModVersion()
-        {
-            return PAPER_MOD_VERSION;
+            // Version::NAME views a string literal, so data() is terminated.
+            return Version::NAME.data();
         }
 
         bool PAPER_CALL apiIsReady()
@@ -231,23 +225,23 @@ namespace paper::provider
             return isReady();
         }
 
-        bool PAPER_CALL getRuntimeStateV1(
+        bool PAPER_CALL getRuntimeState(
             const std::uint64_t ownerToken,
-            PaperRuntimeStateV1* outState)
+            RuntimeState* outState)
         {
             if (!outState ||
-                outState->size < sizeof(PaperRuntimeStateV1) ||
-                outState->version != PAPER_API_VERSION ||
+                outState->size < sizeof(RuntimeState) ||
+                outState->version != kRecordVersion ||
                 !onOwnerThread()) {
                 return false;
             }
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer || !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::RuntimeState)) {
+                    ConsumerCapability::RuntimeState)) {
                 return false;
             }
-            PaperRuntimeStateV1 state{};
+            RuntimeState state{};
             if (!copySeqlocked(s_runtimeState, s_runtimeSequence, state)) {
                 *outState = {};
                 return false;
@@ -256,23 +250,23 @@ namespace paper::provider
             return true;
         }
 
-        bool PAPER_CALL getConfigStateV1(
+        bool PAPER_CALL getConfigState(
             const std::uint64_t ownerToken,
-            PaperConfigStateV1* outState)
+            ConfigState* outState)
         {
             if (!outState ||
-                outState->size < sizeof(PaperConfigStateV1) ||
-                outState->version != PAPER_API_VERSION ||
+                outState->size < sizeof(ConfigState) ||
+                outState->version != kRecordVersion ||
                 !onOwnerThread()) {
                 return false;
             }
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer || !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::RuntimeState)) {
+                    ConsumerCapability::RuntimeState)) {
                 return false;
             }
-            PaperConfigStateV1 state{};
+            ConfigState state{};
             if (!copySeqlocked(s_configState, s_configSequence, state)) {
                 *outState = {};
                 return false;
@@ -281,7 +275,7 @@ namespace paper::provider
             return true;
         }
 
-        std::uint32_t PAPER_CALL getCapturedTransformCountV1(
+        std::uint32_t PAPER_CALL getCapturedTransformCount(
             const std::uint64_t ownerToken)
         {
             if (!onOwnerThread()) {
@@ -290,18 +284,18 @@ namespace paper::provider
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer || !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::CapturedTransforms)) {
+                    ConsumerCapability::CapturedTransforms)) {
                 return 0;
             }
-            PaperRuntimeStateV1 state{};
+            RuntimeState state{};
             return copySeqlocked(s_runtimeState, s_runtimeSequence, state) ?
                 state.capturedTransformCount :
                 0;
         }
 
-        std::uint32_t PAPER_CALL copyCapturedTransformsV1(
+        std::uint32_t PAPER_CALL copyCapturedTransforms(
             const std::uint64_t ownerToken,
-            PaperCapturedTransformV1* outTransforms,
+            CapturedTransform* outTransforms,
             const std::uint32_t maxTransforms)
         {
             if (!outTransforms || maxTransforms == 0 || !onOwnerThread()) {
@@ -310,7 +304,7 @@ namespace paper::provider
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer || !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::CapturedTransforms)) {
+                    ConsumerCapability::CapturedTransforms)) {
                 return 0;
             }
 
@@ -342,35 +336,35 @@ namespace paper::provider
             return copied;
         }
 
-        bool PAPER_CALL getNativeHandPoseV1(
+        bool PAPER_CALL getNativeHandPose(
             const std::uint64_t ownerToken,
-            const PaperHandV1 hand,
-            PaperNativeHandPoseV1* outPose)
+            const Hand hand,
+            NativeHandPose* outPose)
         {
             if (!outPose ||
-                outPose->size < sizeof(PaperNativeHandPoseV1) ||
-                outPose->version != PAPER_API_VERSION ||
+                outPose->size < sizeof(NativeHandPose) ||
+                outPose->version != kRecordVersion ||
                 !onOwnerThread() ||
-                (hand != PaperHandV1::Right &&
-                    hand != PaperHandV1::Left)) {
+                (hand != Hand::Right &&
+                    hand != Hand::Left)) {
                 return false;
             }
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer || !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::NativeHandPose)) {
+                    ConsumerCapability::NativeHandPose)) {
                 return false;
             }
 
             native_animation_authority::NativeHandPose source{};
             if (!native_animation_authority::queryNativeHandPose(
-                    hand == PaperHandV1::Left,
+                    hand == Hand::Left,
                     source)) {
                 *outPose = {};
                 return false;
             }
 
-            PaperNativeHandPoseV1 result{};
+            NativeHandPose result{};
             result.hand = hand;
             result.fingerLocalTransformMask = source.fingerLocalMask;
             api_transform::fromNi(source.handInWeapon, result.handInWeapon);
@@ -386,27 +380,27 @@ namespace paper::provider
             return true;
         }
 
-        PaperResultV1 PAPER_CALL registerConsumerV1(
-            const PaperConsumerRegistrationV1* registration,
-            PaperConsumerHandleV1* outHandle)
+        Status PAPER_CALL registerConsumer(
+            const ConsumerRegistration* registration,
+            ConsumerHandle* outHandle)
         {
             if (!registration || !outHandle) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             if (registration->size <
-                    sizeof(PaperConsumerRegistrationV1) ||
-                outHandle->size < sizeof(PaperConsumerHandleV1)) {
-                return PaperResultV1::InvalidSize;
+                    sizeof(ConsumerRegistration) ||
+                outHandle->size < sizeof(ConsumerHandle)) {
+                return Status::InvalidSize;
             }
             *outHandle = {};
-            if (registration->version != PAPER_API_VERSION) {
-                return PaperResultV1::UnsupportedVersion;
+            if (registration->version != kRecordVersion) {
+                return Status::UnsupportedVersion;
             }
             if (!isReady()) {
-                return PaperResultV1::NotReady;
+                return Status::NotReady;
             }
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
 
             const auto* modNameEnd = static_cast<const char*>(std::memchr(
@@ -414,12 +408,12 @@ namespace paper::provider
                 '\0',
                 sizeof(registration->modName)));
             if (!modNameEnd || modNameEnd == registration->modName) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             for (const auto& consumer : s_consumers) {
                 if (consumer.ownerToken != 0 &&
                     std::strcmp(consumer.modName, registration->modName) == 0) {
-                    return PaperResultV1::OwnerConflict;
+                    return Status::OwnerConflict;
                 }
             }
 
@@ -436,7 +430,7 @@ namespace paper::provider
                     sizeof(consumer.modName));
                 consumer.modName[sizeof(consumer.modName) - 1] = '\0';
 
-                PaperConsumerHandleV1 handle{};
+                ConsumerHandle handle{};
                 handle.ownerToken = consumer.ownerToken;
                 handle.grantedCapabilities = consumer.capabilities;
                 handle.providerGeneration = s_providerGeneration;
@@ -447,25 +441,25 @@ namespace paper::provider
                     consumer.modName,
                     consumer.ownerToken,
                     consumer.capabilities);
-                return PaperResultV1::Ok;
+                return Status::Ok;
             }
-            return PaperResultV1::CapacityReached;
+            return Status::CapacityReached;
         }
 
-        PaperResultV1 PAPER_CALL unregisterConsumerV1(
+        Status PAPER_CALL unregisterConsumer(
             const std::uint64_t ownerToken)
         {
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             if (!findConsumer(ownerToken)) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             removeConsumer(ownerToken);
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        std::uint32_t PAPER_CALL getGrantedCapabilitiesV1(
+        std::uint32_t PAPER_CALL getGrantedCapabilities(
             const std::uint64_t ownerToken)
         {
             if (!onOwnerThread()) {
@@ -475,164 +469,164 @@ namespace paper::provider
             return consumer ? consumer->capabilities : 0;
         }
 
-        PaperResultV1 PAPER_CALL setAnimationAuthorityV1(
+        Status PAPER_CALL setAnimationAuthority(
             const std::uint64_t ownerToken,
-            const PaperAuthorityRequestV1* request)
+            const AuthorityRequest* request)
         {
             if (!request ||
-                request->size < sizeof(PaperAuthorityRequestV1)) {
-                return PaperResultV1::InvalidArgument;
+                request->size < sizeof(AuthorityRequest)) {
+                return Status::InvalidArgument;
             }
-            if (request->version != PAPER_API_VERSION) {
-                return PaperResultV1::UnsupportedVersion;
+            if (request->version != kRecordVersion) {
+                return Status::UnsupportedVersion;
             }
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             auto* consumer = findConsumer(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             if (!hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::AnimationAuthority)) {
-                return PaperResultV1::PermissionDenied;
+                    ConsumerCapability::AnimationAuthority)) {
+                return Status::PermissionDenied;
             }
             if ((request->flags & ~kAllAuthorityFlags) != 0 ||
                 request->leaseFrames >
-                    PAPER_MAX_AUTHORITY_LEASE_FRAMES_V1) {
-                return PaperResultV1::InvalidArgument;
+                    kMaxAuthorityLeaseFrames) {
+                return Status::InvalidArgument;
             }
 
             consumer->authorityFlags = request->flags;
             consumer->remainingFrames = request->leaseFrames;
             consumer->persistentAuthority = request->leaseFrames == 0;
             consumer->authorityUpdatedFrame = s_currentFrame;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL clearAnimationAuthorityV1(
+        Status PAPER_CALL clearAnimationAuthority(
             const std::uint64_t ownerToken)
         {
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             auto* consumer = findConsumer(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             if (!hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::AnimationAuthority)) {
-                return PaperResultV1::PermissionDenied;
+                    ConsumerCapability::AnimationAuthority)) {
+                return Status::PermissionDenied;
             }
             consumer->authorityFlags = 0;
             consumer->remainingFrames = 0;
             consumer->persistentAuthority = false;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL setDevelopmentCaptureV1(
+        Status PAPER_CALL setDevelopmentCapture(
             const std::uint64_t ownerToken,
-            const PaperDevelopmentCaptureRequestV1* request)
+            const DevelopmentCaptureRequest* request)
         {
             if (!request) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
-            if (request->size < sizeof(PaperDevelopmentCaptureRequestV1)) {
-                return PaperResultV1::InvalidSize;
+            if (request->size < sizeof(DevelopmentCaptureRequest)) {
+                return Status::InvalidSize;
             }
-            if (request->version != PAPER_API_VERSION) {
-                return PaperResultV1::UnsupportedVersion;
+            if (request->version != kRecordVersion) {
+                return Status::UnsupportedVersion;
             }
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             auto* consumer = findConsumer(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             if (!hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::DevelopmentCaptureControl)) {
-                return PaperResultV1::PermissionDenied;
+                    ConsumerCapability::DevelopmentCaptureControl)) {
+                return Status::PermissionDenied;
             }
             if (request->scopes == 0 ||
                 (request->scopes & ~development_capture_policy::kAllScopes) != 0 ||
                 request->leaseFrames == 0 ||
                 request->leaseFrames >
-                    PAPER_MAX_DEVELOPMENT_CAPTURE_LEASE_FRAMES_V1) {
-                return PaperResultV1::InvalidArgument;
+                    kMaxDevelopmentCaptureLeaseFrames) {
+                return Status::InvalidArgument;
             }
 
             const auto requested =
                 development_capture_policy::expandDependencies(request->scopes);
             const auto denied = requested & ~s_captureAllowedScopes;
             if (!hasCaptureConfigFlag(
-                    PaperDevelopmentCaptureConfigFlagV1::
+                    DevelopmentCaptureConfigFlag::
                         AllowApiActivation) ||
                 denied != 0) {
                 consumer->captureDeniedScopes = hasCaptureConfigFlag(
-                        PaperDevelopmentCaptureConfigFlagV1::
+                        DevelopmentCaptureConfigFlag::
                             AllowApiActivation) ?
                     denied : requested;
-                return PaperResultV1::PermissionDenied;
+                return Status::PermissionDenied;
             }
 
             consumer->captureScopes = requested;
             consumer->captureDeniedScopes = 0;
             consumer->captureRemainingFrames = request->leaseFrames;
             consumer->captureUpdatedFrame = s_currentFrame;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL clearDevelopmentCaptureV1(
+        Status PAPER_CALL clearDevelopmentCapture(
             const std::uint64_t ownerToken)
         {
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             auto* consumer = findConsumer(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             if (!hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::DevelopmentCaptureControl)) {
-                return PaperResultV1::PermissionDenied;
+                    ConsumerCapability::DevelopmentCaptureControl)) {
+                return Status::PermissionDenied;
             }
             consumer->captureScopes = 0;
             consumer->captureDeniedScopes = 0;
             consumer->captureRemainingFrames = 0;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL getDevelopmentCaptureStateV1(
+        Status PAPER_CALL getDevelopmentCaptureState(
             const std::uint64_t ownerToken,
-            PaperDevelopmentCaptureStateV1* outState)
+            DevelopmentCaptureState* outState)
         {
             if (!outState) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
-            if (outState->size < sizeof(PaperDevelopmentCaptureStateV1)) {
-                return PaperResultV1::InvalidSize;
+            if (outState->size < sizeof(DevelopmentCaptureState)) {
+                return Status::InvalidSize;
             }
-            if (outState->version != PAPER_API_VERSION) {
-                return PaperResultV1::UnsupportedVersion;
+            if (outState->version != kRecordVersion) {
+                return Status::UnsupportedVersion;
             }
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             if (!hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::DevelopmentCaptureControl)) {
-                return PaperResultV1::PermissionDenied;
+                    ConsumerCapability::DevelopmentCaptureControl)) {
+                return Status::PermissionDenied;
             }
-            PaperDevelopmentCaptureStateV1 state{};
+            DevelopmentCaptureState state{};
             state.mode = s_captureMode;
             state.cacheAccess = s_cacheAccess;
             state.allowedScopes = s_captureAllowedScopes;
@@ -645,26 +639,26 @@ namespace paper::provider
             state.configRevision = s_captureConfigRevision;
             if (s_captureAutoStartScopes != 0) {
                 state.stateFlags |= static_cast<std::uint32_t>(
-                    PaperDevelopmentCaptureStateFlagV1::AutoStartActive);
+                    DevelopmentCaptureStateFlag::AutoStartActive);
             }
             if (hasCaptureConfigFlag(
-                    PaperDevelopmentCaptureConfigFlagV1::
+                    DevelopmentCaptureConfigFlag::
                         AllowApiActivation)) {
                 state.stateFlags |= static_cast<std::uint32_t>(
-                    PaperDevelopmentCaptureStateFlagV1::ApiActivationAllowed);
+                    DevelopmentCaptureStateFlag::ApiActivationAllowed);
             }
             if (consumer->captureScopes != 0) {
                 state.stateFlags |= static_cast<std::uint32_t>(
-                    PaperDevelopmentCaptureStateFlagV1::OwnerLeaseActive);
+                    DevelopmentCaptureStateFlag::OwnerLeaseActive);
             }
             if (state.aggregateRequestedScopes != 0) {
                 state.stateFlags |= static_cast<std::uint32_t>(
-                    PaperDevelopmentCaptureStateFlagV1::AggregateLeaseActive);
+                    DevelopmentCaptureStateFlag::AggregateLeaseActive);
             }
 
-            PaperReloadAnimationCatalogStateV1 animation{};
+            ReloadAnimationCatalogState animation{};
             if (animation_evidence::getCatalogState(animation) ==
-                PaperResultV1::Ok) {
+                Status::Ok) {
                 state.weaponFormId = animation.weaponFormId;
                 state.weaponGenerationKey = animation.weaponGenerationKey;
                 state.storedSampleBytes = animation.storedSampleBytes;
@@ -677,70 +671,70 @@ namespace paper::provider
                 state.exactClipsSampled = animation.exactClipsSampled;
                 state.exactClipsRejected = animation.exactClipsRejected;
                 if (animation.exactPreharvestState ==
-                    PaperReloadAnimationPreharvestStateV1::Completed) {
+                    ReloadAnimationPreharvestState::Completed) {
                     state.stateFlags |= static_cast<std::uint32_t>(
-                        PaperDevelopmentCaptureStateFlagV1::HarvestCompleted);
+                        DevelopmentCaptureStateFlag::HarvestCompleted);
                 } else if (animation.exactPreharvestState ==
-                           PaperReloadAnimationPreharvestStateV1::Failed) {
+                           ReloadAnimationPreharvestState::Failed) {
                     state.stateFlags |= static_cast<std::uint32_t>(
-                        PaperDevelopmentCaptureStateFlagV1::HarvestFailed);
+                        DevelopmentCaptureStateFlag::HarvestFailed);
                 }
             }
 
-            PaperWeaponMotionStoreStateV1 store{};
-            if (weapon_motion::getStoreState(store) == PaperResultV1::Ok) {
+            WeaponMotionStoreState store{};
+            if (weapon_motion::getStoreState(store) == Status::Ok) {
                 state.motionStoreFlags = store.flags;
                 state.motionPartCount = store.inMemoryPartCount;
                 state.motionStageCount = store.inMemoryStageCount;
                 state.persistentRecordCount = store.persistentRecordCount;
                 state.pendingWriteCount = store.pendingWriteCount;
                 const auto hasStoreFlag = [&store](
-                    const PaperWeaponMotionStoreFlagV1 flag) {
+                    const WeaponMotionStoreFlag flag) {
                     return (store.flags & static_cast<std::uint32_t>(flag)) != 0;
                 };
                 if (hasStoreFlag(
-                        PaperWeaponMotionStoreFlagV1::CacheLookupPending)) {
+                        WeaponMotionStoreFlag::CacheLookupPending)) {
                     state.stateFlags |= static_cast<std::uint32_t>(
-                        PaperDevelopmentCaptureStateFlagV1::
+                        DevelopmentCaptureStateFlag::
                             CacheLookupPending);
                 }
                 if (hasStoreFlag(
-                        PaperWeaponMotionStoreFlagV1::SessionCacheHit)) {
+                        WeaponMotionStoreFlag::SessionCacheHit)) {
                     state.stateFlags |= static_cast<std::uint32_t>(
-                        PaperDevelopmentCaptureStateFlagV1::SessionCacheHit);
+                        DevelopmentCaptureStateFlag::SessionCacheHit);
                 }
                 if (hasStoreFlag(
-                        PaperWeaponMotionStoreFlagV1::PersistentCacheHit)) {
+                        WeaponMotionStoreFlag::PersistentCacheHit)) {
                     state.stateFlags |= static_cast<std::uint32_t>(
-                        PaperDevelopmentCaptureStateFlagV1::
+                        DevelopmentCaptureStateFlag::
                             PersistentCacheHit);
                 }
             }
             *outState = state;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL registerEventCallbackV1(
+        Status PAPER_CALL registerEventCallback(
             const std::uint64_t ownerToken,
-            const PaperEventCallbackV1 callback,
+            const EventCallback callback,
             void* userData,
             std::uint64_t* outCallbackToken)
         {
             if (!callback || !outCallbackToken) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCallbackToken = 0;
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             if (!hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::FrameCallbacks)) {
-                return PaperResultV1::PermissionDenied;
+                    ConsumerCapability::FrameCallbacks)) {
+                return Status::PermissionDenied;
             }
 
             for (auto& slot : s_callbacks) {
@@ -752,53 +746,53 @@ namespace paper::provider
                 slot.callback = callback;
                 slot.userData = userData;
                 *outCallbackToken = slot.token;
-                return PaperResultV1::Ok;
+                return Status::Ok;
             }
-            return PaperResultV1::CapacityReached;
+            return Status::CapacityReached;
         }
 
-        PaperResultV1 PAPER_CALL unregisterEventCallbackV1(
+        Status PAPER_CALL unregisterEventCallback(
             const std::uint64_t ownerToken,
             const std::uint64_t callbackToken)
         {
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             if (!findConsumer(ownerToken)) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             for (auto& slot : s_callbacks) {
                 if (slot.token == callbackToken &&
                     slot.ownerToken == ownerToken) {
                     slot = {};
-                    return PaperResultV1::Ok;
+                    return Status::Ok;
                 }
             }
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
 
-        [[nodiscard]] PaperResultV1 validateReloadConsumerAny(
+        [[nodiscard]] Status validateReloadConsumerAny(
             const std::uint64_t ownerToken,
             const std::uint32_t capabilityMask)
         {
             if (!isReady()) {
-                return PaperResultV1::NotReady;
+                return Status::NotReady;
             }
             if (!onOwnerThread()) {
-                return PaperResultV1::WrongThread;
+                return Status::WrongThread;
             }
             const auto* consumer = findConsumerConst(ownerToken);
             if (!consumer) {
-                return PaperResultV1::UnknownOwner;
+                return Status::UnknownOwner;
             }
             return (consumer->capabilities & capabilityMask) != 0 ?
-                PaperResultV1::Ok :
-                PaperResultV1::PermissionDenied;
+                Status::Ok :
+                Status::PermissionDenied;
         }
 
-        [[nodiscard]] PaperResultV1 validateReloadConsumer(
+        [[nodiscard]] Status validateReloadConsumer(
             const std::uint64_t ownerToken,
-            const PaperConsumerCapabilityV1 capability)
+            const ConsumerCapability capability)
         {
             return validateReloadConsumerAny(
                 ownerToken,
@@ -806,83 +800,83 @@ namespace paper::provider
         }
 
         template <class State>
-        [[nodiscard]] PaperResultV1 validateReloadOutput(
+        [[nodiscard]] Status validateReloadOutput(
             const std::uint64_t ownerToken,
-            const PaperConsumerCapabilityV1 capability,
+            const ConsumerCapability capability,
             const State* output)
         {
             if (!output) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             if (output->size < sizeof(State)) {
-                return PaperResultV1::InvalidSize;
+                return Status::InvalidSize;
             }
-            if (output->version != PAPER_API_VERSION) {
-                return PaperResultV1::UnsupportedVersion;
+            if (output->version != kRecordVersion) {
+                return Status::UnsupportedVersion;
             }
             return validateReloadConsumer(ownerToken, capability);
         }
 
         template <class State>
-        [[nodiscard]] PaperResultV1 validateReloadOutputAny(
+        [[nodiscard]] Status validateReloadOutputAny(
             const std::uint64_t ownerToken,
             const std::uint32_t capabilityMask,
             const State* output)
         {
             if (!output) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             if (output->size < sizeof(State)) {
-                return PaperResultV1::InvalidSize;
+                return Status::InvalidSize;
             }
-            if (output->version != PAPER_API_VERSION) {
-                return PaperResultV1::UnsupportedVersion;
+            if (output->version != kRecordVersion) {
+                return Status::UnsupportedVersion;
             }
             return validateReloadConsumerAny(ownerToken, capabilityMask);
         }
 
-        PaperResultV1 PAPER_CALL getReloadObservationLimitsV1(
+        Status PAPER_CALL getReloadObservationLimits(
             const std::uint64_t ownerToken,
-            PaperReloadObservationLimitsV1* outLimits)
+            ReloadObservationLimits* outLimits)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadObservations,
+                ConsumerCapability::ReloadObservations,
                 outLimits);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 reload_observation::getLimits(*outLimits) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getReloadCatalogStateV1(
+        Status PAPER_CALL getReloadCatalogState(
             const std::uint64_t ownerToken,
-            PaperReloadCatalogStateV1* outState)
+            ReloadCatalogState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadObservations,
+                ConsumerCapability::ReloadObservations,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 reload_observation::getCatalogState(*outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadCatalogNodesV1(
+        Status PAPER_CALL copyReloadCatalogNodes(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t firstNode,
-            PaperReloadNodeCatalogEntryV1* outNodes,
+            ReloadNodeCatalogEntry* outNodes,
             const std::uint32_t maxNodes,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadObservations);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::ReloadObservations);
+            return validation == Status::Ok ?
                 reload_observation::copyCatalogNodes(
                     catalogSequence,
                     firstNode,
@@ -892,22 +886,22 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadEvidenceV1(
+        Status PAPER_CALL copyReloadEvidence(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t firstEvidence,
-            PaperReloadEvidenceV1* outEvidence,
+            ReloadEvidence* outEvidence,
             const std::uint32_t maxEvidence,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadObservations);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::ReloadObservations);
+            return validation == Status::Ok ?
                 reload_observation::copyEvidence(
                     catalogSequence,
                     firstEvidence,
@@ -917,23 +911,23 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadEvidencePointsV1(
+        Status PAPER_CALL copyReloadEvidencePoints(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t evidenceId,
             const std::uint32_t firstPoint,
-            PaperPoint3V1* outPoints,
+            Point3* outPoints,
             const std::uint32_t maxPoints,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadEvidenceGeometry);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::ReloadEvidenceGeometry);
+            return validation == Status::Ok ?
                 reload_observation::copyEvidencePoints(
                     catalogSequence,
                     evidenceId,
@@ -944,35 +938,35 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getReloadFrameStateV1(
+        Status PAPER_CALL getReloadFrameState(
             const std::uint64_t ownerToken,
-            PaperReloadFrameStateV1* outState)
+            ReloadFrameState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadObservations,
+                ConsumerCapability::ReloadObservations,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 reload_observation::getFrameState(*outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadNodeObservationsV1(
+        Status PAPER_CALL copyReloadNodeObservations(
             const std::uint64_t ownerToken,
             const std::uint64_t snapshotSequence,
             const std::uint32_t firstObservation,
-            PaperReloadNodeObservationV1* outObservations,
+            ReloadNodeObservation* outObservations,
             const std::uint32_t maxObservations,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::ReloadObservations);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::ReloadObservations);
+            return validation == Status::Ok ?
                 reload_observation::copyNodeObservations(
                     snapshotSequence,
                     firstObservation,
@@ -982,61 +976,61 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getReloadAnimationLimitsV1(
+        Status PAPER_CALL getReloadAnimationLimits(
             const std::uint64_t ownerToken,
-            PaperReloadAnimationLimitsV1* outLimits)
+            ReloadAnimationLimits* outLimits)
         {
             const auto validation = validateReloadOutputAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities,
                 outLimits);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::getLimits(*outLimits) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getReloadAnimationCatalogStateV1(
+        Status PAPER_CALL getReloadAnimationCatalogState(
             const std::uint64_t ownerToken,
-            PaperReloadAnimationCatalogStateV1* outState)
+            ReloadAnimationCatalogState* outState)
         {
             const auto validation = validateReloadOutputAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::getCatalogState(*outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getReloadAnimationLiveStateV1(
+        Status PAPER_CALL getReloadAnimationLiveState(
             const std::uint64_t ownerToken,
-            PaperReloadAnimationLiveStateV1* outState)
+            ReloadAnimationLiveState* outState)
         {
             const auto validation = validateReloadOutputAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::getLiveState(*outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadAnimationClipsV1(
+        Status PAPER_CALL copyReloadAnimationClips(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t firstClip,
-            PaperReloadAnimationClipV1* outClips,
+            ReloadAnimationClip* outClips,
             const std::uint32_t maxClips,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumerAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::copyClips(
                     catalogSequence,
                     firstClip,
@@ -1046,23 +1040,23 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadAnimationTracksV1(
+        Status PAPER_CALL copyReloadAnimationTracks(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t clipId,
             const std::uint32_t firstTrack,
-            PaperReloadAnimationTrackV1* outTracks,
+            ReloadAnimationTrack* outTracks,
             const std::uint32_t maxTracks,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumerAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::copyTracks(
                     catalogSequence,
                     clipId,
@@ -1073,24 +1067,24 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadAnimationSamplesV1(
+        Status PAPER_CALL copyReloadAnimationSamples(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t clipId,
             const std::uint32_t trackId,
             const std::uint32_t firstSample,
-            PaperReloadAnimationSampleV1* outSamples,
+            ReloadAnimationSample* outSamples,
             const std::uint32_t maxSamples,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumerAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::copySamples(
                     catalogSequence,
                     clipId,
@@ -1102,23 +1096,23 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadAnimationAnnotationsV1(
+        Status PAPER_CALL copyReloadAnimationAnnotations(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t clipId,
             const std::uint32_t firstAnnotation,
-            PaperReloadAnimationAnnotationV1* outAnnotations,
+            ReloadAnimationAnnotation* outAnnotations,
             const std::uint32_t maxAnnotations,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumerAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::copyAnnotations(
                     catalogSequence,
                     clipId,
@@ -1129,23 +1123,23 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadAnimationTriggersV1(
+        Status PAPER_CALL copyReloadAnimationTriggers(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t clipId,
             const std::uint32_t firstTrigger,
-            PaperReloadAnimationTriggerV1* outTriggers,
+            ReloadAnimationTrigger* outTriggers,
             const std::uint32_t maxTriggers,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumerAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::copyTriggers(
                     catalogSequence,
                     clipId,
@@ -1156,22 +1150,22 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadAnimationSkeletonV1(
+        Status PAPER_CALL copyReloadAnimationSkeleton(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t firstBone,
-            PaperReloadAnimationSkeletonBoneV1* outBones,
+            ReloadAnimationSkeletonBone* outBones,
             const std::uint32_t maxBones,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumerAny(
                 ownerToken,
                 kReloadAnimationReadCapabilities);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 animation_evidence::copySkeleton(
                     catalogSequence,
                     firstBone,
@@ -1181,37 +1175,37 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getReloadStageStateV1(
+        Status PAPER_CALL getReloadStageState(
             const std::uint64_t ownerToken,
-            PaperReloadStageStateV1* outState)
+            ReloadStageState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::
+                ConsumerCapability::
                     ReloadStageIdentification,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 reload_stages::getState(*outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL copyReloadStagePartsV1(
+        Status PAPER_CALL copyReloadStageParts(
             const std::uint64_t ownerToken,
             const std::uint64_t snapshotSequence,
             const std::uint32_t firstPart,
-            PaperReloadStagePartV1* outParts,
+            ReloadStagePart* outParts,
             const std::uint32_t maxParts,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::
+                ConsumerCapability::
                     ReloadStageIdentification);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 reload_stages::copyParts(
                     snapshotSequence,
                     firstPart,
@@ -1221,15 +1215,15 @@ namespace paper::provider
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getNativePoseFrameStateV1(
+        Status PAPER_CALL getNativePoseFrameState(
             const std::uint64_t ownerToken,
-            PaperNativePoseFrameStateV1* outState)
+            NativePoseFrameState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::NativePosePipeline,
+                ConsumerCapability::NativePosePipeline,
                 outState);
-            if (validation != PaperResultV1::Ok) {
+            if (validation != Status::Ok) {
                 return validation;
             }
             NativePosePipelineSnapshot snapshot{};
@@ -1238,26 +1232,26 @@ namespace paper::provider
                     s_nativePosePipelineSequence,
                     snapshot) ||
                 snapshot.frame.snapshotSequence == 0) {
-                return PaperResultV1::NotReady;
+                return Status::NotReady;
             }
             *outState = snapshot.frame;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL getNativeHandSolutionV1(
+        Status PAPER_CALL getNativeHandSolution(
             const std::uint64_t ownerToken,
-            const PaperHandV1 hand,
-            PaperNativeHandSolutionV1* outSolution)
+            const Hand hand,
+            NativeHandSolution* outSolution)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::NativePosePipeline,
+                ConsumerCapability::NativePosePipeline,
                 outSolution);
-            if (validation != PaperResultV1::Ok) {
+            if (validation != Status::Ok) {
                 return validation;
             }
-            if (hand != PaperHandV1::Right && hand != PaperHandV1::Left) {
-                return PaperResultV1::InvalidArgument;
+            if (hand != Hand::Right && hand != Hand::Left) {
+                return Status::InvalidArgument;
             }
             NativePosePipelineSnapshot snapshot{};
             if (!copySeqlocked(
@@ -1265,54 +1259,54 @@ namespace paper::provider
                     s_nativePosePipelineSequence,
                     snapshot) ||
                 snapshot.frame.snapshotSequence == 0) {
-                return PaperResultV1::NotReady;
+                return Status::NotReady;
             }
-            *outSolution = hand == PaperHandV1::Left ?
+            *outSolution = hand == Hand::Left ?
                 snapshot.leftHand :
                 snapshot.rightHand;
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
 
-        PaperResultV1 PAPER_CALL getWeaponMotionLimitsV1(
+        Status PAPER_CALL getWeaponMotionLimits(
             const std::uint64_t ownerToken,
-            PaperWeaponMotionLimitsV1* outLimits)
+            WeaponMotionLimits* outLimits)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog,
+                ConsumerCapability::WeaponMotionCatalog,
                 outLimits);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 weapon_motion::getLimits(*outLimits) : validation;
         }
 
-        PaperResultV1 PAPER_CALL getWeaponMotionCatalogStateV1(
+        Status PAPER_CALL getWeaponMotionCatalogState(
             const std::uint64_t ownerToken,
-            PaperWeaponMotionCatalogStateV1* outState)
+            WeaponMotionCatalogState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog,
+                ConsumerCapability::WeaponMotionCatalog,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 weapon_motion::getCatalogState(*outState) : validation;
         }
 
-        PaperResultV1 PAPER_CALL copyWeaponMotionPartsV1(
+        Status PAPER_CALL copyWeaponMotionParts(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t firstPart,
-            PaperWeaponMotionPartV1* outParts,
+            WeaponMotionPart* outParts,
             const std::uint32_t maxParts,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::WeaponMotionCatalog);
+            return validation == Status::Ok ?
                 weapon_motion::copyParts(
                     catalogSequence,
                     firstPart,
@@ -1321,22 +1315,22 @@ namespace paper::provider
                     *outCopied) : validation;
         }
 
-        PaperResultV1 PAPER_CALL copyWeaponMotionStagesV1(
+        Status PAPER_CALL copyWeaponMotionStages(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t firstStage,
-            PaperWeaponMotionStageV1* outStages,
+            WeaponMotionStage* outStages,
             const std::uint32_t maxStages,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::WeaponMotionCatalog);
+            return validation == Status::Ok ?
                 weapon_motion::copyStages(
                     catalogSequence,
                     firstStage,
@@ -1345,23 +1339,23 @@ namespace paper::provider
                     *outCopied) : validation;
         }
 
-        PaperResultV1 PAPER_CALL copyWeaponMotionStageKeysV1(
+        Status PAPER_CALL copyWeaponMotionStageKeys(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t stageId,
             const std::uint32_t firstKey,
-            PaperReloadQsTransformV1* outKeys,
+            ReloadQsTransform* outKeys,
             const std::uint32_t maxKeys,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::WeaponMotionCatalog);
+            return validation == Status::Ok ?
                 weapon_motion::copyStageKeys(
                     catalogSequence,
                     stageId,
@@ -1371,23 +1365,23 @@ namespace paper::provider
                     *outCopied) : validation;
         }
 
-        PaperResultV1 PAPER_CALL copyWeaponMotionFollowersV1(
+        Status PAPER_CALL copyWeaponMotionFollowers(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t stageId,
             const std::uint32_t firstFollower,
-            PaperWeaponMotionFollowerV1* outFollowers,
+            WeaponMotionFollower* outFollowers,
             const std::uint32_t maxFollowers,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::WeaponMotionCatalog);
+            return validation == Status::Ok ?
                 weapon_motion::copyFollowers(
                     catalogSequence,
                     stageId,
@@ -1397,24 +1391,24 @@ namespace paper::provider
                     *outCopied) : validation;
         }
 
-        PaperResultV1 PAPER_CALL copyWeaponMotionFollowerKeysV1(
+        Status PAPER_CALL copyWeaponMotionFollowerKeys(
             const std::uint64_t ownerToken,
             const std::uint64_t catalogSequence,
             const std::uint32_t stageId,
             const std::uint32_t followerIndex,
             const std::uint32_t firstKey,
-            PaperReloadQsTransformV1* outKeys,
+            ReloadQsTransform* outKeys,
             const std::uint32_t maxKeys,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionCatalog);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::WeaponMotionCatalog);
+            return validation == Status::Ok ?
                 weapon_motion::copyFollowerKeys(
                     catalogSequence,
                     stageId,
@@ -1425,34 +1419,34 @@ namespace paper::provider
                     *outCopied) : validation;
         }
 
-        PaperResultV1 PAPER_CALL getWeaponMotionLearningStateV1(
+        Status PAPER_CALL getWeaponMotionLearningState(
             const std::uint64_t ownerToken,
-            PaperWeaponMotionLearningStateV1* outState)
+            WeaponMotionLearningState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionDiagnostics,
+                ConsumerCapability::WeaponMotionDiagnostics,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 weapon_motion::getLearningState(*outState) : validation;
         }
 
-        PaperResultV1 PAPER_CALL copyWeaponMotionRecordersV1(
+        Status PAPER_CALL copyWeaponMotionRecorders(
             const std::uint64_t ownerToken,
             const std::uint64_t snapshotSequence,
             const std::uint32_t firstRecorder,
-            PaperWeaponMotionRecorderV1* outRecorders,
+            WeaponMotionRecorder* outRecorders,
             const std::uint32_t maxRecorders,
             std::uint32_t* outCopied)
         {
             if (!outCopied) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             *outCopied = 0;
             const auto validation = validateReloadConsumer(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionDiagnostics);
-            return validation == PaperResultV1::Ok ?
+                ConsumerCapability::WeaponMotionDiagnostics);
+            return validation == Status::Ok ?
                 weapon_motion::copyRecorders(
                     snapshotSequence,
                     firstRecorder,
@@ -1461,112 +1455,107 @@ namespace paper::provider
                     *outCopied) : validation;
         }
 
-        PaperResultV1 PAPER_CALL getWeaponManipulationFrameStateV1(
+        Status PAPER_CALL getWeaponManipulationFrameState(
             const std::uint64_t ownerToken,
-            PaperWeaponManipulationFrameStateV1* outState)
+            WeaponManipulationFrameState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponManipulationTelemetry,
+                ConsumerCapability::WeaponManipulationTelemetry,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 weapon_motion::getManipulationFrameState(*outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getWeaponManipulationHandStateV1(
+        Status PAPER_CALL getWeaponManipulationHandState(
             const std::uint64_t ownerToken,
-            const PaperHandV1 hand,
-            PaperWeaponManipulationHandStateV1* outState)
+            const Hand hand,
+            WeaponManipulationHandState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponManipulationTelemetry,
+                ConsumerCapability::WeaponManipulationTelemetry,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 weapon_motion::getManipulationHandState(hand, *outState) :
                 validation;
         }
 
-        PaperResultV1 PAPER_CALL getWeaponMotionStoreStateV1(
+        Status PAPER_CALL getWeaponMotionStoreState(
             const std::uint64_t ownerToken,
-            PaperWeaponMotionStoreStateV1* outState)
+            WeaponMotionStoreState* outState)
         {
             const auto validation = validateReloadOutput(
                 ownerToken,
-                PaperConsumerCapabilityV1::WeaponMotionDiagnostics,
+                ConsumerCapability::WeaponMotionDiagnostics,
                 outState);
-            return validation == PaperResultV1::Ok ?
+            return validation == Status::Ok ?
                 weapon_motion::getStoreState(*outState) : validation;
         }
 
-        const PaperProviderApiV1 s_api{
-            &getVersion,
+        const api::provider::Api s_api{
             &getModVersion,
             &apiIsReady,
-            &getRuntimeStateV1,
-            &getConfigStateV1,
-            &getCapturedTransformCountV1,
-            &copyCapturedTransformsV1,
-            &getNativeHandPoseV1,
-            &registerConsumerV1,
-            &unregisterConsumerV1,
-            &getGrantedCapabilitiesV1,
-            &setAnimationAuthorityV1,
-            &clearAnimationAuthorityV1,
-            &registerEventCallbackV1,
-            &unregisterEventCallbackV1,
-            &getReloadObservationLimitsV1,
-            &getReloadCatalogStateV1,
-            &copyReloadCatalogNodesV1,
-            &copyReloadEvidenceV1,
-            &copyReloadEvidencePointsV1,
-            &getReloadFrameStateV1,
-            &copyReloadNodeObservationsV1,
-            &getReloadAnimationLimitsV1,
-            &getReloadAnimationCatalogStateV1,
-            &getReloadAnimationLiveStateV1,
-            &copyReloadAnimationClipsV1,
-            &copyReloadAnimationTracksV1,
-            &copyReloadAnimationSamplesV1,
-            &copyReloadAnimationAnnotationsV1,
-            &copyReloadAnimationTriggersV1,
-            &copyReloadAnimationSkeletonV1,
-            &getReloadStageStateV1,
-            &copyReloadStagePartsV1,
-            &getNativePoseFrameStateV1,
-            &getNativeHandSolutionV1,
-            &getWeaponMotionLimitsV1,
-            &getWeaponMotionCatalogStateV1,
-            &copyWeaponMotionPartsV1,
-            &copyWeaponMotionStagesV1,
-            &copyWeaponMotionStageKeysV1,
-            &copyWeaponMotionFollowersV1,
-            &copyWeaponMotionFollowerKeysV1,
-            &getWeaponMotionLearningStateV1,
-            &copyWeaponMotionRecordersV1,
-            &getWeaponManipulationFrameStateV1,
-            &getWeaponManipulationHandStateV1,
-            &getWeaponMotionStoreStateV1,
-            &setDevelopmentCaptureV1,
-            &clearDevelopmentCaptureV1,
-            &getDevelopmentCaptureStateV1,
-        };
-
-        const PaperProviderDescriptorV1 s_descriptor{
-            .api = std::addressof(s_api),
+            &getRuntimeState,
+            &getConfigState,
+            &getCapturedTransformCount,
+            &copyCapturedTransforms,
+            &getNativeHandPose,
+            &registerConsumer,
+            &unregisterConsumer,
+            &getGrantedCapabilities,
+            &setAnimationAuthority,
+            &clearAnimationAuthority,
+            &registerEventCallback,
+            &unregisterEventCallback,
+            &getReloadObservationLimits,
+            &getReloadCatalogState,
+            &copyReloadCatalogNodes,
+            &copyReloadEvidence,
+            &copyReloadEvidencePoints,
+            &getReloadFrameState,
+            &copyReloadNodeObservations,
+            &getReloadAnimationLimits,
+            &getReloadAnimationCatalogState,
+            &getReloadAnimationLiveState,
+            &copyReloadAnimationClips,
+            &copyReloadAnimationTracks,
+            &copyReloadAnimationSamples,
+            &copyReloadAnimationAnnotations,
+            &copyReloadAnimationTriggers,
+            &copyReloadAnimationSkeleton,
+            &getReloadStageState,
+            &copyReloadStageParts,
+            &getNativePoseFrameState,
+            &getNativeHandSolution,
+            &getWeaponMotionLimits,
+            &getWeaponMotionCatalogState,
+            &copyWeaponMotionParts,
+            &copyWeaponMotionStages,
+            &copyWeaponMotionStageKeys,
+            &copyWeaponMotionFollowers,
+            &copyWeaponMotionFollowerKeys,
+            &getWeaponMotionLearningState,
+            &copyWeaponMotionRecorders,
+            &getWeaponManipulationFrameState,
+            &getWeaponManipulationHandState,
+            &getWeaponMotionStoreState,
+            &setDevelopmentCapture,
+            &clearDevelopmentCapture,
+            &getDevelopmentCaptureState,
         };
     }
 
     void initialize()
     {
-        s_physicalReload.clear();s_physicalEnvironment={};s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
         s_ownerThread = GetCurrentThreadId();
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
-        s_captureMode = PaperDevelopmentCaptureModeV1::User;
-        s_cacheAccess = PaperWeaponMotionCacheAccessV1::Off;
+        s_captureMode = DevelopmentCaptureMode::User;
+        s_cacheAccess = WeaponMotionCacheAccess::Off;
         s_captureConfigFlags = 0;
         s_captureAllowedScopes = 0;
         s_captureAutoStartScopes = 0;
@@ -1588,7 +1577,7 @@ namespace paper::provider
 
     void shutdown()
     {
-        s_physicalReload.clear();s_physicalEnvironment={};s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
         s_ready.store(false, std::memory_order_release);
         s_consumers = {};
         s_callbacks = {};
@@ -1650,7 +1639,7 @@ namespace paper::provider
         if (!onOwnerThread()) {
             return;
         }
-        s_physicalReload.clear();s_physicalEnvironment={};s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
+        s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
         for (auto& consumer : s_consumers) {
             consumer.authorityFlags = 0;
             consumer.remainingFrames = 0;
@@ -1659,7 +1648,7 @@ namespace paper::provider
             consumer.captureDeniedScopes = 0;
             consumer.captureRemainingFrames = 0;
         }
-        PaperRuntimeStateV1 state{};
+        RuntimeState state{};
         state.paperProviderGeneration = s_providerGeneration;
         reload_observation::reset();
         animation_evidence::reset();
@@ -1669,17 +1658,17 @@ namespace paper::provider
         s_captureActiveScopes = 0;
         clearNativePosePipeline();
         publishRuntime(state);
-        dispatchEvent(PaperEventKindV1::RuntimeReset);
+        dispatchEvent(EventKind::RuntimeReset);
     }
 
-    void publishConfig(const PaperConfigStateV1& state)
+    void publishConfig(const ConfigState& state)
     {
         publishSeqlocked(s_configState, s_configSequence, state);
     }
 
     void configureDevelopmentCapture(
-        const PaperDevelopmentCaptureModeV1 mode,
-        const PaperWeaponMotionCacheAccessV1 cacheAccess,
+        const DevelopmentCaptureMode mode,
+        const WeaponMotionCacheAccess cacheAccess,
         const std::uint32_t configFlags,
         const std::uint64_t configRevision)
     {
@@ -1687,16 +1676,16 @@ namespace paper::provider
             return;
         }
         s_captureMode = development_capture_policy::validMode(mode) ?
-            mode : PaperDevelopmentCaptureModeV1::User;
+            mode : DevelopmentCaptureMode::User;
         s_cacheAccess = development_capture_policy::validCacheAccess(cacheAccess) ?
-            cacheAccess : PaperWeaponMotionCacheAccessV1::Off;
+            cacheAccess : WeaponMotionCacheAccess::Off;
         constexpr auto allConfigFlags =
             static_cast<std::uint32_t>(
-                PaperDevelopmentCaptureConfigFlagV1::AutoStart) |
+                DevelopmentCaptureConfigFlag::AutoStart) |
             static_cast<std::uint32_t>(
-                PaperDevelopmentCaptureConfigFlagV1::AllowApiActivation) |
+                DevelopmentCaptureConfigFlag::AllowApiActivation) |
             static_cast<std::uint32_t>(
-                PaperDevelopmentCaptureConfigFlagV1::HotReloadEnabled);
+                DevelopmentCaptureConfigFlag::HotReloadEnabled);
         s_captureConfigFlags = configFlags & allConfigFlags;
         s_captureConfigRevision = configRevision;
         s_captureAllowedScopes = development_capture_policy::allowedScopes(
@@ -1706,11 +1695,11 @@ namespace paper::provider
                 s_captureMode,
                 s_cacheAccess,
                 hasCaptureConfigFlag(
-                    PaperDevelopmentCaptureConfigFlagV1::AutoStart));
+                    DevelopmentCaptureConfigFlag::AutoStart));
         s_captureLegacyScopes &= s_captureAllowedScopes;
         s_captureActiveScopes &= s_captureAllowedScopes;
         const bool apiAllowed = hasCaptureConfigFlag(
-            PaperDevelopmentCaptureConfigFlagV1::AllowApiActivation);
+            DevelopmentCaptureConfigFlag::AllowApiActivation);
         for (auto& consumer : s_consumers) {
             if (!apiAllowed ||
                 (consumer.captureScopes & ~s_captureAllowedScopes) != 0) {
@@ -1727,7 +1716,7 @@ namespace paper::provider
             return 0;
         }
         s_captureLegacyScopes = hasCaptureConfigFlag(
-                PaperDevelopmentCaptureConfigFlagV1::AllowApiActivation) ?
+                DevelopmentCaptureConfigFlag::AllowApiActivation) ?
             development_capture_policy::expandDependencies(
                 legacyRequestedScopes) &
                 s_captureAllowedScopes :
@@ -1750,15 +1739,15 @@ namespace paper::provider
         return onOwnerThread() ? s_captureAllowedScopes : 0;
     }
 
-    void publishRuntime(const PaperRuntimeStateV1& state)
+    void publishRuntime(const RuntimeState& state)
     {
         publishSeqlocked(s_runtimeState, s_runtimeSequence, state);
     }
 
     void publishNativePosePipeline(
-        const PaperNativePoseFrameStateV1& frame,
-        const PaperNativeHandSolutionV1& rightHand,
-        const PaperNativeHandSolutionV1& leftHand)
+        const NativePoseFrameState& frame,
+        const NativeHandSolution& rightHand,
+        const NativeHandSolution& leftHand)
     {
         if (!onOwnerThread()) {
             return;
@@ -1791,12 +1780,12 @@ namespace paper::provider
             NativePosePipelineSnapshot{});
     }
 
-    void dispatchEvent(const PaperEventV1& sourceEvent)
+    void dispatchEvent(const Event& sourceEvent)
     {
         if (!onOwnerThread()) {
             return;
         }
-        PaperRuntimeStateV1 runtime{};
+        RuntimeState runtime{};
         if (!copySeqlocked(s_runtimeState, s_runtimeSequence, runtime)) {
             return;
         }
@@ -1812,33 +1801,33 @@ namespace paper::provider
             if (!consumer) {
                 continue;
             }
-            if (eventData.kind == PaperEventKindV1::PresentationComplete &&
-                !hasCapability(*consumer, PaperConsumerCapabilityV1::NativePosePipeline)) {
+            if (eventData.kind == EventKind::PresentationComplete &&
+                !hasCapability(*consumer, ConsumerCapability::NativePosePipeline)) {
                 continue;
             }
             const auto manipulationEvent =
                 eventData.kind >=
-                    PaperEventKindV1::WeaponManipulationStarted &&
+                    EventKind::WeaponManipulationStarted &&
                 eventData.kind <=
-                    PaperEventKindV1::WeaponManipulationEnded;
+                    EventKind::WeaponManipulationEnded;
             if (manipulationEvent && !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::
+                    ConsumerCapability::
                         WeaponManipulationTelemetry)) {
                 continue;
             }
             if (eventData.kind ==
-                    PaperEventKindV1::WeaponMotionCatalogChanged &&
+                    EventKind::WeaponMotionCatalogChanged &&
                 !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::WeaponMotionCatalog)) {
+                    ConsumerCapability::WeaponMotionCatalog)) {
                 continue;
             }
             if (eventData.kind ==
-                    PaperEventKindV1::WeaponMotionCandidateCompleted &&
+                    EventKind::WeaponMotionCandidateCompleted &&
                 !hasCapability(
                     *consumer,
-                    PaperConsumerCapabilityV1::WeaponMotionDiagnostics)) {
+                    ConsumerCapability::WeaponMotionDiagnostics)) {
                 continue;
             }
             const auto callback = slot.callback;
@@ -1859,14 +1848,14 @@ namespace paper::provider
         }
     }
 
-    void dispatchEvent(const PaperEventKindV1 kind)
+    void dispatchEvent(const EventKind kind)
     {
-        PaperEventV1 eventData{};
+        Event eventData{};
         eventData.kind = kind;
         dispatchEvent(eventData);
     }
 
-    bool hasConsumerCapability(const PaperConsumerCapabilityV1 capability)
+    bool hasConsumerCapability(const ConsumerCapability capability)
     {
         if (!onOwnerThread()) {
             return false;
@@ -1900,13 +1889,7 @@ namespace paper::provider
     bool physicalReloadActive() noexcept
     {
         if(!onOwnerThread()||!s_physicalReload.owner)return false;
-        const auto runtimeEnabled=static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::RuntimeEnabled);
-        const bool early=s_physicalReload.contractVersion==physical_reload::v3::kVersion;
-        const bool v2=s_physicalReload.contractVersion==physical_reload::v2::kVersion;
-        const auto& identity=v2?s_physicalEnvironment.identity:s_runtimeState;
-        const bool ready=early?s_currentFrame<=s_physicalReload.expires:v2?s_physicalEnvironment.current(s_currentFrame):(s_runtimeState.statusFlags&runtimeEnabled)!=0;
-        if(!s_ready.load(std::memory_order_acquire)||!ready||
-            (!early&&!s_physicalReload.matches(identity,s_currentFrame))||currentConsumerAuthorityFlags()!=0) {
+        if(!s_ready.load(std::memory_order_acquire)||s_currentFrame>s_physicalReload.expires||currentConsumerAuthorityFlags()!=0) {
             s_physicalReload.clear();s_physicalEquippedData=nullptr;s_physicalInstance=nullptr;
             return false;
         }
@@ -1917,169 +1900,101 @@ namespace paper::provider
         return false;
     }
 
-    void publishPhysicalReloadEnvironment(const physical_reload::Environment& environment) noexcept
-    {
-        if(!onOwnerThread())return;
-        s_physicalEnvironment=environment;
-        if(s_physicalReload.contractVersion==physical_reload::v2::kVersion)(void)physicalReloadActive();
-    }
-
     bool physicalManualCycleActive() noexcept
     {
-        return physicalReloadActive()&&(s_physicalReload.contractVersion==physical_reload::v2::kVersion||s_physicalReload.contractVersion==physical_reload::v3::kVersion)&&
-            (s_physicalReload.flags&static_cast<std::uint32_t>(physical_reload::v2::Flag::ManualCycle));
+        return physicalReloadActive()&&s_physicalReload.manualCycle();
     }
 
-    const physical_reload::ApiV1* physicalReloadApi() noexcept
+    namespace
     {
-        using Result=api::PaperResultV1;
-        static const physical_reload::ApiV1 table{
-            .acquire=[](std::uint64_t owner,const physical_reload::Request* request) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!request)return Result::InvalidArgument;
-                if(request->size!=sizeof(*request))return Result::InvalidSize;
-                if(request->version!=physical_reload::kVersion)return Result::UnsupportedVersion;
+        namespace contract = api::physical_reload;
+
+        // The lease binds the exact native equipped item; no PAPER animation
+        // snapshot or weapon-part readiness is required.
+        const contract::Api s_physicalReloadApi{
+            .acquire=[](api::OwnerToken owner,const contract::Request* request) noexcept -> Status {
+                if(!onOwnerThread())return Status::WrongThread;
+                if(!request)return Status::InvalidArgument;
+                if(request->size!=sizeof(*request))return Status::InvalidSize;
+                if(request->version!=kRecordVersion)return Status::UnsupportedVersion;
+                if(request->flags&~contract::kKnownFlags)return Status::InvalidArgument;
                 const auto* consumer=findConsumerConst(owner);
-                if(!consumer)return Result::UnknownOwner;
-                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::AnimationAuthority))return Result::PermissionDenied;
-                if(!s_ready.load(std::memory_order_acquire)||!manual_reload_only::physicalControlReady()||
-                    (s_runtimeState.statusFlags&static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::RuntimeEnabled))==0)
-                    return Result::NotReady;
-                if(currentConsumerAuthorityFlags()!=0)return Result::OwnerConflict;
-                constexpr auto busy=static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::ReloadEventActive)|
-                    static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::ManualCycleActive);
-                if(s_runtimeState.statusFlags&busy)return Result::NotReady;
+                if(!consumer)return Status::UnknownOwner;
+                if(!hasCapability(*consumer,ConsumerCapability::AnimationAuthority))return Status::PermissionDenied;
+                if(!request->weaponFormId||!request->leaseFrames||request->leaseFrames>contract::kMaxLeaseFrames)return Status::InvalidArgument;
+                if(!s_ready.load(std::memory_order_acquire))return Status::NotReady;
+                if(request->observedFrame>s_currentFrame+1||s_currentFrame>request->observedFrame+1)return Status::StaleSnapshot;
+                if(currentConsumerAuthorityFlags()!=0)return Status::OwnerConflict;
+                if(physicalReloadActive()&&s_physicalReload.owner!=owner)return Status::OwnerConflict;
                 const auto* item=f4vr::getEquippedItem();
-                if(!item||!item->data||!item->item.object||item->item.object->formID!=request->weaponFormId)return Result::StaleSnapshot;
-                if(s_physicalReload.owner==owner&&s_physicalReload.matches(s_runtimeState,s_currentFrame)&&
-                    (item->data.get()!=s_physicalEquippedData||item->item.instanceData.get()!=s_physicalInstance)) {
-                    s_physicalReload.clear();return Result::StaleSnapshot;
-                }
-                const auto result=s_physicalReload.set(owner,*request,s_runtimeState,s_currentFrame);
-                if(result==Result::Ok){s_physicalEquippedData=item->data.get();s_physicalInstance=item->item.instanceData.get();}
+                if(!item||!item->data||!item->item.object||item->item.object->formID!=request->weaponFormId)return Status::StaleSnapshot;
+                const auto result=s_physicalReload.set(owner,*request,s_currentFrame);
+                if(result==Status::Ok){s_physicalEquippedData=item->data.get();s_physicalInstance=item->item.instanceData.get();}
                 return result;
             },
-            .clear=[](std::uint64_t owner) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!findConsumerConst(owner))return Result::UnknownOwner;
-                if(s_physicalReload.owner&&s_physicalReload.owner!=owner&&physicalReloadActive())return Result::OwnerConflict;
+            .clear=[](api::OwnerToken owner) noexcept -> Status {
+                if(!onOwnerThread())return Status::WrongThread;
+                if(!findConsumerConst(owner))return Status::UnknownOwner;
+                if(s_physicalReload.owner&&s_physicalReload.owner!=owner&&physicalReloadActive())return Status::OwnerConflict;
                 if(s_physicalReload.owner==owner)s_physicalReload.clear();
-                return Result::Ok;
+                return Status::Ok;
             },
-            .read=[](std::uint64_t owner,physical_reload::State* output) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!output)return Result::InvalidArgument;
-                if(output->size!=sizeof(*output))return Result::InvalidSize;
-                if(output->version!=physical_reload::kVersion)return Result::UnsupportedVersion;
+            .read=[](api::OwnerToken owner,contract::State* output) noexcept -> Status {
+                if(!onOwnerThread())return Status::WrongThread;
+                if(!output)return Status::InvalidArgument;
+                if(output->size!=sizeof(*output))return Status::InvalidSize;
+                if(output->version!=kRecordVersion)return Status::UnsupportedVersion;
                 *output={};const auto* consumer=findConsumerConst(owner);
-                if(!consumer)return Result::UnknownOwner;
-                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::RuntimeState))return Result::PermissionDenied;
+                if(!consumer)return Status::UnknownOwner;
+                if(!hasCapability(*consumer,ConsumerCapability::RuntimeState))return Status::PermissionDenied;
                 if(physicalReloadActive()) {
                     output->active=1;output->owner=s_physicalReload.owner;output->weaponFormId=s_physicalReload.request.weaponFormId;
                     output->weaponGenerationKey=s_physicalReload.request.weaponGenerationKey;output->expiresAfterFrame=s_physicalReload.expires;
+                    output->flags=s_physicalReload.request.flags;
                 }
-                return Result::Ok;
+                return Status::Ok;
             }
         };
-        return &table;
+
+        const std::array s_interfaces{
+            discovery::describe(s_api),
+            discovery::describe(s_physicalReloadApi),
+        };
+
+        // An outdated consumer usually retries; each refused (interface,
+        // major) pair and each retired export is logged once.
+        std::array<std::atomic<std::uint32_t>,4> s_refusedMajors{};
+        std::atomic<std::uint32_t> s_refusedExports{};
+
+        void logRefusedMajor(const api::InterfaceId id,const std::uint32_t major) noexcept
+        {
+            const auto index=static_cast<std::uint32_t>(id);
+            if(index>=s_refusedMajors.size()||major>=32)return;
+            const auto bit=1u<<major;
+            if(s_refusedMajors[index].fetch_or(bit,std::memory_order_relaxed)&bit)return;
+            try {
+                PAPER_LOG_WARN(Api,"Discovery refused interface {} major {}; this PAPER serves only its current majors, so the consumer must be updated",
+                    index,major);
+            } catch (...) {
+            }
+        }
     }
 
-    const physical_reload::v2::Api* physicalReloadApiV2() noexcept
+    api::Status queryInterface(const api::InterfaceId id,const std::uint32_t major,const std::uint32_t minor,
+        const std::uint32_t bytes,const api::InterfaceDescriptorV1** output) noexcept
     {
-        using Result=api::PaperResultV1;
-        static const physical_reload::v2::Api table{
-            .acquire=[](std::uint64_t owner,const physical_reload::v2::Request* request) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!request)return Result::InvalidArgument;
-                if(request->size!=sizeof(*request))return Result::InvalidSize;
-                if(request->version!=physical_reload::v2::kVersion)return Result::UnsupportedVersion;
-                if(request->flags&~physical_reload::v2::kKnownFlags)return Result::InvalidArgument;
-                const auto* consumer=findConsumerConst(owner);
-                if(!consumer)return Result::UnknownOwner;
-                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::AnimationAuthority))return Result::PermissionDenied;
-                if((request->flags&static_cast<std::uint32_t>(physical_reload::v2::Flag::ManualCycle))&&
-                    !manual_reload_only::physicalCycleReady())return Result::NotReady;
-                if(!s_ready.load(std::memory_order_acquire)||!manual_reload_only::physicalControlReady()||
-                    !s_physicalEnvironment.current(s_currentFrame))return Result::NotReady;
-                if(currentConsumerAuthorityFlags()!=0)return Result::OwnerConflict;
-                constexpr auto busy=static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::ReloadEventActive)|
-                    static_cast<std::uint32_t>(PaperRuntimeStatusFlagV1::ManualCycleActive);
-                if(s_runtimeState.statusFlags&busy)return Result::NotReady;
-                const auto* item=f4vr::getEquippedItem();
-                if(!item||!item->data||!item->item.object||item->item.object->formID!=request->weaponFormId)return Result::StaleSnapshot;
-                if(s_physicalReload.owner==owner&&s_physicalReload.matches(s_physicalEnvironment.identity,s_currentFrame)&&
-                    (item->data.get()!=s_physicalEquippedData||item->item.instanceData.get()!=s_physicalInstance)) {
-                    s_physicalReload.clear();return Result::StaleSnapshot;
-                }
-                const auto result=s_physicalReload.set(owner,physical_reload::identity(*request),s_physicalEnvironment.identity,s_currentFrame);
-                if(result==Result::Ok) {
-                    s_physicalReload.contractVersion=physical_reload::v2::kVersion;s_physicalReload.flags=request->flags;
-                    s_physicalEquippedData=item->data.get();s_physicalInstance=item->item.instanceData.get();
-                }
-                return result;
-            },
-            .clear=physicalReloadApi()->clear,
-            .read=[](std::uint64_t owner,physical_reload::v2::State* output) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!output)return Result::InvalidArgument;
-                if(output->size!=sizeof(*output))return Result::InvalidSize;
-                if(output->version!=physical_reload::v2::kVersion)return Result::UnsupportedVersion;
-                *output={};const auto* consumer=findConsumerConst(owner);
-                if(!consumer)return Result::UnknownOwner;
-                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::RuntimeState))return Result::PermissionDenied;
-                if(physicalReloadActive()) {
-                    output->active=1;output->owner=s_physicalReload.owner;output->weaponFormId=s_physicalReload.request.weaponFormId;
-                    output->weaponGenerationKey=s_physicalReload.request.weaponGenerationKey;output->expiresAfterFrame=s_physicalReload.expires;
-                    output->flags=s_physicalReload.flags;
-                }
-                return Result::Ok;
-            }
-        };
-        return &table;
+        const auto status=discovery::query(s_interfaces,id,major,minor,bytes,output);
+        if(status==Status::UnsupportedMajor)logRefusedMajor(id,major);
+        return status;
     }
 
-    const physical_reload::v3::Api* physicalReloadApiV3() noexcept
+    void refuseRetiredExport(const std::uint32_t bit,const char* name) noexcept
     {
-        using Result=api::PaperResultV1;
-        static const physical_reload::v3::Api table{
-            .acquire=[](std::uint64_t owner,const physical_reload::v3::Request* request) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!request)return Result::InvalidArgument;
-                if(request->size!=sizeof(*request))return Result::InvalidSize;
-                if(request->version!=physical_reload::v3::kVersion)return Result::UnsupportedVersion;
-                if(request->flags&~physical_reload::v3::kKnownFlags)return Result::InvalidArgument;
-                const auto* consumer=findConsumerConst(owner);
-                if(!consumer)return Result::UnknownOwner;
-                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::AnimationAuthority))return Result::PermissionDenied;
-                if(!request->weaponFormId||!request->leaseFrames||request->leaseFrames>physical_reload::kMaximumLeaseFrames)return Result::InvalidArgument;
-                if(!s_ready.load(std::memory_order_acquire))return Result::NotReady;
-                if(request->observedFrame>s_currentFrame+1||s_currentFrame>request->observedFrame+1)return Result::StaleSnapshot;
-                if(currentConsumerAuthorityFlags()!=0)return Result::OwnerConflict;
-                if(physicalReloadActive()&&s_physicalReload.owner!=owner)return Result::OwnerConflict;
-                const auto* item=f4vr::getEquippedItem();
-                if(!item||!item->data||!item->item.object||item->item.object->formID!=request->weaponFormId)return Result::StaleSnapshot;
-                const auto result=s_physicalReload.setEarly(owner,*request,s_currentFrame);
-                if(result==Result::Ok){s_physicalEquippedData=item->data.get();s_physicalInstance=item->item.instanceData.get();}
-                return result;
-            },
-            .clear=physicalReloadApi()->clear,
-            .read=[](std::uint64_t owner,physical_reload::v3::State* output) noexcept -> Result {
-                if(!onOwnerThread())return Result::WrongThread;
-                if(!output)return Result::InvalidArgument;
-                if(output->size!=sizeof(*output))return Result::InvalidSize;
-                if(output->version!=physical_reload::v3::kVersion)return Result::UnsupportedVersion;
-                *output={};const auto* consumer=findConsumerConst(owner);
-                if(!consumer)return Result::UnknownOwner;
-                if(!hasCapability(*consumer,PaperConsumerCapabilityV1::RuntimeState))return Result::PermissionDenied;
-                if(physicalReloadActive()) {
-                    output->active=1;output->owner=s_physicalReload.owner;output->weaponFormId=s_physicalReload.request.weaponFormId;
-                    output->weaponGenerationKey=s_physicalReload.request.weaponGenerationKey;output->expiresAfterFrame=s_physicalReload.expires;
-                    output->flags=s_physicalReload.flags;
-                }
-                return Result::Ok;
-            }
-        };
-        return &table;
+        if(s_refusedExports.fetch_or(bit,std::memory_order_relaxed)&bit)return;
+        try {
+            PAPER_LOG_WARN(Api,"Refused {}: it served PAPER's retired pre-2.0 API, so the calling mod must be updated to PAPERAPI_QueryInterfaceV1",name);
+        } catch (...) {
+        }
     }
 
     std::uint32_t generation()
@@ -2091,49 +2006,44 @@ namespace paper::provider
     {
         return s_ready.load(std::memory_order_acquire);
     }
-
-    const PaperProviderApiV1* apiTable()
-    {
-        return std::addressof(s_api);
-    }
-
-    const PaperProviderDescriptorV1* apiDescriptor()
-    {
-        return std::addressof(s_descriptor);
-    }
 }
 
-extern "C" PAPER_API
-    const paper::api::PaperProviderApiV1* PAPER_CALL
-    PAPERAPI_GetProviderApi(const std::uint32_t requestedVersion)
+extern "C" paper::api::Status PAPER_CALL PAPERAPI_QueryInterfaceV1(const paper::api::InterfaceId id,
+    const std::uint32_t exactMajor,const std::uint32_t minimumMinor,const std::uint32_t minimumTableBytes,
+    const paper::api::InterfaceDescriptorV1** output) noexcept
 {
-    if (requestedVersion > paper::api::PAPER_API_VERSION) {
-        return nullptr;
-    }
-    return paper::provider::apiTable();
+    return paper::provider::queryInterface(id,exactMajor,minimumMinor,minimumTableBytes,output);
 }
 
-extern "C" PAPER_API
-    const paper::api::PaperProviderDescriptorV1* PAPER_CALL
-    PAPERAPI_GetProviderDescriptorV1()
+// Retired pre-2.0 discovery exports. They stay exported only so an outdated
+// consumer is refused with a logged reason instead of a missing symbol; each
+// returns no table. Their names are never reused.
+extern "C" const void* PAPER_CALL PAPERAPI_GetProviderApi(std::uint32_t) noexcept
 {
-    return paper::provider::apiDescriptor();
+    paper::provider::refuseRetiredExport(1u<<0,"PAPERAPI_GetProviderApi");
+    return nullptr;
 }
 
-extern "C" PAPER_API const paper::physical_reload::ApiV1* PAPER_CALL
-PAPERAPI_QueryPhysicalReloadV1(std::uint32_t version,std::uint32_t bytes) noexcept
+extern "C" const void* PAPER_CALL PAPERAPI_GetProviderDescriptorV1() noexcept
 {
-    return version==paper::physical_reload::kVersion&&bytes<=sizeof(paper::physical_reload::ApiV1)?paper::provider::physicalReloadApi():nullptr;
+    paper::provider::refuseRetiredExport(1u<<1,"PAPERAPI_GetProviderDescriptorV1");
+    return nullptr;
 }
 
-extern "C" PAPER_API const paper::physical_reload::v2::Api* PAPER_CALL
-PAPERAPI_QueryPhysicalReloadV2(std::uint32_t version,std::uint32_t bytes) noexcept
+extern "C" const void* PAPER_CALL PAPERAPI_QueryPhysicalReloadV1(std::uint32_t,std::uint32_t) noexcept
 {
-    return version==paper::physical_reload::v2::kVersion&&bytes==sizeof(paper::physical_reload::v2::Api)?paper::provider::physicalReloadApiV2():nullptr;
+    paper::provider::refuseRetiredExport(1u<<2,"PAPERAPI_QueryPhysicalReloadV1");
+    return nullptr;
 }
 
-extern "C" PAPER_API const paper::physical_reload::v3::Api* PAPER_CALL
-PAPERAPI_QueryPhysicalReloadV3(std::uint32_t version,std::uint32_t bytes) noexcept
+extern "C" const void* PAPER_CALL PAPERAPI_QueryPhysicalReloadV2(std::uint32_t,std::uint32_t) noexcept
 {
-    return version==paper::physical_reload::v3::kVersion&&bytes==sizeof(paper::physical_reload::v3::Api)?paper::provider::physicalReloadApiV3():nullptr;
+    paper::provider::refuseRetiredExport(1u<<3,"PAPERAPI_QueryPhysicalReloadV2");
+    return nullptr;
+}
+
+extern "C" const void* PAPER_CALL PAPERAPI_QueryPhysicalReloadV3(std::uint32_t,std::uint32_t) noexcept
+{
+    paper::provider::refuseRetiredExport(1u<<4,"PAPERAPI_QueryPhysicalReloadV3");
+    return nullptr;
 }

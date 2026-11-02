@@ -1,7 +1,7 @@
 #pragma once
 
 #include "animation_evidence/ExactClipPreharvest.h"
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 #include "api/RockTypes.h"
 
 #include <cstdint>
@@ -31,51 +31,51 @@ namespace paper::animation_evidence
         const rock::api::animation::AnimationPhaseContext& context);
     [[nodiscard]] FrameDiagnostics snapshotFrameDiagnostics();
 
-    [[nodiscard]] api::PaperResultV1 getLimits(
-        api::PaperReloadAnimationLimitsV1& outLimits);
-    [[nodiscard]] api::PaperResultV1 getCatalogState(
-        api::PaperReloadAnimationCatalogStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 getLiveState(
-        api::PaperReloadAnimationLiveStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 copyClips(
+    [[nodiscard]] api::Status getLimits(
+        api::ReloadAnimationLimits& outLimits);
+    [[nodiscard]] api::Status getCatalogState(
+        api::ReloadAnimationCatalogState& outState);
+    [[nodiscard]] api::Status getLiveState(
+        api::ReloadAnimationLiveState& outState);
+    [[nodiscard]] api::Status copyClips(
         std::uint64_t catalogSequence,
         std::uint32_t firstClip,
-        api::PaperReloadAnimationClipV1* outClips,
+        api::ReloadAnimationClip* outClips,
         std::uint32_t maxClips,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyTracks(
+    [[nodiscard]] api::Status copyTracks(
         std::uint64_t catalogSequence,
         std::uint32_t clipId,
         std::uint32_t firstTrack,
-        api::PaperReloadAnimationTrackV1* outTracks,
+        api::ReloadAnimationTrack* outTracks,
         std::uint32_t maxTracks,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copySamples(
+    [[nodiscard]] api::Status copySamples(
         std::uint64_t catalogSequence,
         std::uint32_t clipId,
         std::uint32_t trackId,
         std::uint32_t firstSample,
-        api::PaperReloadAnimationSampleV1* outSamples,
+        api::ReloadAnimationSample* outSamples,
         std::uint32_t maxSamples,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyAnnotations(
+    [[nodiscard]] api::Status copyAnnotations(
         std::uint64_t catalogSequence,
         std::uint32_t clipId,
         std::uint32_t firstAnnotation,
-        api::PaperReloadAnimationAnnotationV1* outAnnotations,
+        api::ReloadAnimationAnnotation* outAnnotations,
         std::uint32_t maxAnnotations,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copyTriggers(
+    [[nodiscard]] api::Status copyTriggers(
         std::uint64_t catalogSequence,
         std::uint32_t clipId,
         std::uint32_t firstTrigger,
-        api::PaperReloadAnimationTriggerV1* outTriggers,
+        api::ReloadAnimationTrigger* outTriggers,
         std::uint32_t maxTriggers,
         std::uint32_t& outCopied);
-    [[nodiscard]] api::PaperResultV1 copySkeleton(
+    [[nodiscard]] api::Status copySkeleton(
         std::uint64_t catalogSequence,
         std::uint32_t firstBone,
-        api::PaperReloadAnimationSkeletonBoneV1* outBones,
+        api::ReloadAnimationSkeletonBone* outBones,
         std::uint32_t maxBones,
         std::uint32_t& outCopied);
 }

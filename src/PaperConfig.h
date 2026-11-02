@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <cstdint>
 #include <string>
@@ -15,11 +15,11 @@ namespace paper
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };
         float debugNativeAnimationMarkerSize{ 1.5f };
-        api::PaperDevelopmentCaptureModeV1 developmentCaptureMode{
-            api::PaperDevelopmentCaptureModeV1::User
+        api::DevelopmentCaptureMode developmentCaptureMode{
+            api::DevelopmentCaptureMode::User
         };
-        api::PaperWeaponMotionCacheAccessV1 weaponMotionCacheAccess{
-            api::PaperWeaponMotionCacheAccessV1::Off
+        api::WeaponMotionCacheAccess weaponMotionCacheAccess{
+            api::WeaponMotionCacheAccess::Off
         };
         bool developmentCaptureAutoStart{ false };
         bool developmentCaptureAllowApiActivation{ false };

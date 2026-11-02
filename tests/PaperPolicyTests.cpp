@@ -29,68 +29,68 @@ int main()
         paper::weapon_classification_policy;
     namespace capture = paper::development_capture_policy;
 
-    using paper::api::PaperDevelopmentCaptureModeV1;
-    using paper::api::PaperDevelopmentCaptureScopeV1;
-    using paper::api::PaperWeaponMotionCacheAccessV1;
-    constexpr auto captureFlag = [](const PaperDevelopmentCaptureScopeV1 scope) {
+    using paper::api::DevelopmentCaptureMode;
+    using paper::api::DevelopmentCaptureScope;
+    using paper::api::WeaponMotionCacheAccess;
+    constexpr auto captureFlag = [](const DevelopmentCaptureScope scope) {
         return static_cast<std::uint32_t>(scope);
     };
     static_assert(capture::allowedScopes(
-                      PaperDevelopmentCaptureModeV1::User,
-                      PaperWeaponMotionCacheAccessV1::ReadWrite) == 0);
+                      DevelopmentCaptureMode::User,
+                      WeaponMotionCacheAccess::ReadWrite) == 0);
     static_assert(capture::allowedScopes(
-                      PaperDevelopmentCaptureModeV1::Observe,
-                      PaperWeaponMotionCacheAccessV1::Off) ==
-        captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation));
+                      DevelopmentCaptureMode::Observe,
+                      WeaponMotionCacheAccess::Off) ==
+        captureFlag(DevelopmentCaptureScope::PassiveObservation));
     static_assert(capture::allowedScopes(
-                      PaperDevelopmentCaptureModeV1::Observe,
-                      PaperWeaponMotionCacheAccessV1::ReadWrite) ==
-        (captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation) |
+                      DevelopmentCaptureMode::Observe,
+                      WeaponMotionCacheAccess::ReadWrite) ==
+        (captureFlag(DevelopmentCaptureScope::PassiveObservation) |
             captureFlag(
-                PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation) |
-            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheRead) |
-            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)));
+                DevelopmentCaptureScope::WeaponMotionCompilation) |
+            captureFlag(DevelopmentCaptureScope::CompiledCacheRead) |
+            captureFlag(DevelopmentCaptureScope::CompiledCacheWrite)));
     static_assert(capture::allowedScopes(
-                      PaperDevelopmentCaptureModeV1::Harvest,
-                      PaperWeaponMotionCacheAccessV1::Off) ==
-        (captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation) |
+                      DevelopmentCaptureMode::Harvest,
+                      WeaponMotionCacheAccess::Off) ==
+        (captureFlag(DevelopmentCaptureScope::PassiveObservation) |
             captureFlag(
-                PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest)));
+                DevelopmentCaptureScope::ExactAnimationHarvest)));
     static_assert(capture::autoStartScopes(
-                      PaperDevelopmentCaptureModeV1::Harvest,
-                      PaperWeaponMotionCacheAccessV1::Off,
+                      DevelopmentCaptureMode::Harvest,
+                      WeaponMotionCacheAccess::Off,
                       true) ==
         capture::allowedScopes(
-            PaperDevelopmentCaptureModeV1::Harvest,
-            PaperWeaponMotionCacheAccessV1::Off));
+            DevelopmentCaptureMode::Harvest,
+            WeaponMotionCacheAccess::Off));
     static_assert(capture::allowedScopes(
-                      PaperDevelopmentCaptureModeV1::Capture,
-                      PaperWeaponMotionCacheAccessV1::ReadWrite) ==
+                      DevelopmentCaptureMode::Capture,
+                      WeaponMotionCacheAccess::ReadWrite) ==
         capture::kAllScopes);
     static_assert(capture::autoStartScopes(
-                      PaperDevelopmentCaptureModeV1::Capture,
-                      PaperWeaponMotionCacheAccessV1::ReadWrite,
+                      DevelopmentCaptureMode::Capture,
+                      WeaponMotionCacheAccess::ReadWrite,
                       true) ==
         (capture::kAllScopes &
             ~captureFlag(
-                PaperDevelopmentCaptureScopeV1::ExactAnimationHarvest)));
+                DevelopmentCaptureScope::ExactAnimationHarvest)));
     static_assert(capture::autoStartScopes(
-                      PaperDevelopmentCaptureModeV1::Capture,
-                      PaperWeaponMotionCacheAccessV1::ReadWrite,
+                      DevelopmentCaptureMode::Capture,
+                      WeaponMotionCacheAccess::ReadWrite,
                       false) == 0);
     static_assert(capture::expandDependencies(captureFlag(
-                      PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)) ==
-        (captureFlag(PaperDevelopmentCaptureScopeV1::PassiveObservation) |
+                      DevelopmentCaptureScope::CompiledCacheWrite)) ==
+        (captureFlag(DevelopmentCaptureScope::PassiveObservation) |
             captureFlag(
-                PaperDevelopmentCaptureScopeV1::WeaponMotionCompilation) |
-            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheRead) |
-            captureFlag(PaperDevelopmentCaptureScopeV1::CompiledCacheWrite)));
+                DevelopmentCaptureScope::WeaponMotionCompilation) |
+            captureFlag(DevelopmentCaptureScope::CompiledCacheRead) |
+            captureFlag(DevelopmentCaptureScope::CompiledCacheWrite)));
 
     constexpr auto hasFamily = [](
                                    const weapon_family::
                                        WeaponFamilyClassification& value,
                                    const paper::api::
-                                       PaperWeaponFamilyFlagV1 family) {
+                                       WeaponFamilyFlag family) {
         return (value.familyFlags &
             static_cast<std::uint64_t>(family)) != 0;
     };
@@ -98,7 +98,7 @@ int main()
                                            const weapon_family::
                                                WeaponFamilyClassification& value,
                                            const paper::api::
-                                               PaperWeaponFamilyEvidenceFlagV1 evidence) {
+                                               WeaponFamilyEvidenceFlag evidence) {
         return (value.evidenceFlags &
             static_cast<std::uint32_t>(evidence)) != 0;
     };
@@ -107,9 +107,9 @@ int main()
         .rockClassificationAvailable = true,
         .rockClassificationValid = true,
         .keywordFlags = static_cast<std::uint64_t>(
-            paper::api::PaperWeaponKeywordFlagV1::Pistol),
+            paper::api::WeaponKeywordFlag::Pistol),
         .sizeClass = static_cast<std::uint32_t>(
-            paper::api::PaperWeaponSizeClassV1::Pistol),
+            paper::api::WeaponSizeClass::Pistol),
         .weaponDataAvailable = true,
         .partEvidenceComplete = true,
         .magazinePart = true,
@@ -117,19 +117,19 @@ int main()
     });
     static_assert(hasFamily(
         pistol,
-        paper::api::PaperWeaponFamilyFlagV1::Pistol));
+        paper::api::WeaponFamilyFlag::Pistol));
     static_assert(hasFamily(
         pistol,
-        paper::api::PaperWeaponFamilyFlagV1::MagazineFed));
+        paper::api::WeaponFamilyFlag::MagazineFed));
     static_assert(hasFamily(
         pistol,
-        paper::api::PaperWeaponFamilyFlagV1::SlideOperated));
+        paper::api::WeaponFamilyFlag::SlideOperated));
     static_assert(hasFamily(
         pistol,
-        paper::api::PaperWeaponFamilyFlagV1::SemiAutomatic));
+        paper::api::WeaponFamilyFlag::SemiAutomatic));
     static_assert(
         pistol.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::Pistol);
+        paper::api::WeaponPrimaryFamily::Pistol);
 
     constexpr auto partOnlyPistol =
         weapon_family::classifyWeaponFamily({
@@ -140,17 +140,17 @@ int main()
         });
     static_assert(hasFamily(
         partOnlyPistol,
-        paper::api::PaperWeaponFamilyFlagV1::Pistol));
+        paper::api::WeaponFamilyFlag::Pistol));
     static_assert(
         partOnlyPistol.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::Pistol);
+        paper::api::WeaponPrimaryFamily::Pistol);
 
     constexpr auto coarseRifleSlidePistol =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
             .weaponDataAvailable = true,
             .partEvidenceComplete = true,
             .magazinePart = true,
@@ -161,36 +161,36 @@ int main()
         });
     static_assert(hasFamily(
         coarseRifleSlidePistol,
-        paper::api::PaperWeaponFamilyFlagV1::Pistol));
+        paper::api::WeaponFamilyFlag::Pistol));
     static_assert(!hasFamily(
         coarseRifleSlidePistol,
-        paper::api::PaperWeaponFamilyFlagV1::Rifle));
+        paper::api::WeaponFamilyFlag::Rifle));
     static_assert(!hasFamilyEvidence(
         coarseRifleSlidePistol,
-        paper::api::PaperWeaponFamilyEvidenceFlagV1::RockSizeClass));
+        paper::api::WeaponFamilyEvidenceFlag::RockSizeClass));
     static_assert(
         coarseRifleSlidePistol.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::Pistol);
+        paper::api::WeaponPrimaryFamily::Pistol);
 
     constexpr auto coarseRifleFallback =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
         });
     static_assert(hasFamily(
         coarseRifleFallback,
-        paper::api::PaperWeaponFamilyFlagV1::Rifle));
+        paper::api::WeaponFamilyFlag::Rifle));
     static_assert(hasFamilyEvidence(
         coarseRifleFallback,
-        paper::api::PaperWeaponFamilyEvidenceFlagV1::RockSizeClass));
+        paper::api::WeaponFamilyEvidenceFlag::RockSizeClass));
 
     constexpr auto revolver = weapon_family::classifyWeaponFamily({
         .rockClassificationAvailable = true,
         .rockClassificationValid = true,
         .sizeClass = static_cast<std::uint32_t>(
-            paper::api::PaperWeaponSizeClassV1::Pistol),
+            paper::api::WeaponSizeClass::Pistol),
         .weaponDataAvailable = true,
         .revolverAnimationKeyword = true,
         .partEvidenceComplete = true,
@@ -198,23 +198,23 @@ int main()
     });
     static_assert(hasFamily(
         revolver,
-        paper::api::PaperWeaponFamilyFlagV1::Revolver));
+        paper::api::WeaponFamilyFlag::Revolver));
     static_assert(hasFamily(
         revolver,
-        paper::api::PaperWeaponFamilyFlagV1::CylinderFed));
+        paper::api::WeaponFamilyFlag::CylinderFed));
     static_assert(hasFamily(
         revolver,
-        paper::api::PaperWeaponFamilyFlagV1::ManualCycle));
+        paper::api::WeaponFamilyFlag::ManualCycle));
     static_assert(
         revolver.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::Revolver);
+        paper::api::WeaponPrimaryFamily::Revolver);
 
     constexpr auto boltWithMagazine =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
             .weaponDataAvailable = true,
             .boltActionWeaponFlag = true,
             .partEvidenceComplete = true,
@@ -222,13 +222,13 @@ int main()
         });
     static_assert(hasFamily(
         boltWithMagazine,
-        paper::api::PaperWeaponFamilyFlagV1::BoltAction));
+        paper::api::WeaponFamilyFlag::BoltAction));
     static_assert(hasFamily(
         boltWithMagazine,
-        paper::api::PaperWeaponFamilyFlagV1::BoltActionWithMagazine));
+        paper::api::WeaponFamilyFlag::BoltActionWithMagazine));
     static_assert(
         boltWithMagazine.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::
+        paper::api::WeaponPrimaryFamily::
             BoltActionWithMagazine);
 
     constexpr auto boltWithoutMagazine =
@@ -236,68 +236,68 @@ int main()
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
             .weaponDataAvailable = true,
             .boltActionWeaponFlag = true,
             .partEvidenceComplete = true,
         });
     static_assert(hasFamily(
         boltWithoutMagazine,
-        paper::api::PaperWeaponFamilyFlagV1::BoltActionWithoutMagazine));
+        paper::api::WeaponFamilyFlag::BoltActionWithoutMagazine));
     static_assert(!hasFamily(
         boltWithoutMagazine,
-        paper::api::PaperWeaponFamilyFlagV1::InternalFeed));
+        paper::api::WeaponFamilyFlag::InternalFeed));
 
     constexpr auto incompleteBolt =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
             .weaponDataAvailable = true,
             .boltActionWeaponFlag = true,
         });
     static_assert(!hasFamily(
         incompleteBolt,
-        paper::api::PaperWeaponFamilyFlagV1::BoltActionWithoutMagazine));
+        paper::api::WeaponFamilyFlag::BoltActionWithoutMagazine));
     static_assert(hasFamilyEvidence(
         incompleteBolt,
-        paper::api::PaperWeaponFamilyEvidenceFlagV1::
+        paper::api::WeaponFamilyEvidenceFlag::
             PartEvidenceIncomplete));
 
     constexpr auto akPattern = weapon_family::classifyWeaponFamily({
         .rockClassificationAvailable = true,
         .rockClassificationValid = true,
         .sizeClass = static_cast<std::uint32_t>(
-            paper::api::PaperWeaponSizeClassV1::Rifle),
+            paper::api::WeaponSizeClass::Rifle),
         .pluginName = "AKMComplex.esp",
         .editorId = "weapAKM",
         .displayName = "AKM",
     });
     static_assert(hasFamily(
         akPattern,
-        paper::api::PaperWeaponFamilyFlagV1::AKPattern));
+        paper::api::WeaponFamilyFlag::AKPattern));
     static_assert(
         akPattern.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::AKPattern);
+        paper::api::WeaponPrimaryFamily::AKPattern);
     static_assert(hasFamilyEvidence(
         akPattern,
-        paper::api::PaperWeaponFamilyEvidenceFlagV1::FormIdentityText));
+        paper::api::WeaponFamilyEvidenceFlag::FormIdentityText));
 
     constexpr auto arPattern = weapon_family::classifyWeaponFamily({
         .rockClassificationAvailable = true,
         .rockClassificationValid = true,
         .sizeClass = static_cast<std::uint32_t>(
-            paper::api::PaperWeaponSizeClassV1::Rifle),
+            paper::api::WeaponSizeClass::Rifle),
         .editorId = "Weapon_AR15_Service",
         .displayName = "AR-15 Service Rifle",
     });
     static_assert(hasFamily(
         arPattern,
-        paper::api::PaperWeaponFamilyFlagV1::ARPattern));
+        paper::api::WeaponFamilyFlag::ARPattern));
     static_assert(
         arPattern.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::ARPattern);
+        paper::api::WeaponPrimaryFamily::ARPattern);
 
     constexpr auto namedBoltAction =
         weapon_family::classifyWeaponFamily({
@@ -306,41 +306,41 @@ int main()
         });
     static_assert(hasFamily(
         namedBoltAction,
-        paper::api::PaperWeaponFamilyFlagV1::BoltAction));
+        paper::api::WeaponFamilyFlag::BoltAction));
     static_assert(hasFamily(
         namedBoltAction,
-        paper::api::PaperWeaponFamilyFlagV1::BoltActionWithoutMagazine));
+        paper::api::WeaponFamilyFlag::BoltActionWithoutMagazine));
 
     constexpr auto genericAssaultRifle =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .keywordFlags = static_cast<std::uint64_t>(
-                paper::api::PaperWeaponKeywordFlagV1::AssaultRifle),
+                paper::api::WeaponKeywordFlag::AssaultRifle),
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
         });
     static_assert(hasFamily(
         genericAssaultRifle,
-        paper::api::PaperWeaponFamilyFlagV1::AssaultRifle));
+        paper::api::WeaponFamilyFlag::AssaultRifle));
     static_assert(
         genericAssaultRifle.primaryFamily ==
-        paper::api::PaperWeaponPrimaryFamilyV1::AssaultRifle);
+        paper::api::WeaponPrimaryFamily::AssaultRifle);
 
     constexpr auto submachineGun =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,
             .rockClassificationValid = true,
             .sizeClass = static_cast<std::uint32_t>(
-                paper::api::PaperWeaponSizeClassV1::Rifle),
+                paper::api::WeaponSizeClass::Rifle),
             .displayName = "Compact Submachine Gun",
         });
     static_assert(hasFamily(
         submachineGun,
-        paper::api::PaperWeaponFamilyFlagV1::SubmachineGun));
+        paper::api::WeaponFamilyFlag::SubmachineGun));
     static_assert(!hasFamily(
         submachineGun,
-        paper::api::PaperWeaponFamilyFlagV1::MachineGun));
+        paper::api::WeaponFamilyFlag::MachineGun));
 
     constexpr auto namedInternalFeed =
         weapon_family::classifyWeaponFamily({
@@ -348,7 +348,7 @@ int main()
         });
     static_assert(hasFamily(
         namedInternalFeed,
-        paper::api::PaperWeaponFamilyFlagV1::InternalFeed));
+        paper::api::WeaponFamilyFlag::InternalFeed));
 
     constexpr std::uint32_t tacticalActorStateStorage =
         (tactical::kWeaponStateDrawn <<

@@ -89,11 +89,11 @@ namespace paper::animation_evidence
             return { text, length };
         }
 
-        [[nodiscard]] PaperReloadQsTransformV1 toApiTransform(
+        [[nodiscard]] ReloadQsTransform toApiTransform(
             const PoseSample& pose,
             const Vec3& scale)
         {
-            PaperReloadQsTransformV1 result{};
+            ReloadQsTransform result{};
             result.translate[0] = pose.translate.x;
             result.translate[1] = pose.translate.y;
             result.translate[2] = pose.translate.z;
@@ -117,22 +117,22 @@ namespace paper::animation_evidence
 
         struct TrackRecord
         {
-            PaperReloadAnimationTrackV1 value{};
-            std::vector<PaperReloadQsTransformV1> samples;
+            ReloadAnimationTrack value{};
+            std::vector<ReloadQsTransform> samples;
         };
 
         struct ClipRecord
         {
-            PaperReloadAnimationClipV1 value{};
+            ReloadAnimationClip value{};
             std::vector<TrackRecord> tracks;
-            std::vector<PaperReloadAnimationAnnotationV1> annotations;
-            std::vector<PaperReloadAnimationTriggerV1> triggers;
+            std::vector<ReloadAnimationAnnotation> annotations;
+            std::vector<ReloadAnimationTrigger> triggers;
         };
 
         struct NameSet
         {
             std::array<
-                std::array<char, PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1>,
+                std::array<char, kReloadAnimationNameCapacity>,
                 kMaxSceneNames>
                 storage{};
             std::array<const char*, kMaxSceneNames> pointers{};
@@ -142,10 +142,10 @@ namespace paper::animation_evidence
 
         struct Runtime
         {
-            PaperReloadAnimationCatalogStateV1 catalog{};
-            PaperReloadAnimationLiveStateV1 live{};
+            ReloadAnimationCatalogState catalog{};
+            ReloadAnimationLiveState live{};
             std::vector<ClipRecord> clips;
-            std::vector<PaperReloadAnimationSkeletonBoneV1> skeleton;
+            std::vector<ReloadAnimationSkeletonBone> skeleton;
             std::array<clip_telemetry::CapturePacket, kPassiveDrainCapacity>
                 passivePackets{};
             std::uint64_t nextCatalogSequence{ 0 };
@@ -226,8 +226,8 @@ namespace paper::animation_evidence
         {
             clearCatalog(state);
             state.catalog.statusFlags =
-                flag(PaperReloadAnimationCatalogFlagV1::Valid) |
-                flag(PaperReloadAnimationCatalogFlagV1::PassiveCaptureActive);
+                flag(ReloadAnimationCatalogFlag::Valid) |
+                flag(ReloadAnimationCatalogFlag::PassiveCaptureActive);
             state.catalog.weaponFormId = weaponFormId;
             state.catalog.weaponGenerationKey = weaponGenerationKey;
             state.catalog.paperProviderGeneration = paperProviderGeneration;
@@ -238,7 +238,7 @@ namespace paper::animation_evidence
             state.catalog.skeletonGeneration = context.skeletonGeneration;
             state.catalog.rockProviderGeneration = context.providerGeneration;
             state.catalog.sampleStorageBudgetBytes =
-                PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1;
+                kReloadAnimationSampleBudgetBytes;
             state.catalog.updatedFrameIndex = context.frameIndex;
             state.valid = true;
             markMutation(state);
@@ -260,16 +260,16 @@ namespace paper::animation_evidence
                 ClipAcquisition::ExactWeaponPreharvest;
             const bool sourceCapacityAvailable = live ?
                 state.liveClipCount <
-                    PAPER_MAX_RELOAD_LIVE_ANIMATION_CLIPS_V1 :
+                    kMaxReloadLiveAnimationClips :
                 state.exactClipCount <
-                    PAPER_MAX_RELOAD_EXACT_ANIMATION_CLIPS_V1;
+                    kMaxReloadExactAnimationClips;
             if (sourceCapacityAvailable &&
-                state.clips.size() < PAPER_MAX_RELOAD_ANIMATION_CLIPS_V1) {
+                state.clips.size() < kMaxReloadAnimationClips) {
                 return true;
             }
             ++state.catalog.omittedClipCount;
             state.catalog.statusFlags |= flag(
-                PaperReloadAnimationCatalogFlagV1::ClipCapacityTruncated);
+                ReloadAnimationCatalogFlag::ClipCapacityTruncated);
             markMutation(state);
             return false;
         }
@@ -292,7 +292,7 @@ namespace paper::animation_evidence
                 animation_evidence_policy::boundedSampleCopyCount(
                     requestedCount,
                     remainingBytes,
-                    sizeof(PaperReloadQsTransformV1));
+                    sizeof(ReloadQsTransform));
             track.samples.reserve(copyCount);
             for (std::uint32_t sample = 0; sample < copyCount; ++sample) {
                 track.samples.push_back(toApiTransform(
@@ -302,16 +302,16 @@ namespace paper::animation_evidence
             track.value.sampleCount = copyCount;
             if (copyCount > 0) {
                 track.value.flags |= flag(
-                    PaperReloadAnimationTrackFlagV1::SamplesAvailable);
+                    ReloadAnimationTrackFlag::SamplesAvailable);
             }
             state.catalog.storedSampleBytes +=
                 static_cast<std::uint64_t>(copyCount) *
-                sizeof(PaperReloadQsTransformV1);
+                sizeof(ReloadQsTransform);
             if (copyCount < requestedCount) {
                 clip.value.flags |= flag(
-                    PaperReloadAnimationClipFlagV1::SamplesTruncated);
+                    ReloadAnimationClipFlag::SamplesTruncated);
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         SampleStorageTruncated);
             }
         }
@@ -326,41 +326,41 @@ namespace paper::animation_evidence
             }
             const auto count = (std::min)(
                 source.skeletonBoneCount,
-                PAPER_MAX_RELOAD_SKELETON_BONES_V1);
-            std::vector<PaperReloadAnimationSkeletonBoneV1> skeleton;
+                kMaxReloadSkeletonBones);
+            std::vector<ReloadAnimationSkeletonBone> skeleton;
             skeleton.reserve(count);
             for (std::uint32_t index = 0; index < count; ++index) {
                 const auto& sourceBone = source.skeletonBones[index];
-                PaperReloadAnimationSkeletonBoneV1 bone{};
+                ReloadAnimationSkeletonBone bone{};
                 bone.boneIndex = sourceBone.boneIndex;
                 bone.parentBoneIndex = sourceBone.parentBoneIndex;
                 bone.transformTrackIndex = sourceBone.transformTrackIndex;
                 if ((sourceBone.flags & 1u) != 0) {
                     bone.flags |= flag(
-                        PaperReloadAnimationTrackFlagV1::BoneNameValid);
+                        ReloadAnimationTrackFlag::BoneNameValid);
                     if (copyText(
                             bone.boneName,
                             boundedText(
                                 sourceBone.name.data(),
                                 sourceBone.name.size()))) {
                         bone.flags |= flag(
-                            PaperReloadAnimationTrackFlagV1::
+                            ReloadAnimationTrackFlag::
                                 BoneNameTruncated);
                     }
                 }
                 if (sourceBone.parentBoneIndex >= 0) {
                     bone.flags |= flag(
-                        PaperReloadAnimationTrackFlagV1::
+                        ReloadAnimationTrackFlag::
                             ParentBoneIndexValid);
                 }
                 if (sourceBone.transformTrackIndex >= 0) {
                     bone.flags |= flag(
-                        PaperReloadAnimationTrackFlagV1::
+                        ReloadAnimationTrackFlag::
                             TransformTrackIndexValid);
                 }
                 if ((sourceBone.flags & 2u) != 0) {
                     bone.flags |= flag(
-                        PaperReloadAnimationTrackFlagV1::
+                        ReloadAnimationTrackFlag::
                             ReferenceTransformValid);
                     bone.referenceLocal = toApiTransform(
                         sourceBone.referenceLocal,
@@ -372,7 +372,7 @@ namespace paper::animation_evidence
             state.catalog.skeletonBoneCount =
                 static_cast<std::uint32_t>(state.skeleton.size());
             state.catalog.statusFlags |= flag(
-                PaperReloadAnimationCatalogFlagV1::SkeletonAvailable);
+                ReloadAnimationCatalogFlag::SkeletonAvailable);
         }
 
         void consumeExactClip(
@@ -396,21 +396,21 @@ namespace paper::animation_evidence
                 record.value.clipId =
                     static_cast<std::uint32_t>(state->clips.size());
                 record.value.acquisition =
-                    PaperReloadAnimationAcquisitionV1::
+                    ReloadAnimationAcquisition::
                         ExactWeaponPreharvest;
                 record.value.trackSpace =
-                    PaperReloadAnimationTrackSpaceV1::WeaponRootLocal;
+                    ReloadAnimationTrackSpace::WeaponRootLocal;
                 const std::string_view path = source.animationPath ?
                     source.animationPath :
                     "";
                 if (copyText(record.value.animationPath, path)) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::
+                        ReloadAnimationClipFlag::
                             AnimationPathTruncated);
                 }
                 if (copyText(record.value.animationName, fileName(path))) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::
+                        ReloadAnimationClipFlag::
                             AnimationNameTruncated);
                 }
                 record.value.durationSeconds = source.durationSeconds;
@@ -426,16 +426,16 @@ namespace paper::animation_evidence
                 record.value.trackCount = source.trackCount;
                 if (source.targetTracksTruncated) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::TracksTruncated);
+                        ReloadAnimationClipFlag::TracksTruncated);
                 }
                 if (source.trackCount > 0) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::HasTargetTracks);
+                        ReloadAnimationClipFlag::HasTargetTracks);
                 }
 
                 const auto trackCount = (std::min)(
                     source.trackCount,
-                    PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1);
+                    kMaxReloadExactTracksPerClip);
                 record.tracks.reserve(trackCount);
                 for (std::uint32_t index = 0; index < trackCount; ++index) {
                     const auto& sourceTrack = source.tracks[index];
@@ -449,22 +449,22 @@ namespace paper::animation_evidence
                         sourceTrack.transformTrackIndex;
                     track.value.chainDepth = sourceTrack.chainDepth;
                     track.value.flags |= flag(
-                        PaperReloadAnimationTrackFlagV1::BoneNameValid) |
-                        flag(PaperReloadAnimationTrackFlagV1::
+                        ReloadAnimationTrackFlag::BoneNameValid) |
+                        flag(ReloadAnimationTrackFlag::
                             ReferenceTransformValid);
                     if (sourceTrack.boneIndex >= 0) {
                         track.value.flags |= flag(
-                            PaperReloadAnimationTrackFlagV1::
+                            ReloadAnimationTrackFlag::
                                 BoneIndexValid);
                     }
                     if (sourceTrack.parentBoneIndex >= 0) {
                         track.value.flags |= flag(
-                            PaperReloadAnimationTrackFlagV1::
+                            ReloadAnimationTrackFlag::
                                 ParentBoneIndexValid);
                     }
                     if (sourceTrack.transformTrackIndex >= 0) {
                         track.value.flags |= flag(
-                            PaperReloadAnimationTrackFlagV1::
+                            ReloadAnimationTrackFlag::
                                 TransformTrackIndexValid);
                     }
                     if (copyText(
@@ -473,7 +473,7 @@ namespace paper::animation_evidence
                                 sourceTrack.boneName.data(),
                                 sourceTrack.boneName.size()))) {
                         track.value.flags |= flag(
-                            PaperReloadAnimationTrackFlagV1::
+                            ReloadAnimationTrackFlag::
                                 BoneNameTruncated);
                     }
                     track.value.referenceLocal = toApiTransform(
@@ -486,7 +486,7 @@ namespace paper::animation_evidence
                         sourceTrack,
                         (std::min)(
                             sourceTrack.sampleCount,
-                            PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1));
+                            kMaxReloadExactSamplesPerTrack));
                     record.tracks.push_back(std::move(track));
                 }
                 record.value.trackCount =
@@ -502,9 +502,9 @@ namespace paper::animation_evidence
                 state->catalog.storedSampleBytes = storedBytesBefore;
                 ++state->catalog.omittedClipCount;
                 state->catalog.statusFlags |=
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         ClipCapacityTruncated) |
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         SampleStorageTruncated);
                 markMutation(*state);
                 PAPER_LOG_ERROR(
@@ -531,14 +531,14 @@ namespace paper::animation_evidence
                 record.value.clipId =
                     static_cast<std::uint32_t>(state.clips.size());
                 record.value.acquisition =
-                    static_cast<PaperReloadAnimationAcquisitionV1>(
+                    static_cast<ReloadAnimationAcquisition>(
                         source.acquisition);
                 record.value.trackSpace =
-                    PaperReloadAnimationTrackSpaceV1::RigBoneLocal;
+                    ReloadAnimationTrackSpace::RigBoneLocal;
                 record.value.activityId = source.activityId;
                 if (source.activityId != 0) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::HasActivityId);
+                        ReloadAnimationClipFlag::HasActivityId);
                 }
                 if (copyText(
                         record.value.animationName,
@@ -546,7 +546,7 @@ namespace paper::animation_evidence
                             source.animationName.data(),
                             source.animationName.size()))) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::
+                        ReloadAnimationClipFlag::
                             AnimationNameTruncated);
                 }
                 record.value.durationSeconds = source.durationSeconds;
@@ -560,21 +560,21 @@ namespace paper::animation_evidence
                     source.graphEventNameCount;
                 if (source.weaponTracksTruncated) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::TracksTruncated);
+                        ReloadAnimationClipFlag::TracksTruncated);
                 }
                 if (source.annotationsTruncated) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::
+                        ReloadAnimationClipFlag::
                             AnnotationsTruncated);
                 }
                 if (source.triggersTruncated) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::TriggersTruncated);
+                        ReloadAnimationClipFlag::TriggersTruncated);
                 }
 
                 const auto trackCount = (std::min)(
                     source.capturedWeaponTrackCount,
-                    PAPER_MAX_RELOAD_LIVE_TRACKS_PER_CLIP_V1);
+                    kMaxReloadLiveTracksPerClip);
                 record.tracks.reserve(trackCount);
                 for (std::uint32_t index = 0; index < trackCount; ++index) {
                     const auto& sourceTrack = source.weaponTracks[index];
@@ -582,14 +582,14 @@ namespace paper::animation_evidence
                     track.value.clipId = record.value.clipId;
                     track.value.trackId = index;
                     track.value.flags |= flag(
-                        PaperReloadAnimationTrackFlagV1::BoneNameValid);
+                        ReloadAnimationTrackFlag::BoneNameValid);
                     if (copyText(
                             track.value.boneName,
                             boundedText(
                                 sourceTrack.boneName.data(),
                                 sourceTrack.boneName.size()))) {
                         track.value.flags |= flag(
-                            PaperReloadAnimationTrackFlagV1::
+                            ReloadAnimationTrackFlag::
                                 BoneNameTruncated);
                     }
                     appendSamples(
@@ -599,14 +599,14 @@ namespace paper::animation_evidence
                         sourceTrack,
                         (std::min)(
                             sourceTrack.sampleCount,
-                            PAPER_MAX_RELOAD_LIVE_SAMPLES_PER_TRACK_V1));
+                            kMaxReloadLiveSamplesPerTrack));
                     record.tracks.push_back(std::move(track));
                 }
                 record.value.trackCount =
                     static_cast<std::uint32_t>(record.tracks.size());
                 if (!record.tracks.empty()) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::HasTargetTracks);
+                        ReloadAnimationClipFlag::HasTargetTracks);
                 }
 
                 record.annotations.reserve(source.annotationCount);
@@ -614,7 +614,7 @@ namespace paper::animation_evidence
                      index < source.annotationCount;
                      ++index) {
                     const auto& marker = source.annotations[index];
-                    PaperReloadAnimationAnnotationV1 annotation{};
+                    ReloadAnimationAnnotation annotation{};
                     annotation.clipId = record.value.clipId;
                     annotation.annotationId = index;
                     annotation.timeSeconds = marker.timeSeconds;
@@ -633,7 +633,7 @@ namespace paper::animation_evidence
                      index < source.triggerCount;
                      ++index) {
                     const auto& marker = source.triggers[index];
-                    PaperReloadAnimationTriggerV1 trigger{};
+                    ReloadAnimationTrigger trigger{};
                     trigger.clipId = record.value.clipId;
                     trigger.triggerId = index;
                     trigger.localTimeSeconds = marker.localTimeSeconds;
@@ -651,11 +651,11 @@ namespace paper::animation_evidence
                     static_cast<std::uint32_t>(record.triggers.size());
                 if (!record.annotations.empty()) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::HasAnnotations);
+                        ReloadAnimationClipFlag::HasAnnotations);
                 }
                 if (!record.triggers.empty()) {
                     record.value.flags |= flag(
-                        PaperReloadAnimationClipFlagV1::HasTriggers);
+                        ReloadAnimationClipFlag::HasTriggers);
                 }
 
                 state.clips.push_back(std::move(record));
@@ -668,9 +668,9 @@ namespace paper::animation_evidence
                 state.catalog.storedSampleBytes = storedBytesBefore;
                 ++state.catalog.omittedClipCount;
                 state.catalog.statusFlags |=
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         ClipCapacityTruncated) |
-                    flag(PaperReloadAnimationCatalogFlagV1::
+                    flag(ReloadAnimationCatalogFlag::
                         SampleStorageTruncated);
                 markMutation(state);
             }
@@ -692,7 +692,7 @@ namespace paper::animation_evidence
                     state.catalog.weaponGenerationKey) {
                 state.catalog.passiveCaptureDropCount += dropped.count;
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         PassiveCaptureDropped);
                 markMutation(state);
             }
@@ -890,7 +890,7 @@ namespace paper::animation_evidence
                     kPassiveWalkMaxAttempts) {
                     state.passiveWalkGaveUp = true;
                     state.catalog.statusFlags |= flag(
-                        PaperReloadAnimationCatalogFlagV1::
+                        ReloadAnimationCatalogFlag::
                             PassiveWalkUnavailable);
                 }
                 state.catalog.passiveWalkAttempts =
@@ -906,18 +906,18 @@ namespace paper::animation_evidence
                 clip_telemetry::ensureHooksInstalled();
             if (hooksInstalled &&
                 (state.catalog.statusFlags & flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         PassiveHooksInstalled)) == 0) {
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         PassiveHooksInstalled);
                 catalogChanged = true;
             } else if (!hooksInstalled &&
                 (state.catalog.statusFlags & flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         PassiveHookInstallFailed)) == 0) {
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         PassiveHookInstallFailed);
                 catalogChanged = true;
             }
@@ -942,7 +942,7 @@ namespace paper::animation_evidence
                 state.passiveWalkCompleted = true;
                 state.passiveRewalkActive = false;
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         PassiveWalkCompleted);
             }
             if (catalogChanged) {
@@ -999,7 +999,7 @@ namespace paper::animation_evidence
             state.catalog.passiveHookCalls = stats.hookCalls;
             state.catalog.passiveHookMatches = stats.hookMatches;
 
-            std::array<char, PAPER_RELOAD_RESOLVE_POINT_CAPACITY_V1>
+            std::array<char, kReloadResolvePointCapacity>
                 resolvePoint{};
             (void)copyText(
                 resolvePoint,
@@ -1017,10 +1017,10 @@ namespace paper::animation_evidence
             }
         }
 
-        [[nodiscard]] PaperReloadAnimationPreharvestStateV1 toApiState(
+        [[nodiscard]] ReloadAnimationPreharvestState toApiState(
             const exact_clip_preharvest::State state)
         {
-            return static_cast<PaperReloadAnimationPreharvestStateV1>(state);
+            return static_cast<ReloadAnimationPreharvestState>(state);
         }
 
         void updateExact(
@@ -1040,18 +1040,18 @@ namespace paper::animation_evidence
                 toApiState(result.state);
             if (result.state == exact_clip_preharvest::State::Completed) {
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         ExactPreharvestCompleted);
             } else if (
                 result.state == exact_clip_preharvest::State::Failed) {
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         ExactPreharvestFailed);
             }
             const auto stats = exact_clip_preharvest::snapshotStats();
             if (stats.usedLoadedGraphPathFallback) {
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         ExactLoadedGraphPathFallback);
             }
             const bool changed = previousState !=
@@ -1092,7 +1092,7 @@ namespace paper::animation_evidence
                 return;
             }
             state.live.flags = flag(
-                PaperReloadAnimationLiveFlagV1::Active);
+                ReloadAnimationLiveFlag::Active);
             state.live.concurrentActivityCount =
                 source.concurrentActivityCount;
             state.live.activityId = source.activityId;
@@ -1103,7 +1103,7 @@ namespace paper::animation_evidence
                     source.animationName.data(),
                     source.animationName.size()).empty()) {
                 state.live.flags |= flag(
-                    PaperReloadAnimationLiveFlagV1::
+                    ReloadAnimationLiveFlag::
                         AnimationNameValid);
                 (void)copyText(
                     state.live.animationName,
@@ -1150,10 +1150,10 @@ namespace paper::animation_evidence
             return;
         }
 
-        PaperReloadCatalogStateV1 observationCatalog{};
+        ReloadCatalogState observationCatalog{};
         const bool observationReady =
             reload_observation::getCatalogState(observationCatalog) ==
-                PaperResultV1::Ok &&
+                Status::Ok &&
             observationCatalog.weaponFormId == gripState->weaponFormId &&
             observationCatalog.weaponGenerationKey ==
                 gripState->weaponGenerationKey &&
@@ -1218,7 +1218,7 @@ namespace paper::animation_evidence
                 elapsedMicroseconds(stageStarted);
             if (names.truncated) {
                 state.catalog.statusFlags |= flag(
-                    PaperReloadAnimationCatalogFlagV1::
+                    ReloadAnimationCatalogFlag::
                         SceneNameCapacityTruncated);
             }
             if (names.count > 0) {
@@ -1266,84 +1266,81 @@ namespace paper::animation_evidence
         return runtime().frameDiagnostics;
     }
 
-    PaperResultV1 getLimits(PaperReloadAnimationLimitsV1& outLimits)
+    Status getLimits(ReloadAnimationLimits& outLimits)
     {
         outLimits = {};
-        outLimits.featureBits =
-            flag(PaperProviderFeatureBitV1::ReloadAnimationEvidence) |
-            flag(PaperProviderFeatureBitV1::ReloadAnimationTelemetry);
-        outLimits.maxClips = PAPER_MAX_RELOAD_ANIMATION_CLIPS_V1;
+        outLimits.maxClips = kMaxReloadAnimationClips;
         outLimits.maxLiveClips =
-            PAPER_MAX_RELOAD_LIVE_ANIMATION_CLIPS_V1;
+            kMaxReloadLiveAnimationClips;
         outLimits.maxExactClips =
-            PAPER_MAX_RELOAD_EXACT_ANIMATION_CLIPS_V1;
+            kMaxReloadExactAnimationClips;
         outLimits.maxLiveTracksPerClip =
-            PAPER_MAX_RELOAD_LIVE_TRACKS_PER_CLIP_V1;
+            kMaxReloadLiveTracksPerClip;
         outLimits.maxExactTracksPerClip =
-            PAPER_MAX_RELOAD_EXACT_TRACKS_PER_CLIP_V1;
+            kMaxReloadExactTracksPerClip;
         outLimits.maxLiveSamplesPerTrack =
-            PAPER_MAX_RELOAD_LIVE_SAMPLES_PER_TRACK_V1;
+            kMaxReloadLiveSamplesPerTrack;
         outLimits.maxExactSamplesPerTrack =
-            PAPER_MAX_RELOAD_EXACT_SAMPLES_PER_TRACK_V1;
+            kMaxReloadExactSamplesPerTrack;
         outLimits.maxSkeletonBones =
-            PAPER_MAX_RELOAD_SKELETON_BONES_V1;
+            kMaxReloadSkeletonBones;
         outLimits.maxAnnotationsPerClip =
-            PAPER_MAX_RELOAD_CLIP_ANNOTATIONS_V1;
+            kMaxReloadClipAnnotations;
         outLimits.maxTriggersPerClip =
-            PAPER_MAX_RELOAD_CLIP_TRIGGERS_V1;
+            kMaxReloadClipTriggers;
         outLimits.animationNameCapacity =
-            PAPER_RELOAD_ANIMATION_NAME_CAPACITY_V1;
+            kReloadAnimationNameCapacity;
         outLimits.animationPathCapacity =
-            PAPER_RELOAD_ANIMATION_PATH_CAPACITY_V1;
+            kReloadAnimationPathCapacity;
         outLimits.markerTextCapacity =
-            PAPER_RELOAD_MARKER_TEXT_CAPACITY_V1;
+            kReloadMarkerTextCapacity;
         outLimits.resolvePointCapacity =
-            PAPER_RELOAD_RESOLVE_POINT_CAPACITY_V1;
+            kReloadResolvePointCapacity;
         outLimits.sampleStorageBudgetBytes =
-            PAPER_RELOAD_ANIMATION_SAMPLE_BUDGET_BYTES_V1;
-        return PaperResultV1::Ok;
+            kReloadAnimationSampleBudgetBytes;
+        return Status::Ok;
     }
 
-    PaperResultV1 getCatalogState(
-        PaperReloadAnimationCatalogStateV1& outState)
+    Status getCatalogState(
+        ReloadAnimationCatalogState& outState)
     {
         const auto& state = runtime();
         if (!state.valid) {
             outState = {};
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = state.catalog;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 getLiveState(
-        PaperReloadAnimationLiveStateV1& outState)
+    Status getLiveState(
+        ReloadAnimationLiveState& outState)
     {
         const auto& state = runtime();
         if (!state.valid) {
             outState = {};
-            return PaperResultV1::NotReady;
+            return Status::NotReady;
         }
         outState = state.live;
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
     namespace
     {
-        [[nodiscard]] PaperResultV1 validateSequence(
+        [[nodiscard]] Status validateSequence(
             const Runtime& state,
             const std::uint64_t catalogSequence)
         {
             if (!state.valid) {
-                return PaperResultV1::NotReady;
+                return Status::NotReady;
             }
             return catalogSequence == state.catalog.catalogSequence ?
-                PaperResultV1::Ok :
-                PaperResultV1::StaleSnapshot;
+                Status::Ok :
+                Status::StaleSnapshot;
         }
 
         template <class Value, class Source>
-        [[nodiscard]] PaperResultV1 copyValues(
+        [[nodiscard]] Status copyValues(
             const std::vector<Source>& source,
             const std::uint32_t first,
             Value* output,
@@ -1352,13 +1349,13 @@ namespace paper::animation_evidence
         {
             copied = 0;
             if (first > source.size()) {
-                return PaperResultV1::OutOfRange;
+                return Status::OutOfRange;
             }
             if (maximum == 0) {
-                return PaperResultV1::Ok;
+                return Status::Ok;
             }
             if (!output) {
-                return PaperResultV1::InvalidArgument;
+                return Status::InvalidArgument;
             }
             copied = (std::min)(
                 maximum,
@@ -1370,20 +1367,20 @@ namespace paper::animation_evidence
                     output[index] = source[first + index].value;
                 }
             }
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
     }
 
-    PaperResultV1 copyClips(
+    Status copyClips(
         const std::uint64_t catalogSequence,
         const std::uint32_t firstClip,
-        PaperReloadAnimationClipV1* outClips,
+        ReloadAnimationClip* outClips,
         const std::uint32_t maxClips,
         std::uint32_t& outCopied)
     {
         const auto& state = runtime();
         const auto valid = validateSequence(state, catalogSequence);
-        if (valid != PaperResultV1::Ok) {
+        if (valid != Status::Ok) {
             outCopied = 0;
             return valid;
         }
@@ -1395,23 +1392,23 @@ namespace paper::animation_evidence
             outCopied);
     }
 
-    PaperResultV1 copyTracks(
+    Status copyTracks(
         const std::uint64_t catalogSequence,
         const std::uint32_t clipId,
         const std::uint32_t firstTrack,
-        PaperReloadAnimationTrackV1* outTracks,
+        ReloadAnimationTrack* outTracks,
         const std::uint32_t maxTracks,
         std::uint32_t& outCopied)
     {
         const auto& state = runtime();
         const auto valid = validateSequence(state, catalogSequence);
-        if (valid != PaperResultV1::Ok) {
+        if (valid != Status::Ok) {
             outCopied = 0;
             return valid;
         }
         if (clipId >= state.clips.size()) {
             outCopied = 0;
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         return copyValues(
             state.clips[clipId].tracks,
@@ -1421,35 +1418,35 @@ namespace paper::animation_evidence
             outCopied);
     }
 
-    PaperResultV1 copySamples(
+    Status copySamples(
         const std::uint64_t catalogSequence,
         const std::uint32_t clipId,
         const std::uint32_t trackId,
         const std::uint32_t firstSample,
-        PaperReloadAnimationSampleV1* outSamples,
+        ReloadAnimationSample* outSamples,
         const std::uint32_t maxSamples,
         std::uint32_t& outCopied)
     {
         outCopied = 0;
         const auto& state = runtime();
         const auto valid = validateSequence(state, catalogSequence);
-        if (valid != PaperResultV1::Ok) {
+        if (valid != Status::Ok) {
             return valid;
         }
         if (clipId >= state.clips.size() ||
             trackId >= state.clips[clipId].tracks.size()) {
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         const auto& clip = state.clips[clipId];
         const auto& samples = clip.tracks[trackId].samples;
         if (firstSample > samples.size()) {
-            return PaperResultV1::OutOfRange;
+            return Status::OutOfRange;
         }
         if (maxSamples == 0) {
-            return PaperResultV1::Ok;
+            return Status::Ok;
         }
         if (!outSamples) {
-            return PaperResultV1::InvalidArgument;
+            return Status::InvalidArgument;
         }
         outCopied = (std::min)(
             maxSamples,
@@ -1467,26 +1464,26 @@ namespace paper::animation_evidence
                 sampleIndex,
                 clip.value.sampleCount);
         }
-        return PaperResultV1::Ok;
+        return Status::Ok;
     }
 
-    PaperResultV1 copyAnnotations(
+    Status copyAnnotations(
         const std::uint64_t catalogSequence,
         const std::uint32_t clipId,
         const std::uint32_t firstAnnotation,
-        PaperReloadAnimationAnnotationV1* outAnnotations,
+        ReloadAnimationAnnotation* outAnnotations,
         const std::uint32_t maxAnnotations,
         std::uint32_t& outCopied)
     {
         const auto& state = runtime();
         const auto valid = validateSequence(state, catalogSequence);
-        if (valid != PaperResultV1::Ok) {
+        if (valid != Status::Ok) {
             outCopied = 0;
             return valid;
         }
         if (clipId >= state.clips.size()) {
             outCopied = 0;
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         return copyValues(
             state.clips[clipId].annotations,
@@ -1496,23 +1493,23 @@ namespace paper::animation_evidence
             outCopied);
     }
 
-    PaperResultV1 copyTriggers(
+    Status copyTriggers(
         const std::uint64_t catalogSequence,
         const std::uint32_t clipId,
         const std::uint32_t firstTrigger,
-        PaperReloadAnimationTriggerV1* outTriggers,
+        ReloadAnimationTrigger* outTriggers,
         const std::uint32_t maxTriggers,
         std::uint32_t& outCopied)
     {
         const auto& state = runtime();
         const auto valid = validateSequence(state, catalogSequence);
-        if (valid != PaperResultV1::Ok) {
+        if (valid != Status::Ok) {
             outCopied = 0;
             return valid;
         }
         if (clipId >= state.clips.size()) {
             outCopied = 0;
-            return PaperResultV1::NotFound;
+            return Status::NotFound;
         }
         return copyValues(
             state.clips[clipId].triggers,
@@ -1522,16 +1519,16 @@ namespace paper::animation_evidence
             outCopied);
     }
 
-    PaperResultV1 copySkeleton(
+    Status copySkeleton(
         const std::uint64_t catalogSequence,
         const std::uint32_t firstBone,
-        PaperReloadAnimationSkeletonBoneV1* outBones,
+        ReloadAnimationSkeletonBone* outBones,
         const std::uint32_t maxBones,
         std::uint32_t& outCopied)
     {
         const auto& state = runtime();
         const auto valid = validateSequence(state, catalogSequence);
-        if (valid != PaperResultV1::Ok) {
+        if (valid != Status::Ok) {
             outCopied = 0;
             return valid;
         }

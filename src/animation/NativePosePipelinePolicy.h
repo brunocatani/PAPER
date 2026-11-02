@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,7 +16,7 @@ namespace paper::native_pose_pipeline_policy
     };
 
     [[nodiscard]] inline bool finiteTransform(
-        const api::PaperTransformV1& transform)
+        const api::Transform& transform)
     {
         for (const auto& row : transform.rotate) {
             for (const float value : row) {
@@ -32,8 +32,8 @@ namespace paper::native_pose_pipeline_policy
     }
 
     [[nodiscard]] inline PoseResidual measurePoseResidual(
-        const api::PaperTransformV1& target,
-        const api::PaperTransformV1& presented)
+        const api::Transform& target,
+        const api::Transform& presented)
     {
         if (!finiteTransform(target) || !finiteTransform(presented)) {
             return {};

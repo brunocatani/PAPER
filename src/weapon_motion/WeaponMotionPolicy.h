@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 
 #include <algorithm>
 #include <array>
@@ -13,7 +13,7 @@
 
 namespace paper::weapon_motion_policy
 {
-    using api::PaperReloadQsTransformV1;
+    using api::ReloadQsTransform;
 
     inline constexpr float kTranslationEpsilonGameUnits = 0.10f;
     inline constexpr float kRotationEpsilonRadians = 0.02f;
@@ -29,7 +29,7 @@ namespace paper::weapon_motion_policy
         return (std::clamp)(value, 0.0f, 1.0f);
     }
 
-    [[nodiscard]] inline bool finite(const PaperReloadQsTransformV1& value)
+    [[nodiscard]] inline bool finite(const ReloadQsTransform& value)
     {
         for (const auto component : value.translate) {
             if (!std::isfinite(component)) {
@@ -66,10 +66,10 @@ namespace paper::weapon_motion_policy
         }
     }
 
-    [[nodiscard]] inline PaperReloadQsTransformV1 fromTransform(
-        const api::PaperTransformV1& source)
+    [[nodiscard]] inline ReloadQsTransform fromTransform(
+        const api::Transform& source)
     {
-        PaperReloadQsTransformV1 result{};
+        ReloadQsTransform result{};
         std::copy_n(source.translate, 3, result.translate);
         std::fill_n(result.scale, 3, source.scale);
 
@@ -164,11 +164,11 @@ namespace paper::weapon_motion_policy
         }
     }
 
-    [[nodiscard]] inline PaperReloadQsTransformV1 compose(
-        const PaperReloadQsTransformV1& parent,
-        const PaperReloadQsTransformV1& local)
+    [[nodiscard]] inline ReloadQsTransform compose(
+        const ReloadQsTransform& parent,
+        const ReloadQsTransform& local)
     {
-        PaperReloadQsTransformV1 result{};
+        ReloadQsTransform result{};
         multiplyQuaternion(parent.rotate, local.rotate, result.rotate);
         float scaled[3]{};
         for (std::size_t axis = 0; axis < 3; ++axis) {
@@ -183,10 +183,10 @@ namespace paper::weapon_motion_policy
         return result;
     }
 
-    [[nodiscard]] inline PaperReloadQsTransformV1 inverse(
-        const PaperReloadQsTransformV1& source)
+    [[nodiscard]] inline ReloadQsTransform inverse(
+        const ReloadQsTransform& source)
     {
-        PaperReloadQsTransformV1 result{};
+        ReloadQsTransform result{};
         result.rotate[0] = -source.rotate[0];
         result.rotate[1] = -source.rotate[1];
         result.rotate[2] = -source.rotate[2];
@@ -206,10 +206,10 @@ namespace paper::weapon_motion_policy
         return result;
     }
 
-    [[nodiscard]] inline PaperReloadQsTransformV1 rebase(
-        const PaperReloadQsTransformV1& authoredRest,
-        const PaperReloadQsTransformV1& liveRest,
-        const PaperReloadQsTransformV1& authoredPose)
+    [[nodiscard]] inline ReloadQsTransform rebase(
+        const ReloadQsTransform& authoredRest,
+        const ReloadQsTransform& liveRest,
+        const ReloadQsTransform& authoredPose)
     {
         return compose(
             liveRest,
@@ -217,8 +217,8 @@ namespace paper::weapon_motion_policy
     }
 
     [[nodiscard]] inline float translationDistance(
-        const PaperReloadQsTransformV1& left,
-        const PaperReloadQsTransformV1& right)
+        const ReloadQsTransform& left,
+        const ReloadQsTransform& right)
     {
         const auto x = left.translate[0] - right.translate[0];
         const auto y = left.translate[1] - right.translate[1];
@@ -227,8 +227,8 @@ namespace paper::weapon_motion_policy
     }
 
     [[nodiscard]] inline float rotationDistanceRadians(
-        const PaperReloadQsTransformV1& left,
-        const PaperReloadQsTransformV1& right)
+        const ReloadQsTransform& left,
+        const ReloadQsTransform& right)
     {
         const auto dot = std::abs(
             left.rotate[0] * right.rotate[0] +
@@ -239,16 +239,16 @@ namespace paper::weapon_motion_policy
     }
 
     [[nodiscard]] inline float poseDistance(
-        const PaperReloadQsTransformV1& left,
-        const PaperReloadQsTransformV1& right)
+        const ReloadQsTransform& left,
+        const ReloadQsTransform& right)
     {
         return translationDistance(left, right) +
             rotationDistanceRadians(left, right) * kRotationDistanceWeight;
     }
 
     [[nodiscard]] inline bool stable(
-        const PaperReloadQsTransformV1& left,
-        const PaperReloadQsTransformV1& right)
+        const ReloadQsTransform& left,
+        const ReloadQsTransform& right)
     {
         return translationDistance(left, right) <=
                    kTranslationEpsilonGameUnits &&
@@ -256,13 +256,13 @@ namespace paper::weapon_motion_policy
                    kRotationEpsilonRadians;
     }
 
-    [[nodiscard]] inline PaperReloadQsTransformV1 interpolate(
-        const PaperReloadQsTransformV1& left,
-        const PaperReloadQsTransformV1& right,
+    [[nodiscard]] inline ReloadQsTransform interpolate(
+        const ReloadQsTransform& left,
+        const ReloadQsTransform& right,
         const float fraction)
     {
         const auto t = clampUnit(fraction);
-        PaperReloadQsTransformV1 result{};
+        ReloadQsTransform result{};
         for (std::size_t axis = 0; axis < 3; ++axis) {
             result.translate[axis] =
                 left.translate[axis] +
@@ -289,15 +289,15 @@ namespace paper::weapon_motion_policy
 
     template <std::size_t Capacity>
     [[nodiscard]] inline float resamplePathWithSourcePositions(
-        const std::array<PaperReloadQsTransformV1, Capacity>& samples,
+        const std::array<ReloadQsTransform, Capacity>& samples,
         const std::uint32_t first,
         const std::uint32_t last,
         std::array<
-            PaperReloadQsTransformV1,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outKeys,
+            ReloadQsTransform,
+            api::kWeaponMotionKeyCount>& outKeys,
         std::array<
             float,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outSourcePositions)
+            api::kWeaponMotionKeyCount>& outSourcePositions)
     {
         if (first >= Capacity || last >= Capacity || first >= last) {
             return 0.0f;
@@ -312,11 +312,11 @@ namespace paper::weapon_motion_policy
             return 0.0f;
         }
         for (std::uint32_t key = 0;
-             key < api::PAPER_WEAPON_MOTION_KEY_COUNT_V1;
+             key < api::kWeaponMotionKeyCount;
              ++key) {
             const auto target = total * static_cast<float>(key) /
                 static_cast<float>(
-                    api::PAPER_WEAPON_MOTION_KEY_COUNT_V1 - 1);
+                    api::kWeaponMotionKeyCount - 1);
             auto upper = first + 1;
             while (upper < last && arc[upper] < target) {
                 ++upper;
@@ -337,16 +337,16 @@ namespace paper::weapon_motion_policy
 
     template <std::size_t Capacity>
     [[nodiscard]] inline float resamplePath(
-        const std::array<PaperReloadQsTransformV1, Capacity>& samples,
+        const std::array<ReloadQsTransform, Capacity>& samples,
         const std::uint32_t first,
         const std::uint32_t last,
         std::array<
-            PaperReloadQsTransformV1,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& outKeys)
+            ReloadQsTransform,
+            api::kWeaponMotionKeyCount>& outKeys)
     {
         std::array<
             float,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1> sourcePositions{};
+            api::kWeaponMotionKeyCount> sourcePositions{};
         return resamplePathWithSourcePositions(
             samples,
             first,
@@ -357,10 +357,10 @@ namespace paper::weapon_motion_policy
 
     template <std::size_t Capacity, std::size_t PositionCount>
     [[nodiscard]] inline bool sampleAtSourcePositions(
-        const std::array<PaperReloadQsTransformV1, Capacity>& samples,
+        const std::array<ReloadQsTransform, Capacity>& samples,
         const std::uint32_t sampleCount,
         const std::array<float, PositionCount>& sourcePositions,
-        std::array<PaperReloadQsTransformV1, PositionCount>& outKeys)
+        std::array<ReloadQsTransform, PositionCount>& outKeys)
     {
         if (sampleCount < 2 || sampleCount > Capacity) {
             return false;
@@ -384,7 +384,7 @@ namespace paper::weapon_motion_policy
 
     template <std::size_t KeyCount>
     [[nodiscard]] inline float pathLength(
-        const std::array<PaperReloadQsTransformV1, KeyCount>& keys)
+        const std::array<ReloadQsTransform, KeyCount>& keys)
     {
         auto total = 0.0f;
         for (std::size_t index = 1; index < keys.size(); ++index) {
@@ -395,8 +395,8 @@ namespace paper::weapon_motion_policy
 
     template <std::size_t KeyCount>
     [[nodiscard]] inline float temporalMotionOverlap(
-        const std::array<PaperReloadQsTransformV1, KeyCount>& leader,
-        const std::array<PaperReloadQsTransformV1, KeyCount>& follower)
+        const std::array<ReloadQsTransform, KeyCount>& leader,
+        const std::array<ReloadQsTransform, KeyCount>& follower)
     {
         std::array<float, KeyCount> leaderActivity{};
         std::array<float, KeyCount> followerActivity{};
@@ -424,10 +424,10 @@ namespace paper::weapon_motion_policy
     }
 
     [[nodiscard]] inline bool relativeTransformStable(
-        const PaperReloadQsTransformV1& referenceLeader,
-        const PaperReloadQsTransformV1& referenceFollower,
-        const PaperReloadQsTransformV1& leader,
-        const PaperReloadQsTransformV1& follower,
+        const ReloadQsTransform& referenceLeader,
+        const ReloadQsTransform& referenceFollower,
+        const ReloadQsTransform& leader,
+        const ReloadQsTransform& follower,
         const float translationTolerance,
         const float rotationToleranceRadians,
         const float scaleTolerance)
@@ -452,7 +452,7 @@ namespace paper::weapon_motion_policy
 
     template <std::size_t Capacity>
     [[nodiscard]] inline std::uint32_t peakIndex(
-        const std::array<PaperReloadQsTransformV1, Capacity>& samples,
+        const std::array<ReloadQsTransform, Capacity>& samples,
         const std::uint32_t count)
     {
         if (count == 0) {
@@ -476,18 +476,18 @@ namespace paper::weapon_motion_policy
         float normalizedProgress{ 0.0f };
         float arcPosition{ 0.0f };
         float residual{ 0.0f };
-        PaperReloadQsTransformV1 pose{};
+        ReloadQsTransform pose{};
     };
 
     [[nodiscard]] inline Projection projectOntoPath(
-        const PaperReloadQsTransformV1& value,
+        const ReloadQsTransform& value,
         const std::array<
-            PaperReloadQsTransformV1,
-            api::PAPER_WEAPON_MOTION_KEY_COUNT_V1>& keys)
+            ReloadQsTransform,
+            api::kWeaponMotionKeyCount>& keys)
     {
         Projection result{};
         auto totalArc = 0.0f;
-        std::array<float, api::PAPER_WEAPON_MOTION_KEY_COUNT_V1> arc{};
+        std::array<float, api::kWeaponMotionKeyCount> arc{};
         for (std::size_t index = 1; index < keys.size(); ++index) {
             totalArc += poseDistance(keys[index - 1], keys[index]);
             arc[index] = totalArc;

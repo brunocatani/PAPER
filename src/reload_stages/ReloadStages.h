@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
+#include <PAPER/Provider.h>
 #include "api/RockTypes.h"
 
 #include <cstdint>
@@ -11,12 +11,12 @@ namespace paper::reload_stages
     void completeFrame(
         const rock::api::animation::AnimationPhaseContext& context);
 
-    [[nodiscard]] api::PaperResultV1 getState(
-        api::PaperReloadStageStateV1& outState);
-    [[nodiscard]] api::PaperResultV1 copyParts(
+    [[nodiscard]] api::Status getState(
+        api::ReloadStageState& outState);
+    [[nodiscard]] api::Status copyParts(
         std::uint64_t snapshotSequence,
         std::uint32_t firstPart,
-        api::PaperReloadStagePartV1* outParts,
+        api::ReloadStagePart* outParts,
         std::uint32_t maxParts,
         std::uint32_t& outCopied);
 }

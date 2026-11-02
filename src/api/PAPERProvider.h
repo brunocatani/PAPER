@@ -1,7 +1,6 @@
 #pragma once
 
-#include "api/PAPERApi.h"
-#include "reload_control/PhysicalReloadPolicy.h"
+#include <PAPER/Provider.h>
 
 #include <cstdint>
 
@@ -14,8 +13,8 @@ namespace paper::provider
     void resetRuntime();
 
     void configureDevelopmentCapture(
-        api::PaperDevelopmentCaptureModeV1 mode,
-        api::PaperWeaponMotionCacheAccessV1 cacheAccess,
+        api::DevelopmentCaptureMode mode,
+        api::WeaponMotionCacheAccess cacheAccess,
         std::uint32_t configFlags,
         std::uint64_t configRevision);
     [[nodiscard]] std::uint32_t refreshDevelopmentCaptureDemand(
@@ -23,23 +22,22 @@ namespace paper::provider
     void publishDevelopmentCaptureScopes(std::uint32_t activeScopes);
     [[nodiscard]] std::uint32_t allowedDevelopmentCaptureScopes();
 
-    void publishConfig(const api::PaperConfigStateV1& state);
-    void publishRuntime(const api::PaperRuntimeStateV1& state);
+    void publishConfig(const api::ConfigState& state);
+    void publishRuntime(const api::RuntimeState& state);
     void publishNativePosePipeline(
-        const api::PaperNativePoseFrameStateV1& frame,
-        const api::PaperNativeHandSolutionV1& rightHand,
-        const api::PaperNativeHandSolutionV1& leftHand);
+        const api::NativePoseFrameState& frame,
+        const api::NativeHandSolution& rightHand,
+        const api::NativeHandSolution& leftHand);
     void clearNativePosePipeline();
-    void dispatchEvent(api::PaperEventKindV1 kind);
-    void dispatchEvent(const api::PaperEventV1& eventData);
+    void dispatchEvent(api::EventKind kind);
+    void dispatchEvent(const api::Event& eventData);
 
     [[nodiscard]] bool hasConsumerCapability(
-        api::PaperConsumerCapabilityV1 capability);
+        api::ConsumerCapability capability);
     [[nodiscard]] std::uint32_t currentConsumerAuthorityFlags();
     [[nodiscard]] std::uint32_t generation();
     [[nodiscard]] bool isReady();
     // Owner-thread only; validates the same live equipped item as admission.
     [[nodiscard]] bool physicalReloadActive() noexcept;
-    void publishPhysicalReloadEnvironment(const physical_reload::Environment& environment) noexcept;
     [[nodiscard]] bool physicalManualCycleActive() noexcept;
 }
