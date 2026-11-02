@@ -4,7 +4,7 @@
 
 > A Fallout 4 VR F4SE plugin that brings back reload and weapon-cycling animations: your arms, hands and fingers follow the weapon's own animation while ROCK keeps the weapon in your hand. Other mods read its reload data and take over reloads through its provider API.
 
-[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) · [API reference](docs/api/Provider.md) · [Developer guide](https://devartificial.pro/docs/rps-sdk/paper)
+[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) · [API reference](docs/api/Provider.md) · [Developer guide](https://devartificial.pro/docs/rps-sdk/paper) · [Changelog](CHANGELOG.md)
 
 <p align="center">
   <img src=".github/assets/paper-nexus.png" alt="PAPER Nexus artwork: a paper-crafted pistol on a teal background" width="800">
@@ -83,7 +83,7 @@ The log is `Documents/My Games/Fallout4VR/F4SE/PAPER.log`. When reporting an ani
 
 ## Building mods with PAPER
 
-PAPER publishes **provider API 2.0**: 2 interfaces your F4SE plugin discovers at runtime from `PAPER.dll`. The headers are in [include/PAPER/](include/PAPER/). They need only the C++20 standard library, and there is nothing to link.
+PAPER publishes **provider API 2.0**: 2 interfaces your F4SE plugin discovers at runtime from `PAPER.dll`. The headers are in [include/PAPER/](include/PAPER/); take them from the release tag you ship against. They need only the C++20 standard library, and there is nothing to link.
 
 ### Set up
 
@@ -183,6 +183,17 @@ ctest --test-dir build-fast -C Release --output-on-failure
 
 They cover the public headers (each compiled on its own, plus the consumer example), discovery, the API layout, configuration files, reload policy, attachment bindings, the physical-reload lease and the weapon-motion cache.
 
+### Release package
+
+Add a `custom-release` preset to `CMakeUserPresets.json` (the template has one), then:
+
+```powershell
+cmake --preset custom-release
+cmake --build build-release --config Release --target PAPER
+```
+
+This creates a `.7z` in `build-release/package` with `F4SE/Plugins/PAPER.dll`, its `.pdb` and the license: only what the game uses, never headers or other development files. It publishes nothing.
+
 ### Source layout
 
 | Path | Contents |
@@ -196,6 +207,7 @@ They cover the public headers (each compiled on its own, plus the consumer examp
 | [src/weapon_motion](src/weapon_motion/) | Weapon-part motion paths, learning and the motion cache |
 | [src/api](src/api/) | Provider interface implementations and the ROCK client |
 | [tests](tests/) | Tests and the consumer example |
+| [cmake](cmake/) | Version resource and release packaging |
 
 ## License
 
