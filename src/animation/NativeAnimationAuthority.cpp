@@ -2197,7 +2197,7 @@ namespace paper::native_animation_authority
                 "Native reload and action-qualified cycle authority remain available; WeaponFire telemetry is unavailable");
         }
         PAPER_LOG_INFO(Init,
-            "Native animation lifecycle hooks ready; graph capture=ROCK V1 NativeGraphOutput scope=arms,hands,Weapon/WeaponLeft lifecycle=WeaponFireHandler+ReloadStateChangeHandler");
+            "Native animation lifecycle hooks ready; graph capture=ROCK NativeGraphOutput scope=arms,hands,Weapon/WeaponLeft lifecycle=WeaponFireHandler+ReloadStateChangeHandler");
         return true;
     }
 

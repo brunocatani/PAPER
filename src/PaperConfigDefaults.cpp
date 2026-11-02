@@ -40,8 +40,8 @@ bManualReloadOnly = {}
 
 [Debug]
 ; Draws Paper's native weapon frame, native hand targets, ROCK live grip
-; targets, applied FRIK hands, and their target-error lines through ROCK's
-; stereo debug renderer. Diagnostic only; disabled for normal play.
+; targets, applied FRIK hands, and their target-error lines through RPS UI
+; Framework's world drawing. Diagnostic only; disabled for normal play.
 bDebugDrawNativeAnimation = {}
 
 ; Adds concise mode, capture, and per-hand motion/error labels.
@@ -62,8 +62,9 @@ sMaximumMode = {}
 ; harvesting still waits for a compiled-cache miss when cache reads are active.
 bAutoStart = {}
 
-; Allows consumer-driven activation: legacy read capabilities and bounded
-; DevelopmentCaptureControl leases. Work can never exceed the configured ceiling.
+; Allows other mods to wake permitted work, both by registering the read
+; capabilities that need it and through bounded DevelopmentCaptureControl
+; leases. Work can never exceed the configured ceiling.
 bAllowApiActivation = {}
 
 [WeaponMotionCache]

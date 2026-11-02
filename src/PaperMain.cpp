@@ -1343,7 +1343,7 @@ namespace
         if (!rockApiClient().initialize()) {
             PAPER_LOG_ERROR(
                 Api,
-                "ROCK V1 connection unavailable; Paper will retry on the next game-session message");
+                "ROCK provider API 2.0 connection unavailable; PAPER retries on the next game-session message");
             return false;
         }
         if (!rockApiClient().registerAnimationPhaseCallback(
@@ -1356,7 +1356,7 @@ namespace
         }
         PAPER_LOG_INFO(
             Api,
-            "Connected to ROCK V1 animation coordination surface");
+            "Connected to ROCK provider API 2.0 animation phases");
         return true;
     }
 
