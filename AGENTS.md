@@ -21,7 +21,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 | `src/reload_observation/`, `src/reload_stages/`, `src/animation_evidence/` | Reload observation and weapon classification, stage identification, clip telemetry and exact preharvest |
 | `src/weapon_motion/` | Weapon-part motion paths, learning and the motion cache |
 | `src/attachment_bindings/` | Weapon attachment node remapping |
-| `src/compat/` | Merged-reload compatibility and the Tactical Reload bridge |
+| `src/compat/` | Merged Root Behavior reserve-reload recovery and the Tactical Reload bridge |
 | `src/api/` | Provider API: discovery (`InterfaceNegotiation.h`), the interface tables (`PAPERProvider.cpp`) and the ROCK client |
 | `src/debug/` | Diagnostic drawing through RPS UI Framework |
 | `src/native/`, `src/support/` | Native offsets, guarded native memory reads, logging and runtime helpers |
@@ -67,6 +67,7 @@ PAPER has no release preset or packaging target.
 - PAPER stands down while ROCK latches a hand to a fixed surface (climbing), and leaves reloads and cycles native for a weapon ROCK seats from a FRIK user weapon offset.
 - A physical-reload lease and Provider animation authority exclude each other: the lease is refused while any consumer holds authority.
 - Native-pose and weapon-motion records are observations. They grant no pose, IK or scene-node control.
+- Merged Root Behavior compatibility recovers only a missing player reserve reload (`WPNReloadReserve`) through the normal reload (`WPNReload`) of the same loaded subgraph. Native reserve bindings stay, trigger timing and ammo accounting stay native, and no clip or asset is changed. Its hook installs only after the resolver and lookup bytes are verified.
 
 ### Provider API
 
