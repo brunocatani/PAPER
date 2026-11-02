@@ -49,7 +49,18 @@
       "binaryDir": "${sourceDir}/build-fast",
       "cacheVariables": {
         "BUILD_PAPER_TESTS": true,
-        "POST_BUILD_COPY_PLUGIN": false
+        "POST_BUILD_COPY_PLUGIN": false,
+        "PAPER_PACKAGE_RELEASE": false
+      }
+    },
+    {
+      "name": "release",
+      "inherits": ["cmake-dev", "vcpkg", "windows", "vs2022"],
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": {
+        "BUILD_PAPER_TESTS": false,
+        "POST_BUILD_COPY_PLUGIN": false,
+        "PAPER_PACKAGE_RELEASE": true
       }
     }
   ]

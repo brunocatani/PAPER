@@ -136,6 +136,25 @@ if(POST_BUILD_COPY_PLUGIN)
   endforeach()
 endif()
 
+# Release packages are an explicit path (the release preset); the fast preset
+# never builds an archive. The package carries the public headers next to the
+# DLL because consumers build against exactly those files.
+option(PAPER_PACKAGE_RELEASE "Package Release builds into a .7z archive after PAPER is built." OFF)
+if(PAPER_PACKAGE_RELEASE)
+  add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND}
+      "-DPROJECT_FRIENDLY_NAME=${FRIENDLY_NAME}"
+      "-DPROJECT_VERSION=${PROJECT_VERSION}"
+      "-DROOT_DIR=${ROOT_DIR}"
+      "-DPACKAGE_DIR=${BUILD_DIR}/package"
+      "-DTARGET_FILE=$<TARGET_FILE:${PROJECT_NAME}>"
+      "-DTARGET_PDB_FILE=$<TARGET_PDB_FILE:${PROJECT_NAME}>"
+      "-DCONFIG=$<CONFIG>"
+      -P "${ROOT_DIR}/cmake/package.cmake"
+    COMMENT "Packaging ${PROJECT_NAME} release archive"
+  )
+endif()
+
 option(BUILD_PAPER_TESTS "Build focused PAPER policy tests." OFF)
 if(BUILD_PAPER_TESTS)
   enable_testing()
