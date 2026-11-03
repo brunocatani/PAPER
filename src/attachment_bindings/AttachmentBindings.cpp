@@ -54,13 +54,14 @@ namespace paper::attachment_bindings
             if (reinterpret_cast<std::uintptr_t>(instance) != identity.instance) return;
             stage = "instance-keywords";
             const auto* keywords = instance->GetKeywordData();
-            if (!native_memory::pointerRangeLooksReadable(root, sizeof(RE::NiAVObject)) || !root->IsNode()) {
+            // Runs inside guardedReconcile's SEH boundary: a bad pointer faults
+            // into the handler, so no page-protection query is needed.
+            if (!root || !root->IsNode()) {
                 PAPER_LOG_WARN(Animation, "ATTACHMENT_BIND weapon={:08X} stage=invalid-scene-root", identity.form);
                 return;
             }
             if (!keywords || keywords->numKeywords > 512 ||
-                (keywords->numKeywords && !native_memory::pointerRangeLooksReadable(
-                    keywords->keywords, keywords->numKeywords * sizeof(RE::BGSKeyword*)))) {
+                (keywords->numKeywords && !keywords->keywords)) {
                 PAPER_LOG_WARN(Animation, "ATTACHMENT_BIND weapon={:08X} stage=invalid-keyword-data", identity.form);
                 return;
             }

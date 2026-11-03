@@ -3,7 +3,6 @@
 #include "support/NativeMemory.h"
 #include "REL/Module.h"
 
-#include <atomic>
 #include <cstdint>
 
 namespace RE { class TESObjectREFR; }
@@ -73,12 +72,9 @@ namespace paper::native_animation_graph
             auto* refCount = reinterpret_cast<std::uint32_t*>(
                 reinterpret_cast<std::uintptr_t>(_reference) +
                 kGraphManagerRefCountOffset);
-            if (!native_memory::pointerRangeLooksWritable(
-                    refCount,
-                    sizeof(*refCount)) ||
-                std::atomic_ref<std::uint32_t>{ *refCount }.fetch_sub(
-                    1,
-                    std::memory_order_acq_rel) != 1) {
+            std::uint32_t remaining = 0;
+            if (!native_memory::guardedDecrement(refCount, remaining) ||
+                remaining != 0) {
                 return;
             }
             std::uintptr_t vtable = 0;

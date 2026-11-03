@@ -1153,9 +1153,7 @@ namespace paper::clip_telemetry
             const auto referenceCount = *reinterpret_cast<const std::int32_t*>(skeleton + kSkeletonReferencePoseCountOffset);
             if (trackCount > static_cast<std::int32_t>(kSampleBufferTracks) ||
                 mappedTrackCount < trackCount || parentCount < boneCount ||
-                referenceCount < boneCount ||
-                !native_memory::pointerRangeLooksReadable(parents, boneCount * sizeof(*parents)) ||
-                !native_memory::pointerRangeLooksReadable(reference, boneCount * sizeof(*reference))) return unavailable("rig-arrays-or-track-capacity");
+                referenceCount < boneCount || !parents || !reference) return unavailable("rig-arrays-or-track-capacity");
 
             struct Chain
             {

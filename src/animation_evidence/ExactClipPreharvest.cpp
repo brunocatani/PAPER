@@ -665,23 +665,6 @@ namespace paper::exact_clip_preharvest
             return true;
         }
 
-        [[nodiscard]] bool addressIsExecutable(const void* address)
-        {
-            if (!address) {
-                return false;
-            }
-            MEMORY_BASIC_INFORMATION memoryInfo{};
-            if (VirtualQuery(address, &memoryInfo, sizeof(memoryInfo)) == 0 ||
-                memoryInfo.State != MEM_COMMIT ||
-                (memoryInfo.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
-                return false;
-            }
-            const DWORD protection = memoryInfo.Protect & 0xFF;
-            return protection == PAGE_EXECUTE || protection == PAGE_EXECUTE_READ ||
-                   protection == PAGE_EXECUTE_READWRITE ||
-                   protection == PAGE_EXECUTE_WRITECOPY;
-        }
-
         [[nodiscard]] bool guardedSampleTracks(
             const SampleAnimationTracksFn sampler,
             void* animation,
@@ -1246,7 +1229,7 @@ namespace paper::exact_clip_preharvest
                    native_memory::tryReadValue(
                        reinterpret_cast<SampleAnimationTracksFn*>(vtable + kSampleTracksVtableSlot),
                        outSampler) &&
-                   addressIsExecutable(reinterpret_cast<const void*>(outSampler));
+                   outSampler != nullptr;
         }
 
         [[nodiscard]] bool sampleClipBatch(Runtime& state)
@@ -1651,14 +1634,17 @@ namespace paper::exact_clip_preharvest
                 return false;
             }
 
+            // The lock is taken outside SEH, so prove its word is mapped
+            // with one guarded read; the engine heap object is writable.
             RE::BSSpinLock* graphLock = nullptr;
+            std::uint64_t lockWord = 0;
             if (!native_memory::tryReadField(
                     loadedSubgraphs,
                     kLoadedSubgraphsLockOffset,
                     graphLock) ||
                 !graphLock ||
-                !native_memory::pointerRangeLooksWritable(
-                    graphLock, sizeof(*graphLock))) {
+                !native_memory::tryReadValue(
+                    reinterpret_cast<const std::uint64_t*>(graphLock), lockWord)) {
                 return false;
             }
 
