@@ -28,5 +28,5 @@
 ### For mod authors
 
 - PAPER's provider API is now 2.0, published in this repository's `include/PAPER/` with one page per interface in `docs/api/`: `Provider` (49 calls) and `PhysicalReload` (3 calls), discovered through `PAPERAPI_QueryInterfaceV1`. `paper::api::Client` registers an owner and acquires each interface.
-- Mods built against the pre-2.0 API (`PAPERApi.h`, the RPS SDK `RPS::PAPER` target, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) are refused with a logged reason and must be rebuilt against the new headers.
+- Mods built against the pre-2.0 API (`PAPERApi.h`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) are refused with a logged reason and must be rebuilt against the new headers.
 - Clip telemetry records bounded animation mapping evidence for development diagnostics.
