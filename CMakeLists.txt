@@ -18,6 +18,11 @@ set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include
 if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
   message(FATAL_ERROR "RPS UI Framework headers not found in '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
+# RPS Framework's header-only required-update stop (RPS/Runtime/RequiredUpdate.h).
+set(RPS_FRAMEWORK_INCLUDE_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/include" CACHE PATH "RPS Framework public include directory")
+if(NOT EXISTS "${RPS_FRAMEWORK_INCLUDE_DIR}/RPS/Runtime/RequiredUpdate.h")
+  message(FATAL_ERROR "RPS Framework headers not found in '${RPS_FRAMEWORK_INCLUDE_DIR}'; set RPS_FRAMEWORK_INCLUDE_DIR.")
+endif()
 # PAPER's own provider API: self-contained headers PAPER compiles against.
 set(PAPER_PUBLIC_INCLUDE_DIR "${ROOT_DIR}/include")
 include_directories("${PAPER_PUBLIC_INCLUDE_DIR}" "${ROCK_INCLUDE_DIR}" "${RPSUI_INCLUDE_DIR}")
@@ -91,6 +96,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_include_directories(${PROJECT_NAME} PRIVATE
   "${BUILD_DIR}/include"
   "${SOURCE_DIR}"
+  "${RPS_FRAMEWORK_INCLUDE_DIR}"
 )
 
 find_package(spdlog CONFIG REQUIRED)

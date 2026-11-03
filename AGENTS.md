@@ -9,7 +9,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 - PAPER publishes provider API 2.0: 2 interfaces, `Provider` and `PhysicalReload`, whose headers are in `include/PAPER/`. They include only the C++ standard library; nothing links against PAPER.
 - Add PAPER's `include/` directory through a CMake cache variable such as `PAPER_INCLUDE_DIR`, include `<PAPER/...>`, resolve `PAPERAPI_QueryInterfaceV1` from the loaded `PAPER.dll`, and connect with `paper::api::Client`. Never include headers from `src/` or copy PAPER's headers into the consumer.
 - Read `docs/api/Provider.md` first, then `docs/api/PhysicalReload.md` when the mod drives reloads with the player's hands. `tests/ConsumerExample.cpp` is the minimal consumer.
-- When PAPER is absent or refuses discovery, the consumer turns its PAPER features off and keeps running.
+- When PAPER is absent, the consumer turns its PAPER features off and keeps running. A version mismatch never runs silently: PAPER names a consumer built for another PAPER API in an error box at the main menu and closes the game when the box is closed. Request exactly the versions your headers declare (`paper::api::Client` does); never probe for optional versions with trial queries.
 
 ## Repository map
 
@@ -34,9 +34,9 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 
 ## Build and test
 
-Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, ROCK (its `include/` headers) and RPS UI Framework (its `SDK/include/` headers). PAPER uses C++23.
+Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, ROCK (its `include/` headers), RPS UI Framework (its `SDK/include/` headers) and RPS Framework (its `include/` headers). PAPER uses C++23.
 
-Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into, under `F4SE/Plugins`); set `ROCK_INCLUDE_DIR` and `RPSUI_INCLUDE_DIR` when the checkouts are not where `CMakeLists.txt` looks by default. Before building, check that the presets and the generated cache point at this checkout and PAPER's own mod folder, not an older copy. Then:
+Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into, under `F4SE/Plugins`); set `ROCK_INCLUDE_DIR`, `RPSUI_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` when the checkouts are not where `CMakeLists.txt` looks by default. Before building, check that the presets and the generated cache point at this checkout and PAPER's own mod folder, not an older copy. Then:
 
 ```powershell
 cmake --preset custom-fast
@@ -74,7 +74,8 @@ Tests live in `build-fast` but outside the default build. Every test target name
 
 - Public headers include only the C++ standard library and other `include/PAPER/` headers: never CommonLibF4VR, ROCK, engine or F4SE types.
 - Every entry point validates the caller's record `size` and `version` before reading it. Records use fixed-width types.
-- `PAPERAPI_QueryInterfaceV1` serves only the current majors and logs each refused major once. The pre-2.0 exports (`PAPERAPI_GetProviderApi`, `PAPERAPI_GetProviderDescriptorV1`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) only refuse; their names, like retired interface IDs, slots, enum values and flag bits, are never reused.
+- `PAPERAPI_QueryInterfaceV1` serves only the current majors. The pre-2.0 exports (`PAPERAPI_GetProviderApi`, `PAPERAPI_GetProviderDescriptorV1`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) only refuse; their names, like retired interface IDs, slots, enum values and flag bits, are never reused.
+- Every version refusal and every call to a pre-2.0 export is logged with the calling DLL and stops the game at the main menu; so does a loaded ROCK that does not serve the ROCK API PAPER was built for (`src/api/RequiredUpdates.cpp`). A missing ROCK leaves PAPER idle and the game running.
 - A released interface version is frozen. A compatible addition goes at the end of a table; an incompatible change needs a new major.
 - A header change updates its `docs/api/` page in the same commit and passes the public header, discovery and observation API tests.
 

@@ -1,6 +1,7 @@
 #include "api/RockApiClient.h"
 
 #include "PaperLog.h"
+#include "api/RequiredUpdates.h"
 
 #include <cstring>
 #include <Windows.h>
@@ -28,10 +29,19 @@ namespace paper
     bool RockApiClient::initialize() {
         if (ready()) return true;
         const auto module=GetModuleHandleA("ROCK.dll");
-        const auto query=module?reinterpret_cast<rock::api::QueryInterfaceV1>(GetProcAddress(module,rock::api::kQueryExportName)):nullptr;
+        if (!module) {
+            PAPER_LOG_ERROR(Api,"ROCK.dll is not loaded; PAPER stays idle");
+            return false;
+        }
+        const auto query=reinterpret_cast<rock::api::QueryInterfaceV1>(GetProcAddress(module,rock::api::kQueryExportName));
+        if (!query) {
+            required_updates::noteRockMissingDiscovery();
+            return false;
+        }
         auto status=_client.connect(query,"PAPER");
         if (status!=rock::api::Status::Ok) {
             PAPER_LOG_ERROR(Api,"ROCK modular registration failed: {}",static_cast<std::uint32_t>(status));
+            required_updates::noteRockRefusal(status,"Core");
             return false;
         }
         namespace api=rock::api;
@@ -45,6 +55,7 @@ namespace paper
                      api::animation::Permission::Callbacks),_animation))!=api::Status::Ok) missing="Animation";
         if (missing) {
             PAPER_LOG_ERROR(Api,"ROCK {} interface unavailable for PAPER: {}",missing,static_cast<std::uint32_t>(status));
+            required_updates::noteRockRefusal(status,missing);
             (void)_client.close(); return false;
         }
         _ownerToken=_client.owner();

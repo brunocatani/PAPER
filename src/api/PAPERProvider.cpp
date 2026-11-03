@@ -11,9 +11,11 @@
 #include "reload_control/PhysicalReloadLease.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "api/InterfaceNegotiation.h"
+#include "api/RequiredUpdates.h"
 #include "support/Fo4VrRuntime.h"
 
 #include <Windows.h>
+#include <intrin.h>
 
 #include <algorithm>
 #include <array>
@@ -1960,41 +1962,12 @@ namespace paper::provider
             discovery::describe(s_api),
             discovery::describe(s_physicalReloadApi),
         };
-
-        // An outdated consumer usually retries; each refused (interface,
-        // major) pair and each retired export is logged once.
-        std::array<std::atomic<std::uint32_t>,4> s_refusedMajors{};
-        std::atomic<std::uint32_t> s_refusedExports{};
-
-        void logRefusedMajor(const api::InterfaceId id,const std::uint32_t major) noexcept
-        {
-            const auto index=static_cast<std::uint32_t>(id);
-            if(index>=s_refusedMajors.size()||major>=32)return;
-            const auto bit=1u<<major;
-            if(s_refusedMajors[index].fetch_or(bit,std::memory_order_relaxed)&bit)return;
-            try {
-                PAPER_LOG_WARN(Api,"Discovery refused interface {} major {}; this PAPER serves only its current majors, so the consumer must be updated",
-                    index,major);
-            } catch (...) {
-            }
-        }
     }
 
     api::Status queryInterface(const api::InterfaceId id,const std::uint32_t major,const std::uint32_t minor,
         const std::uint32_t bytes,const api::InterfaceDescriptorV1** output) noexcept
     {
-        const auto status=discovery::query(s_interfaces,id,major,minor,bytes,output);
-        if(status==Status::UnsupportedMajor)logRefusedMajor(id,major);
-        return status;
-    }
-
-    void refuseRetiredExport(const std::uint32_t bit,const char* name) noexcept
-    {
-        if(s_refusedExports.fetch_or(bit,std::memory_order_relaxed)&bit)return;
-        try {
-            PAPER_LOG_WARN(Api,"Refused {}: it served PAPER's retired pre-2.0 API, so the calling mod must be updated to PAPERAPI_QueryInterfaceV1",name);
-        } catch (...) {
-        }
+        return discovery::query(s_interfaces,id,major,minor,bytes,output);
     }
 
     std::uint32_t generation()
@@ -2012,38 +1985,41 @@ extern "C" paper::api::Status PAPER_CALL PAPERAPI_QueryInterfaceV1(const paper::
     const std::uint32_t exactMajor,const std::uint32_t minimumMinor,const std::uint32_t minimumTableBytes,
     const paper::api::InterfaceDescriptorV1** output) noexcept
 {
-    return paper::provider::queryInterface(id,exactMajor,minimumMinor,minimumTableBytes,output);
+    const auto status=paper::provider::queryInterface(id,exactMajor,minimumMinor,minimumTableBytes,output);
+    if(status!=paper::api::Status::Ok)
+        paper::required_updates::noteDiscoveryRefusal(status,id,exactMajor,_ReturnAddress());
+    return status;
 }
 
-// Retired pre-2.0 discovery exports. They stay exported only so an outdated
-// consumer is refused with a logged reason instead of a missing symbol; each
-// returns no table. Their names are never reused.
+// Retired pre-2.0 discovery exports. They stay exported so a mod built for
+// them is named in the required-update stop instead of failing on a missing
+// symbol; each returns no table. Their names are never reused.
 extern "C" const void* PAPER_CALL PAPERAPI_GetProviderApi(std::uint32_t) noexcept
 {
-    paper::provider::refuseRetiredExport(1u<<0,"PAPERAPI_GetProviderApi");
+    paper::required_updates::noteRetiredExport("PAPERAPI_GetProviderApi",_ReturnAddress());
     return nullptr;
 }
 
 extern "C" const void* PAPER_CALL PAPERAPI_GetProviderDescriptorV1() noexcept
 {
-    paper::provider::refuseRetiredExport(1u<<1,"PAPERAPI_GetProviderDescriptorV1");
+    paper::required_updates::noteRetiredExport("PAPERAPI_GetProviderDescriptorV1",_ReturnAddress());
     return nullptr;
 }
 
 extern "C" const void* PAPER_CALL PAPERAPI_QueryPhysicalReloadV1(std::uint32_t,std::uint32_t) noexcept
 {
-    paper::provider::refuseRetiredExport(1u<<2,"PAPERAPI_QueryPhysicalReloadV1");
+    paper::required_updates::noteRetiredExport("PAPERAPI_QueryPhysicalReloadV1",_ReturnAddress());
     return nullptr;
 }
 
 extern "C" const void* PAPER_CALL PAPERAPI_QueryPhysicalReloadV2(std::uint32_t,std::uint32_t) noexcept
 {
-    paper::provider::refuseRetiredExport(1u<<3,"PAPERAPI_QueryPhysicalReloadV2");
+    paper::required_updates::noteRetiredExport("PAPERAPI_QueryPhysicalReloadV2",_ReturnAddress());
     return nullptr;
 }
 
 extern "C" const void* PAPER_CALL PAPERAPI_QueryPhysicalReloadV3(std::uint32_t,std::uint32_t) noexcept
 {
-    paper::provider::refuseRetiredExport(1u<<4,"PAPERAPI_QueryPhysicalReloadV3");
+    paper::required_updates::noteRetiredExport("PAPERAPI_QueryPhysicalReloadV3",_ReturnAddress());
     return nullptr;
 }

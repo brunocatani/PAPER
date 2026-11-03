@@ -7,6 +7,7 @@
 #include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
 #include "api/PAPERProvider.h"
+#include "api/RequiredUpdates.h"
 #include "api/RockApiClient.h"
 #include "api/RockVisualAuthorityBridge.h"
 #include "compat/TacticalReloadBridge.h"
@@ -1402,6 +1403,8 @@ namespace
         }
 
         if (message->type == F4SE::MessagingInterface::kGameLoaded) {
+            // Before the ROCK connection below can find a mismatch.
+            required_updates::watch();
             (void)g_config.reload();
             native_animation_authority::initializeCycleTrace();
             weapon_motion::configureCache(g_config);
