@@ -38,6 +38,11 @@ iLogLevel = {}
 ; and reload resumption remain available with either value.
 bManualReloadOnly = {}
 
+; Seconds the left hand takes to move from your controller or grip onto the
+; animation when a reload, pump stroke or cycle takes it, and back when that
+; ends. 0 moves it instantly.
+fHandBlendSeconds = {:.2f}
+
 [Debug]
 ; Draws Paper's native weapon frame, native hand targets, ROCK live grip
 ; targets, applied FRIK hands, and their target-error lines through RPS UI
@@ -86,6 +91,7 @@ iMaximumEntries = {}
             defaults.enabled,
             defaults.logLevel,
             defaults.manualReloadOnly,
+            defaults.handBlendSeconds,
             defaults.debugDrawNativeAnimation,
             defaults.debugDrawNativeAnimationText,
             defaults.debugNativeAnimationAxisLength,

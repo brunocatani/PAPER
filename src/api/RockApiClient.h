@@ -17,6 +17,7 @@ namespace paper
 
         [[nodiscard]] bool ready() const;
         [[nodiscard]] std::uint64_t ownerToken() const;
+        [[nodiscard]] bool queryHandFrame(rock::api::Hand hand,rock::api::hands::HandFrame& output) const;
         [[nodiscard]] bool queryPresentedHandFrame(rock::api::Hand hand,rock::api::hands::HandFrame& output) const;
         void setFrameContext(const rock::api::animation::AnimationPhaseContext& context);
         [[nodiscard]] RE::NiAVObject* resolveWeaponSource(std::uint64_t generation,std::uint64_t key) const;

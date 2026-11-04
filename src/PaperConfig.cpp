@@ -104,6 +104,8 @@ namespace paper
                 ini.GetLongValue("Main", "iLogLevel", config.logLevel));
             config.manualReloadOnly = ini.GetBoolValue(
                 "Reload", "bManualReloadOnly", config.manualReloadOnly);
+            config.handBlendSeconds = static_cast<float>(ini.GetDoubleValue(
+                "Reload", "fHandBlendSeconds", config.handBlendSeconds));
             config.debugDrawNativeAnimation = ini.GetBoolValue(
                 "Debug",
                 "bDebugDrawNativeAnimation",
@@ -167,6 +169,10 @@ namespace paper
                         config.weaponMotionMaximumEntries),
                     16,
                     2048));
+            if (!std::isfinite(config.handBlendSeconds)) {
+                config.handBlendSeconds = PaperConfig{}.handBlendSeconds;
+            }
+            config.handBlendSeconds = std::clamp(config.handBlendSeconds, 0.0f, 1.0f);
             if (!std::isfinite(config.debugNativeAnimationAxisLength)) {
                 config.debugNativeAnimationAxisLength = 5.0f;
             }
@@ -184,11 +190,12 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
                 config.enabled,
                 config.manualReloadOnly,
+                config.handBlendSeconds,
                 static_cast<std::uint32_t>(config.developmentCaptureMode),
                 config.developmentCaptureAutoStart,
                 config.developmentCaptureAllowApiActivation,

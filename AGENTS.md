@@ -65,6 +65,8 @@ Tests live in `build-fast` but outside the default build. Every test target name
 ### Animation
 
 - PAPER takes hand authority only for a native reload or cycle action; `WeaponFire` alone is telemetry.
+- A reload always plays both hands. During a cycle the left hand is driven only when the clip works the weapon with it, meaning it moves against both the gun and the body; otherwise it stays where ROCK puts it. A pump stroke reaches PAPER as a reload start, so it plays as a reload.
+- `[Reload] fHandBlendSeconds` blends the left hand between ROCK's pose and the animation in both directions; 0 moves it instantly.
 - PAPER stands down while ROCK latches a hand to a fixed surface (climbing), and leaves reloads and cycles native for a weapon ROCK seats from a FRIK user weapon offset.
 - A physical-reload lease and Provider animation authority exclude each other: the lease is refused while any consumer holds authority.
 - Native-pose and weapon-motion records are observations. They grant no pose, IK or scene-node control.

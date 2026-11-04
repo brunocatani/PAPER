@@ -919,6 +919,17 @@ int main()
         true,
         ManualCycleHandMotionSample{}));
 
+    // Bench captures: left-hand motion against the gun, then against the body.
+    static_assert(!updateCycleSupportHandStrokeQualification(false, 14.73f, 0.0f));
+    static_assert(!updateCycleSupportHandStrokeQualification(false, 1.12f, 6.23f));
+    static_assert(updateCycleSupportHandStrokeQualification(false, 5.14f, 4.18f));
+    static_assert(updateCycleSupportHandStrokeQualification(false, 5.38f, 5.70f));
+    static_assert(updateCycleSupportHandStrokeQualification(true, 0.0f, 0.0f));
+
+    // A zero blend time keeps the instant move in both directions.
+    static_assert(advanceSupportHandBlendWeight(0.0f, true, 0.01f, 0.0f) == 1.0f);
+    static_assert(advanceSupportHandBlendWeight(1.0f, false, 0.01f, 0.0f) == 0.0f);
+
     constexpr AffineTransform nativeWeaponModel{ 2.0f, 40.0f };
     constexpr AffineTransform nativeHandModel{ 4.0f, 80.0f };
     constexpr auto nativeHandInWeapon = resolveNativeHandInWeapon(

@@ -7,6 +7,7 @@
 #include "animation_evidence/ClipTelemetry.h"
 #include "compat/TacticalReloadBridge.h"
 #include "native/NativeOffsets.h"
+#include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "support/TransformMath.h"
@@ -111,6 +112,7 @@ namespace paper::native_animation_authority
             RE::NiTransform weaponModel{};
             RE::NiTransform primaryHandInWeapon{};
             RE::NiTransform supportHandInWeapon{};
+            RE::NiTransform supportHandModel{};
             frik_visual_authority::FingerLocalTransformOverride primaryFingerLocals{};
             frik_visual_authority::FingerLocalTransformOverride supportFingerLocals{};
             bool primaryHandValid{ false };
@@ -126,9 +128,12 @@ namespace paper::native_animation_authority
         struct ManualCycleHandRebase
         {
             RE::NiTransform nativeBaselineHandInWeapon{};
+            RE::NiTransform nativeBaselineHandModel{};
             RE::NiTransform liveBaselineHandInWeapon{};
             RE::NiTransform resolvedHandInWeapon{};
             RE::NiTransform resolvedHandWorld{};
+            float peakStrokeAgainstWeaponGameUnits{ 0.0f };
+            float peakStrokeAgainstBodyGameUnits{ 0.0f };
             native_animation_authority_policy::WeaponFixedHandTargetMode
                 targetMode{
                     native_animation_authority_policy::
@@ -148,10 +153,36 @@ namespace paper::native_animation_authority
             std::uintptr_t weaponNode{ 0 };
             RE::NiTransform rightHandInWeapon{};
             RE::NiTransform leftHandInWeapon{};
+            // The left seat of any support grip, authored or dynamic.
+            RE::NiTransform leftGripHandInWeapon{};
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint32_t weaponFormId{ 0 };
             bool rightValid{ false };
             bool authoredLeftActive{ false };
+            bool leftGripValid{ false };
+        };
+
+        // FRIK refuses an unreachable target on alternate frames, so a refusal
+        // within this many frames means it is still showing the tracked hand.
+        inline constexpr std::uint32_t kSupportHandRefusalMemoryFrames = 2;
+
+        // Left-hand transition between ROCK's pose and the animation. Game
+        // thread only. The weight is zero once no transition is running.
+        struct SupportHandBlend
+        {
+            float weight{ 0.0f };
+            std::uint32_t framesSinceRefusal{ kSupportHandRefusalMemoryFrames };
+            RE::NiTransform lastTargetInWeapon{};
+            frik_visual_authority::FingerLocalTransformOverride lastFingerLocals{};
+        };
+
+        // The last frame ROCK presented the left hand with no PAPER publication,
+        // paired with the control frame of that same frame.
+        struct SupportHandRest
+        {
+            rock::api::hands::PresentedHandPose pose{};
+            rock::api::hands::HandFrame control{};
+            bool valid{ false };
         };
 
         struct LatchedManualCycleAuthoredSupportGrip
@@ -192,6 +223,9 @@ namespace paper::native_animation_authority
         NativeHandBoneCache s_nativeHandBoneCache{};
         NativeHandPoseCapture s_nativeHandPoseCapture{};
         std::array<ManualCycleVisualPublication, 2> s_manualCycleVisualPublications{};
+        SupportHandBlend s_supportHandBlend{};
+        SupportHandRest s_supportHandRest{};
+        float s_frameDeltaSeconds{ 1.0f / 90.0f };
         // Current provider observation and the effective baselines are copied
         // on the game thread. The effective left baseline may retain only the
         // authored support grip latched at a manual cycle's entry.
@@ -415,6 +449,10 @@ namespace paper::native_animation_authority
         [[nodiscard]] bool clearManualCycleVisualForHand(
             const frik_visual_authority::Hand hand)
         {
+            if (hand == frik_visual_authority::Hand::Left) {
+                s_supportHandBlend.weight = 0.0f;
+                s_supportHandBlend.framesSinceRefusal = kSupportHandRefusalMemoryFrames;
+            }
             auto& publication =
                 s_manualCycleVisualPublications[manualCycleHandIndex(hand)];
             if (!publication.worldPublished && !publication.fingerPosePublished) {
@@ -821,6 +859,7 @@ namespace paper::native_animation_authority
                     if (finiteTransform(supportHandInWeapon)) {
                         out.supportHandInWeapon =
                             supportHandInWeapon;
+                        out.supportHandModel = supportHandModel.model;
                         out.supportHandValid = true;
                         captureNativeFingerLocals(
                             source,
@@ -1291,27 +1330,269 @@ namespace paper::native_animation_authority
 #endif
         }
 
-        void clearManualCycleVisualAuthorityPreservingWeapon()
+        void clearManualCycleVisualAuthorityPreservingWeapon(
+            const bool keepSupportHandReturn = false)
         {
             RE::NiTransform fixedWeaponWorld{};
             const bool restoreWeapon =
                 manualCycleVisualAuthorityPublished() &&
                 refreshFixedVisibleWeaponTarget(fixedWeaponWorld);
-            clearManualCycleVisualAuthority();
+            (void)clearManualCycleVisualForHand(
+                frik_visual_authority::Hand::Right);
+            if (!keepSupportHandReturn) {
+                (void)clearManualCycleVisualForHand(
+                    frik_visual_authority::Hand::Left);
+            }
             if (restoreWeapon) {
                 (void)tryRestoreFixedVisibleWeaponTarget(fixedWeaponWorld);
             }
         }
 
+        [[nodiscard]] bool supportHandReturnRunning()
+        {
+            return s_supportHandBlend.weight > 0.0f && g_config.handBlendSeconds > 0.0f;
+        }
+
+        [[nodiscard]] float supportHandWeightAfterLostFrame(const float weight)
+        {
+            return native_animation_authority_policy::advanceSupportHandBlendWeight(
+                weight,
+                false,
+                s_frameDeltaSeconds,
+                g_config.handBlendSeconds);
+        }
+
+        // PAPER shows no left hand this frame but the lease goes on, for example
+        // when FRIK refuses a clip target the arm cannot reach. Lowering the
+        // weight by one frame, instead of zeroing it, keeps a one-frame loss
+        // from restarting the whole move.
+        void clearSupportHandForLostFrame()
+        {
+            const float weight = supportHandWeightAfterLostFrame(s_supportHandBlend.weight);
+            (void)clearManualCycleVisualForHand(frik_visual_authority::Hand::Left);
+            s_supportHandBlend.weight = weight;
+        }
+
+        void captureSupportHandRest(const std::uint64_t frameIndex)
+        {
+            if (g_config.handBlendSeconds <= 0.0f ||
+                s_manualCycleVisualPublications[manualCycleHandIndex(
+                    frik_visual_authority::Hand::Left)].worldPublished) {
+                return;
+            }
+            auto& rest = s_supportHandRest;
+            rest.valid =
+                rockApiClient().queryPresentedHandPose(rock::api::Hand::Left, rest.pose) &&
+                rest.pose.frameIndex == frameIndex &&
+                rest.pose.presentationSequence == frameIndex &&
+                rockApiClient().queryHandFrame(rock::api::Hand::Left, rest.control);
+        }
+
+        // Where ROCK would present the left hand without PAPER: its seat on the
+        // gun while it holds a grip, otherwise the controller-tracked hand. The
+        // control frame is used because the presented hand carries PAPER's own
+        // publication and would feed back into this target.
+        [[nodiscard]] bool resolveSupportHandRestWorld(
+            const RE::NiTransform& weaponWorld,
+            RE::NiTransform& outWorld)
+        {
+            const auto& grip = s_latestManualCycleRockGripBaselines;
+            if (grip.leftGripValid) {
+                outWorld = transform_math::composeTransforms(
+                    weaponWorld, grip.leftGripHandInWeapon);
+                return finiteTransform(outWorld);
+            }
+            const auto& rest = s_supportHandRest;
+            rock::api::hands::HandFrame control{};
+            if (!rest.valid ||
+                !rockApiClient().queryHandFrame(rock::api::Hand::Left, control)) {
+                return false;
+            }
+            const RE::NiTransform handFromControl = transform_math::composeTransforms(
+                transform_math::invertTransform(api_transform::toNi(rest.control.transform)),
+                api_transform::toNi(rest.pose.handWorld));
+            outWorld = transform_math::composeTransforms(
+                api_transform::toNi(control.transform), handFromControl);
+            return finiteTransform(outWorld);
+        }
+
+        [[nodiscard]] bool resolveBlendedSupportHand(
+            const RE::NiTransform& weaponWorld,
+            const RE::NiTransform& targetWorld,
+            const frik_visual_authority::FingerLocalTransformOverride& targetFingers,
+            RE::NiTransform& outWorld,
+            frik_visual_authority::FingerLocalTransformOverride& outFingers)
+        {
+            outWorld = targetWorld;
+            outFingers = targetFingers;
+            const float weight = s_supportHandBlend.weight;
+            if (weight >= 1.0f) {
+                return true;
+            }
+            RE::NiTransform restWorld{};
+            if (!resolveSupportHandRestWorld(weaponWorld, restWorld)) {
+                return false;
+            }
+            const float alpha =
+                native_animation_authority_policy::easeSupportHandBlendWeight(weight);
+            outWorld = transform_math::interpolateTransforms(restWorld, targetWorld, alpha);
+            if (s_supportHandRest.valid) {
+                const auto& rest = s_supportHandRest.pose;
+                for (std::size_t index = 0; index < outFingers.localTransforms.size(); ++index) {
+                    const auto bit = 1u << index;
+                    if ((outFingers.enabledMask & bit) == 0 ||
+                        (rest.fingerLocalTransformMask & bit) == 0) {
+                        continue;
+                    }
+                    const RE::NiTransform blended = transform_math::interpolateTransforms(
+                        api_transform::toNi(rest.fingerLocalTransforms[index]),
+                        targetFingers.localTransforms[index],
+                        alpha);
+                    if (finiteTransform(blended)) {
+                        outFingers.localTransforms[index] = blended;
+                    }
+                }
+            }
+            return finiteTransform(outWorld);
+        }
+
+        [[nodiscard]] bool publishManualCycleHandPose(
+            const frik_visual_authority::Hand hand,
+            const RE::NiTransform& handWorld,
+            const frik_visual_authority::FingerLocalTransformOverride& fingerLocals)
+        {
+            auto& publication =
+                s_manualCycleVisualPublications[manualCycleHandIndex(hand)];
+            if (fingerLocals.enabledMask != 0) {
+                // FRIK's local-transform override augments an existing pose
+                // publication under the same tag. Publishing it alone is
+                // intentionally rejected, so establish the base tag before
+                // attaching Bethesda's exact animated finger locals.
+                if (!frik_visual_authority::setHandPoseCustomWithPriority(
+                        kManualCycleVisualAuthorityTag,
+                        hand,
+                        frik_visual_authority::HandPoseData{},
+                        kManualCycleVisualAuthorityPriority)) {
+                    (void)clearManualCycleVisualForHand(hand);
+                    return false;
+                }
+                publication.fingerPosePublished = true;
+                if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
+                        kManualCycleVisualAuthorityTag,
+                        hand,
+                        &fingerLocals,
+                        kManualCycleVisualAuthorityPriority)) {
+                    (void)clearManualCycleVisualForHand(hand);
+                    return false;
+                }
+            } else if (publication.fingerPosePublished) {
+                if (!frik_visual_authority::clearHandPose(
+                        kManualCycleVisualAuthorityTag,
+                        hand)) {
+                    return false;
+                }
+                publication.fingerPosePublished = false;
+            }
+
+            if (!frik_visual_authority::applyExternalHandWorldTransform(
+                    kManualCycleVisualAuthorityTag,
+                    hand,
+                    handWorld,
+                    kManualCycleVisualAuthorityPriority)) {
+                (void)clearManualCycleVisualForHand(hand);
+                return false;
+            }
+            publication.worldPublished = true;
+            return true;
+        }
+
+        void advanceSupportHandReturn(const RE::NiTransform& weaponWorld)
+        {
+            auto& blend = s_supportHandBlend;
+            if (blend.weight <= 0.0f) {
+                return;
+            }
+            // FRIK refuses a target beyond the arm's reach on alternate frames
+            // and shows the tracked hand, so the hand is already home. Blending
+            // from the animation now would pull it out again as soon as a
+            // lowered target came within reach.
+            if (blend.framesSinceRefusal < kSupportHandRefusalMemoryFrames) {
+                (void)clearManualCycleVisualForHand(frik_visual_authority::Hand::Left);
+                PAPER_LOG_DEBUG(Animation, "Native support hand return skipped: FRIK is showing the tracked hand");
+                return;
+            }
+            blend.weight = native_animation_authority_policy::advanceSupportHandBlendWeight(
+                blend.weight,
+                false,
+                s_frameDeltaSeconds,
+                g_config.handBlendSeconds);
+            if (blend.weight <= 0.0f) {
+                (void)clearManualCycleVisualForHand(frik_visual_authority::Hand::Left);
+                PAPER_LOG_DEBUG(Animation, "Native support hand returned to ROCK");
+                return;
+            }
+            RE::NiTransform handWorld{};
+            frik_visual_authority::FingerLocalTransformOverride fingers{};
+            if (!resolveBlendedSupportHand(
+                    weaponWorld,
+                    transform_math::composeTransforms(weaponWorld, blend.lastTargetInWeapon),
+                    blend.lastFingerLocals,
+                    handWorld,
+                    fingers) ||
+                !publishManualCycleHandPose(
+                    frik_visual_authority::Hand::Left, handWorld, fingers)) {
+                (void)clearManualCycleVisualForHand(frik_visual_authority::Hand::Left);
+                PAPER_LOG_DEBUG(Animation, "Native support hand return ended early: rest pose or publication unavailable");
+            }
+        }
+
+        // The lease has ended, so the weapon comes from the cached source tree
+        // only while it is still the same tree and the same weapon node.
+        void advanceSupportHandReturnWithoutLease()
+        {
+            auto* tree = s_cache.sourceTree;
+            const int weaponIndex = s_cache.sourceWeaponIndex;
+            auto* weaponNode =
+                validTree(tree) && tree == f4vr::getFirstPersonBoneTree() &&
+                    tree->transforms == s_cache.sourceTransforms &&
+                    weaponIndex >= 0 && weaponIndex < tree->numTransforms ?
+                tree->transforms[weaponIndex].refNode :
+                nullptr;
+            if (!weaponNode ||
+                reinterpret_cast<std::uintptr_t>(weaponNode) !=
+                    s_latestManualCycleRockGripBaselines.weaponNode ||
+                !finiteTransform(weaponNode->world)) {
+                (void)clearManualCycleVisualForHand(frik_visual_authority::Hand::Left);
+                return;
+            }
+            advanceSupportHandReturn(weaponNode->world);
+        }
+
+        void guardedAdvanceSupportHandReturnWithoutLease()
+        {
+#if defined(_MSC_VER)
+            __try {
+                advanceSupportHandReturnWithoutLease();
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                (void)clearManualCycleVisualForHand(frik_visual_authority::Hand::Left);
+                s_captureFault.store(true, std::memory_order_release);
+            }
+#else
+            advanceSupportHandReturnWithoutLease();
+#endif
+        }
+
+        // strokeGatedHandModel selects the cycle gate for the support hand: its
+        // current native model pose. Null keeps the ordinary motion gate.
         [[nodiscard]] ManualCycleHandVisualResult publishManualCycleHandVisual(
             const frik_visual_authority::Hand hand,
             const RE::NiTransform& handInWeapon,
             const frik_visual_authority::FingerLocalTransformOverride& fingerLocals,
             const RE::NiTransform& fixedWeaponWorld,
-            const native_animation_authority_policy::WeaponFixedHandTargetMode targetMode)
+            const native_animation_authority_policy::WeaponFixedHandTargetMode targetMode,
+            const RE::NiTransform* strokeGatedHandModel = nullptr)
         {
             const std::size_t handIndex = manualCycleHandIndex(hand);
-            auto& publication = s_manualCycleVisualPublications[handIndex];
             auto& handRebase =
                 s_sourceAimFrame.manualCycleHandRebases[handIndex];
             handRebase.targetMode = targetMode;
@@ -1350,6 +1631,11 @@ namespace paper::native_animation_authority
                                 s_manualCycleRockGripBaselines.weaponGenerationKey);
                             handRebase.baselineUnavailableLogged = true;
                         }
+                        // A new lease's first frame has no baseline yet. The
+                        // caller continues a running return meanwhile.
+                        if (isLeft && supportHandReturnRunning()) {
+                            return ManualCycleHandVisualResult::Suppressed;
+                        }
                         (void)clearManualCycleVisualForHand(hand);
                         return ManualCycleHandVisualResult::Failed;
                     }
@@ -1357,6 +1643,9 @@ namespace paper::native_animation_authority
                 }
 
                 handRebase.nativeBaselineHandInWeapon = handInWeapon;
+                if (strokeGatedHandModel) {
+                    handRebase.nativeBaselineHandModel = *strokeGatedHandModel;
+                }
                 if (!finiteTransform(
                         handRebase.liveBaselineHandInWeapon) ||
                     !finiteTransform(
@@ -1390,11 +1679,29 @@ namespace paper::native_animation_authority
             handRebase.resolvedHandInWeaponValid = false;
             handRebase.resolvedHandWorldValid = false;
             const bool wasMotionQualified = handRebase.motionQualified;
-            handRebase.motionQualified =
-                native_animation_authority_policy::
-                    updateManualCycleHandMotionQualification(
-                        handRebase.motionQualified,
-                        motion);
+            if (strokeGatedHandModel) {
+                const auto againstBody = measureManualCycleHandMotion(
+                    handRebase.nativeBaselineHandModel,
+                    *strokeGatedHandModel);
+                handRebase.peakStrokeAgainstWeaponGameUnits = (std::max)(
+                    handRebase.peakStrokeAgainstWeaponGameUnits,
+                    motion.translationGameUnits);
+                handRebase.peakStrokeAgainstBodyGameUnits = (std::max)(
+                    handRebase.peakStrokeAgainstBodyGameUnits,
+                    againstBody.translationGameUnits);
+                handRebase.motionQualified =
+                    native_animation_authority_policy::
+                        updateCycleSupportHandStrokeQualification(
+                            handRebase.motionQualified,
+                            motion.translationGameUnits,
+                            againstBody.translationGameUnits);
+            } else {
+                handRebase.motionQualified =
+                    native_animation_authority_policy::
+                        updateManualCycleHandMotionQualification(
+                            handRebase.motionQualified,
+                            motion);
+            }
             if (!handRebase.motionQualified) {
                 handRebase.resolvedHandInWeapon =
                     handRebase.liveBaselineHandInWeapon;
@@ -1405,6 +1712,11 @@ namespace paper::native_animation_authority
                         handRebase.liveBaselineHandInWeapon);
                 handRebase.resolvedHandWorldValid =
                     finiteTransform(handRebase.resolvedHandWorld);
+                // The caller continues a running return from the pose on screen.
+                if (hand == frik_visual_authority::Hand::Left &&
+                    supportHandReturnRunning()) {
+                    return ManualCycleHandVisualResult::Suppressed;
+                }
                 // Leave ROCK's priority-100 grip tag as the visual owner. This
                 // preserves its exact position, rotation, and finger pose
                 // instead of forwarding native idle/squirm noise.
@@ -1483,49 +1795,51 @@ namespace paper::native_animation_authority
             }
             handRebase.resolvedHandInWeapon = targetHandInWeapon;
             handRebase.resolvedHandInWeaponValid = true;
-            handRebase.resolvedHandWorld = handWorld;
+
+            RE::NiTransform publishedWorld = handWorld;
+            bool publishedFingersBlended = false;
+            frik_visual_authority::FingerLocalTransformOverride blendedFingers{};
+            const float weightBeforeFrame = s_supportHandBlend.weight;
+            if (hand == frik_visual_authority::Hand::Left) {
+                auto& blend = s_supportHandBlend;
+                blend.weight = native_animation_authority_policy::advanceSupportHandBlendWeight(
+                    blend.weight,
+                    true,
+                    s_frameDeltaSeconds,
+                    g_config.handBlendSeconds);
+                blend.lastTargetInWeapon = targetHandInWeapon;
+                blend.lastFingerLocals = fingerLocals;
+                publishedFingersBlended = resolveBlendedSupportHand(
+                    fixedWeaponWorld,
+                    handWorld,
+                    fingerLocals,
+                    publishedWorld,
+                    blendedFingers);
+                if (!publishedFingersBlended) {
+                    // Without a rest pose the animation still has to play.
+                    blend.weight = 1.0f;
+                    publishedWorld = handWorld;
+                    PAPER_LOG_DEBUG(Animation, "Native support hand blend skipped: rest pose unavailable");
+                }
+            }
+            handRebase.resolvedHandWorld = publishedWorld;
             handRebase.resolvedHandWorldValid = true;
 
-            if (fingerLocals.enabledMask != 0) {
-                // FRIK's local-transform override augments an existing pose
-                // publication under the same tag. Publishing it alone is
-                // intentionally rejected, so establish the base tag before
-                // attaching Bethesda's exact animated finger locals.
-                if (!frik_visual_authority::setHandPoseCustomWithPriority(
-                        kManualCycleVisualAuthorityTag,
-                        hand,
-                        frik_visual_authority::HandPoseData{},
-                        kManualCycleVisualAuthorityPriority)) {
-                    (void)clearManualCycleVisualForHand(hand);
-                    return ManualCycleHandVisualResult::Failed;
-                }
-                publication.fingerPosePublished = true;
-                if (!frik_visual_authority::setHandPoseCustomLocalTransformsWithPriority(
-                        kManualCycleVisualAuthorityTag,
-                        hand,
-                        &fingerLocals,
-                        kManualCycleVisualAuthorityPriority)) {
-                    (void)clearManualCycleVisualForHand(hand);
-                    return ManualCycleHandVisualResult::Failed;
-                }
-            } else if (publication.fingerPosePublished) {
-                if (!frik_visual_authority::clearHandPose(
-                        kManualCycleVisualAuthorityTag,
-                        hand)) {
-                    return ManualCycleHandVisualResult::Failed;
-                }
-                publication.fingerPosePublished = false;
-            }
-
-            if (!frik_visual_authority::applyExternalHandWorldTransform(
-                    kManualCycleVisualAuthorityTag,
+            if (!publishManualCycleHandPose(
                     hand,
-                    handWorld,
-                    kManualCycleVisualAuthorityPriority)) {
-                (void)clearManualCycleVisualForHand(hand);
+                    publishedWorld,
+                    publishedFingersBlended ? blendedFingers : fingerLocals)) {
+                if (hand == frik_visual_authority::Hand::Left) {
+                    s_supportHandBlend.weight =
+                        supportHandWeightAfterLostFrame(weightBeforeFrame);
+                    s_supportHandBlend.framesSinceRefusal = 0;
+                }
                 return ManualCycleHandVisualResult::Failed;
             }
-            publication.worldPublished = true;
+            if (hand == frik_visual_authority::Hand::Left &&
+                s_supportHandBlend.framesSinceRefusal < kSupportHandRefusalMemoryFrames) {
+                ++s_supportHandBlend.framesSinceRefusal;
+            }
             return ManualCycleHandVisualResult::Published;
         }
 
@@ -1555,7 +1869,11 @@ namespace paper::native_animation_authority
                                 WeaponFixedHandRole::Primary,
                             s_manualCycleRockGripBaselines.authoredLeftActive));
             if (s_nativeHandPoseCapture.supportHandValid) {
-                (void)publishManualCycleHandVisual(
+                // A reload always plays. Only the manual-cycle lease gates the
+                // support hand, so consumer authority keeps its own contract.
+                const bool cycleLease = !s_framePartialReloadExpected &&
+                    s_localManualCycleTestLeaseActive.load(std::memory_order_acquire);
+                const auto supportResult = publishManualCycleHandVisual(
                     frik_visual_authority::Hand::Left,
                     s_nativeHandPoseCapture.supportHandInWeapon,
                     s_nativeHandPoseCapture.supportFingerLocals,
@@ -1565,10 +1883,13 @@ namespace paper::native_animation_authority
                             s_framePartialReloadExpected,
                             native_animation_authority_policy::
                                 WeaponFixedHandRole::Support,
-                            s_manualCycleRockGripBaselines.authoredLeftActive));
+                            s_manualCycleRockGripBaselines.authoredLeftActive),
+                    cycleLease ? &s_nativeHandPoseCapture.supportHandModel : nullptr);
+                if (supportResult == ManualCycleHandVisualResult::Suppressed) {
+                    advanceSupportHandReturn(fixedWeaponWorld);
+                }
             } else {
-                (void)clearManualCycleVisualForHand(
-                    frik_visual_authority::Hand::Left);
+                clearSupportHandForLostFrame();
             }
 
             // hFRIK's external-hand solver deliberately excludes the Weapon
@@ -2063,6 +2384,13 @@ namespace paper::native_animation_authority
                 PAPER_LOG_DEBUG(Animation,
                     "Native manual-cycle hand-only authority released: {}",
                     localManualCycleLeaseEndReasonName(step.endReason));
+                const auto& support = s_sourceAimFrame.manualCycleHandRebases[
+                    manualCycleHandIndex(frik_visual_authority::Hand::Left)];
+                PAPER_LOG_DEBUG(Animation,
+                    "Native manual-cycle support hand peak againstWeapon={:.2f}gu againstBody={:.2f}gu driven={}",
+                    support.peakStrokeAgainstWeaponGameUnits,
+                    support.peakStrokeAgainstBodyGameUnits,
+                    support.motionQualified);
             }
             return requestChanged;
         }
@@ -2356,6 +2684,12 @@ namespace paper::native_animation_authority
                 resolved.rightValid = true;
             }
             if (snapshot.leftSupportGripValid &&
+                finiteTransform(snapshot.leftSupportHandInWeapon)) {
+                resolved.leftGripHandInWeapon =
+                    snapshot.leftSupportHandInWeapon;
+                resolved.leftGripValid = true;
+            }
+            if (snapshot.leftSupportGripValid &&
                 snapshot.authoredLeftSupportGripActive &&
                 finiteTransform(snapshot.leftSupportHandInWeapon)) {
                 resolved.leftHandInWeapon =
@@ -2409,6 +2743,9 @@ namespace paper::native_animation_authority
                 tracing ? identity.weaponFormId : 0, identity.weaponGenerationKey,
                 identity.weaponNode, s_cycleTrace->log);
         }
+        s_frameDeltaSeconds = deltaSeconds > 0.0f && deltaSeconds <= 0.1f ?
+            deltaSeconds :
+            (1.0f / 90.0f);
         const bool localReloadRequestChanged = refreshLocalReloadTestLease();
         const bool localManualCycleRequestChanged =
             refreshLocalManualCycleTestLease(deltaSeconds);
@@ -2506,6 +2843,10 @@ namespace paper::native_animation_authority
             succeeded = result;
             return result;
         };
+        if (phase == ApplyPhase::AfterRock && !s_frameWeaponFixedHandsExpected &&
+            supportHandReturnRunning() && claimOrValidateThread()) {
+            guardedAdvanceSupportHandReturnWithoutLease();
+        }
         if (!s_frameCaptureReady || s_frameCaptureFlags == 0 || !claimOrValidateThread()) {
             return finishApplication(false);
         }
@@ -2527,8 +2868,10 @@ namespace paper::native_animation_authority
                 // A cycle can lose its equipped-weapon eligibility, or a reload
                 // can end, during ROCK's own update. Drop the native overlay
                 // only afterward, when normal grip tags hold current-frame
-                // controller/weapon targets.
-                clearManualCycleVisualAuthorityPreservingWeapon();
+                // controller/weapon targets. A running support-hand return
+                // finishes on its own, and checks the weapon each frame.
+                clearManualCycleVisualAuthorityPreservingWeapon(
+                    supportHandReturnRunning());
                 invalidateCapture();
                 s_frameCaptureReady = false;
                 s_frameWeaponFixedHandsApplied = true;
@@ -2622,6 +2965,7 @@ namespace paper::native_animation_authority
 
     void capturePresentedHandBaselines(std::uint64_t frameIndex)
     {
+        captureSupportHandRest(frameIndex);
         s_presentedGripBaselines = {};
         const auto& identity = s_latestManualCycleRockGripBaselines;
         auto* weapon = s_sourceAimFrame.weaponNode;
@@ -2691,12 +3035,20 @@ namespace paper::native_animation_authority
             s_cycleTrace->failureReported = true;
             PAPER_LOG_ERROR(Animation, "Cycle trace failed; further samples disabled");
         }
-        if ((s_frameWeaponFixedHandsExpected && !s_frameWeaponFixedHandsApplied) ||
-            s_frameWeaponFixedHandsCleanupPending) {
+        const bool weaponFixedHandsFailed =
+            s_frameWeaponFixedHandsExpected && !s_frameWeaponFixedHandsApplied;
+        if (weaponFixedHandsFailed || s_frameWeaponFixedHandsCleanupPending) {
             // Failure cleanup runs after ROCK has refreshed its normal grip
             // targets, so releasing the retained weapon-fixed tags cannot feed a
-            // previous-frame pose into the weapon solver.
-            clearManualCycleVisualAuthorityPreservingWeapon();
+            // previous-frame pose into the weapon solver. An ended lease leaves
+            // a running support-hand return to finish on its own.
+            const float weightAfterLostFrame =
+                supportHandWeightAfterLostFrame(s_supportHandBlend.weight);
+            clearManualCycleVisualAuthorityPreservingWeapon(
+                !weaponFixedHandsFailed && supportHandReturnRunning());
+            if (weaponFixedHandsFailed) {
+                s_supportHandBlend.weight = weightAfterLostFrame;
+            }
         }
         if (s_cycleTrace && logger::instance->should_log(spdlog::level::debug) &&
             !s_cycleTrace->failed.load(std::memory_order_relaxed)) {
@@ -2745,10 +3097,11 @@ namespace paper::native_animation_authority
                             const bool left = index == 1;
                             const char* name = left ? "left" : "right";
                             const auto& hand = left ? sample.leftHand : sample.rightHand;
-                            trace.log->debug("CYCLE_TRACE hand frame={} hand={} mode={} qualified={} published={} motion=({:.5f}gu,{:.5f}deg)",
+                            trace.log->debug("CYCLE_TRACE hand frame={} hand={} mode={} qualified={} published={} motion=({:.5f}gu,{:.5f}deg) blend={:.3f}",
                                 frameIndex, name, static_cast<unsigned>(hand.targetMode),
                                 hand.motionQualified, hand.visualAuthorityPublished,
-                                hand.motionTranslationGameUnits, hand.motionRotationDegrees);
+                                hand.motionTranslationGameUnits, hand.motionRotationDegrees,
+                                left ? s_supportHandBlend.weight : 0.0f);
                             pose(name, "native-current", left ? trace.nativePose.supportHandValid : trace.nativePose.primaryHandValid,
                                 left ? trace.nativePose.supportHandInWeapon : trace.nativePose.primaryHandInWeapon);
                             if (active || edge) {
@@ -2812,6 +3165,8 @@ namespace paper::native_animation_authority
         if (ownerThread == 0 || ownerThread == GetCurrentThreadId()) {
             clearManualCycleVisualAuthorityPreservingWeapon();
         }
+        s_supportHandBlend = {};
+        s_supportHandRest = {};
         invalidateCapture();
         resetHybridPoseState();
         s_frameCaptureReady = false;

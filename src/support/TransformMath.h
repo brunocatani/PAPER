@@ -242,4 +242,52 @@ namespace paper::transform_math
         outQuaternion[2] = z;
         outQuaternion[3] = w;
     }
+
+    // Translation and scale interpolate linearly; rotation takes the shorter arc.
+    template <class Transform>
+    inline Transform interpolateTransforms(
+        const Transform& start,
+        const Transform& target,
+        const float alpha)
+    {
+        if (alpha <= 0.0f) {
+            return start;
+        }
+        if (alpha >= 1.0f) {
+            return target;
+        }
+
+        float from[4]{};
+        float to[4]{};
+        niRowsToHavokQuaternion(start.rotate, from);
+        niRowsToHavokQuaternion(target.rotate, to);
+        float cosine = from[0] * to[0] + from[1] * to[1] + from[2] * to[2] + from[3] * to[3];
+        if (cosine < 0.0f) {
+            cosine = -cosine;
+            for (float& component : to) {
+                component = -component;
+            }
+        }
+        float fromWeight = 1.0f - alpha;
+        float toWeight = alpha;
+        if (cosine < 0.9995f) {
+            const float angle = std::acos(cosine);
+            const float inverseSine = 1.0f / std::sin(angle);
+            fromWeight = std::sin(fromWeight * angle) * inverseSine;
+            toWeight = std::sin(alpha * angle) * inverseSine;
+        }
+        float blended[4]{};
+        for (int component = 0; component < 4; ++component) {
+            blended[component] = from[component] * fromWeight + to[component] * toWeight;
+        }
+
+        Transform result = target;
+        result.rotate = havokQuaternionToNiRows<decltype(result.rotate)>(blended);
+        result.translate = detail::makeVector<decltype(result.translate)>(
+            start.translate.x + (target.translate.x - start.translate.x) * alpha,
+            start.translate.y + (target.translate.y - start.translate.y) * alpha,
+            start.translate.z + (target.translate.z - start.translate.z) * alpha);
+        result.scale = start.scale + (target.scale - start.scale) * alpha;
+        return result;
+    }
 }

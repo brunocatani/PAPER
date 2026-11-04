@@ -79,6 +79,10 @@ namespace paper
         _sample.frameIndex=context.frameIndex; _sample.worldGeneration=context.worldGeneration;
         _sample.skeletonGeneration=context.skeletonGeneration; _sample.providerGeneration=context.providerGeneration;
     }
+    bool RockApiClient::queryHandFrame(rock::api::Hand hand,rock::api::hands::HandFrame& output) const {
+        output={}; return ready() && _hands->getHandFrame(_ownerToken,hand,&output)==rock::api::Status::Ok;
+    }
+
     bool RockApiClient::queryPresentedHandFrame(rock::api::Hand hand,rock::api::hands::HandFrame& output) const {
         output={}; return ready() && _hands->getPresentedHandFrame(_ownerToken,hand,&output)==rock::api::Status::Ok;
     }

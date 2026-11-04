@@ -442,6 +442,52 @@ namespace paper::native_animation_authority_policy
                    kManualCycleHandMotionRotationThresholdDegrees;
     }
 
+    inline constexpr float kCycleSupportHandStrokeGameUnits = 2.0f;
+
+    /*
+     * During a cycle the support hand is driven only when the clip works the
+     * weapon with it, and such a hand moves against both the gun and the body.
+     * Measured on the bench, against the gun then the body: a .44 clip that
+     * leaves the arm out moves it 14.7gu and exactly 0, because only the gun
+     * moves; a Timberwolf hand holding the foregrip moves 1.1gu and 6.2gu,
+     * riding the gun through recoil; pump strokes move it 5.1gu and 4.2gu.
+     * A reload does not pass through this gate.
+     */
+    [[nodiscard]] inline constexpr bool updateCycleSupportHandStrokeQualification(
+        const bool alreadyQualified,
+        const float translationAgainstWeaponGameUnits,
+        const float translationAgainstBodyGameUnits)
+    {
+        return alreadyQualified ||
+               (translationAgainstWeaponGameUnits >= kCycleSupportHandStrokeGameUnits &&
+                   translationAgainstBodyGameUnits >= kCycleSupportHandStrokeGameUnits);
+    }
+
+    /*
+     * 0 leaves the hand on ROCK's pose and 1 on the animation. One weight serves
+     * both directions, so a lease that starts during a return continues from
+     * the pose on screen. A zero duration moves the hand at once.
+     */
+    [[nodiscard]] inline constexpr float advanceSupportHandBlendWeight(
+        const float weight,
+        const bool driven,
+        const float deltaSeconds,
+        const float blendSeconds)
+    {
+        if (blendSeconds <= 0.0f) {
+            return driven ? 1.0f : 0.0f;
+        }
+        const float step = deltaSeconds / blendSeconds;
+        const float next = driven ? weight + step : weight - step;
+        return next < 0.0f ? 0.0f : (next > 1.0f ? 1.0f : next);
+    }
+
+    // Eased so neither end of the move has a velocity step.
+    [[nodiscard]] inline constexpr float easeSupportHandBlendWeight(const float weight)
+    {
+        return weight * weight * (3.0f - 2.0f * weight);
+    }
+
     [[nodiscard]] constexpr LocalReloadLeaseStep advanceLocalReloadLease(
         LocalReloadLeaseState state,
         LocalReloadLifecycleSignal signal)
