@@ -209,6 +209,40 @@ int main()
         revolver.primaryFamily ==
         paper::api::WeaponPrimaryFamily::Revolver);
 
+    // Captured: RSASS selector lever, P320 slide catch and takedown levers.
+    constexpr auto magazineGunWithLeverPart =
+        weapon_family::classifyWeaponFamily({
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = true,
+            .sizeClass = static_cast<std::uint32_t>(
+                paper::api::WeaponSizeClass::Pistol),
+            .weaponDataAvailable = true,
+            .partEvidenceComplete = true,
+            .magazinePart = true,
+            .slidePart = true,
+            .leverPart = true,
+        });
+    static_assert(!hasFamily(
+        magazineGunWithLeverPart,
+        paper::api::WeaponFamilyFlag::LeverAction));
+    static_assert(!hasFamily(
+        magazineGunWithLeverPart,
+        paper::api::WeaponFamilyFlag::ManualCycle));
+
+    constexpr auto tubeFedLeverAction =
+        weapon_family::classifyWeaponFamily({
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = true,
+            .sizeClass = static_cast<std::uint32_t>(
+                paper::api::WeaponSizeClass::Rifle),
+            .weaponDataAvailable = true,
+            .partEvidenceComplete = true,
+            .leverPart = true,
+        });
+    static_assert(hasFamily(
+        tubeFedLeverAction,
+        paper::api::WeaponFamilyFlag::ManualCycle));
+
     constexpr auto boltWithMagazine =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,

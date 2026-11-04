@@ -71,6 +71,10 @@ namespace paper::bolt_hold
             std::uint64_t generation{ 0 };
             std::uint32_t form{ 0 };
             std::uint32_t resolveFrames{ 0 };
+            // The step resolve last stopped at, for the log when it gives up.
+            const char* resolveStep{ "" };
+            std::int32_t resolveStatus{ 0 };
+            std::uint32_t resolveTotal{ 0 };
             bool resolved{ false };
             bool eligible{ false };
             std::array<Bone, kBoneCount> bones{};
@@ -521,23 +525,33 @@ namespace paper::bolt_hold
         // weapon's parts. False keeps trying within kResolveFrames.
         [[nodiscard]] bool resolve(RockApiClient& rock, const std::uint32_t index, Slot& slot)
         {
-            std::uint32_t total = 0;
-            if (rock.copyWeaponSources(index, slot.generation, nullptr, 0, total) != rock::api::Status::Ok || !total) {
+            const auto stopAt = [&](const char* step, const rock::api::Status status, const std::uint32_t found) {
+                slot.resolveStep = step;
+                slot.resolveStatus = static_cast<std::int32_t>(status);
+                slot.resolveTotal = found;
                 return false;
+            };
+            std::uint32_t total = 0;
+            auto status = rock.copyWeaponSources(index, slot.generation, nullptr, 0, total);
+            if (status != rock::api::Status::Ok || !total) {
+                return stopAt("source count", status, total);
             }
             s_sources.resize((std::min)(total, rock::api::weaponparts::kMaxSources));
-            if (rock.copyWeaponSources(
-                    index,
-                    slot.generation,
-                    s_sources.data(),
-                    static_cast<std::uint32_t>(s_sources.size()),
-                    total) != rock::api::Status::Ok) {
-                return false;
+            status = rock.copyWeaponSources(
+                index,
+                slot.generation,
+                s_sources.data(),
+                static_cast<std::uint32_t>(s_sources.size()),
+                total);
+            if (status != rock::api::Status::Ok) {
+                return stopAt("source copy", status, total);
             }
 
+            // An undecided size class (valid == 0) is no reason to wait: the keywords
+            // still arrive, and only the family below is used.
             rock::api::weapon::Classification classification{};
-            if (!rock.queryWeaponClassification(index, classification) || classification.valid == 0) {
-                return false;
+            if (!rock.queryWeaponClassification(index, classification)) {
+                return stopAt("classification", rock::api::Status::NotReady, 0);
             }
             s_evidence.resize(rock::api::weaponparts::kMaxEvidenceDetails);
             std::uint32_t evidenceTotal = 0;
@@ -547,7 +561,7 @@ namespace paper::bolt_hold
                 static_cast<std::uint32_t>(s_evidence.size()),
                 evidenceTotal);
             if (!evidenceCount) {
-                return false;
+                return stopAt("evidence", rock::api::Status::Ok, evidenceTotal);
             }
 
             // A name on two nodes is ambiguous, and an ambiguous bone is not used.
@@ -655,10 +669,13 @@ namespace paper::bolt_hold
                     slot.resolved = true;
                     PAPER_LOG_INFO(
                         Reload,
-                        "BOLT_HOLD weapon={:08X}/{:016X} slot={} has no published parts; no hold",
+                        "BOLT_HOLD weapon={:08X}/{:016X} slot={} gave up at step '{}' status={} found={}; no hold",
                         slot.form,
                         slot.generation,
-                        index);
+                        index,
+                        slot.resolveStep,
+                        slot.resolveStatus,
+                        slot.resolveTotal);
                 }
                 if (!slot.resolved) {
                     return;

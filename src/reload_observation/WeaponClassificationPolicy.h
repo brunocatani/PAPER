@@ -266,7 +266,10 @@ namespace paper::weapon_classification_policy
             add(WeaponFamilyFlag::SlideOperated,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }
-        if (signals.leverPart) {
+        // A part's name says little about how the gun cycles: a selector, slide catch
+        // or takedown lever all match. A real lever action has no magazine part, and
+        // the game flags it as a bolt action anyway.
+        if (signals.leverPart && !signals.magazinePart) {
             add(WeaponFamilyFlag::LeverAction,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }
