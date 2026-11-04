@@ -12,8 +12,12 @@
 - Weapons ROCK seats from a FRIK user weapon offset keep the game's own reload and cycling.
 - PAPER takes the hands only for a native reload or cycle action; firing alone no longer does.
 - Two copies of the same weapon equipped in both hands are now recognized as dual wielding.
+- During a cycle the left hand follows the animation only when the clip works the weapon with it; otherwise it stays where ROCK puts it. A reload always plays both hands.
 
 ### Added
+
+- An empty gun's bolt or slide stays open, in either hand, until a reload starts or rounds arrive, with parts that move with it such as a tilting barrel (`[Reload] bBoltHoldOpen`, `fBoltHoldCloseSeconds`). PAPER reads the open position off screen from the gun's own animations the first time it is equipped each session. Bolt, lever and pump guns and revolvers never hold.
+- `[Reload] fHandBlendSeconds` blends the left hand onto a reload, pump stroke or cycle animation and back; 0 moves it instantly.
 
 - Mods that drive a reload or manual cycle with the player's own hands can take the weapon away from PAPER's animation through a renewed lease, including taking over early and owning the bolt cycle, chambering, casing ejection and their sounds. PAPER keeps that ownership after firing.
 - Release packaging: the `custom-release` preset builds a `.zip` holding only `PAPER.dll`, with the readme beside it.

@@ -29,6 +29,7 @@ What it provides:
 - **Weapon cycling** - bolt actions, lever actions and revolver hammer cocking.
 - **Controller-directed handling** - the weapon stays in your hand while the hands animate around it.
 - **Optional manual reloads** - turn off automatic reloads when the magazine runs empty.
+- **Bolt hold-open** - an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
 - **Live settings** - INI settings that reload while the game runs, with in-game pages in RobCo PALM.
 - **Provider API** - 2 interfaces: reload, animation, pose and weapon-motion data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
@@ -74,6 +75,9 @@ PAPER creates the file from its compiled defaults only when it is missing and ne
 | `[Main] bEnabled` | `true` | Reload coordination and the manual-reload-only option. |
 | `[Main] iLogLevel` | `2` | Log level; 2 is normal information logging. |
 | `[Reload] bManualReloadOnly` | `false` | `true` stops automatic reloads when ammunition runs out. Manual reload input still works. |
+| `[Reload] fHandBlendSeconds` | `0.15` | Seconds the left hand takes to move onto a reload, pump stroke or cycle animation, and back when it ends. `0` moves it instantly. |
+| `[Reload] bBoltHoldOpen` | `true` | `true` leaves an empty gun's bolt or slide open, in either hand, until a reload starts or rounds arrive. It needs a bolt on the game's `WeaponBolt` bone, and a gun none of whose animations open its bolt never holds. Bolt, lever and pump guns and revolvers never hold. |
+| `[Reload] fBoltHoldCloseSeconds` | `0.15` | Seconds the open bolt takes to return to the animation when a reload starts. `0` moves it instantly. |
 | `[Debug] bDebugDrawNativeAnimation` | `false` | Draws PAPER's animation targets for diagnosis (needs RPS UI Framework). |
 
 [PAPER_example.ini](data/config/PAPER_example.ini) documents every option. It is a reference only, never a file to install.
@@ -203,7 +207,7 @@ This writes a release's two files to `build-release/package`: a `.zip` that inst
 | [docs/api](docs/api/) | One page per provider interface |
 | [src/PaperMain.cpp](src/PaperMain.cpp) | Plugin initialization and lifecycle |
 | [src/animation](src/animation/) | Native animation authority and the hand pose pipeline |
-| [src/reload_control](src/reload_control/) | Manual-reload-only control and the physical-reload lease |
+| [src/reload_control](src/reload_control/) | Manual-reload-only control, the empty-gun bolt hold and the physical-reload lease |
 | [src/reload_observation](src/reload_observation/), [src/reload_stages](src/reload_stages/), [src/animation_evidence](src/animation_evidence/) | Reload observation, stage identification and animation evidence |
 | [src/weapon_motion](src/weapon_motion/) | Weapon-part motion paths, learning and the motion cache |
 | [src/api](src/api/) | Provider interface implementations and the ROCK client |
