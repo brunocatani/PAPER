@@ -28,6 +28,8 @@ namespace paper::manual_reload_only
         // Both automatic callers destroy their stack-owned action after return.
         using NativeActionDataDispatcherFn = bool (*)(void* actionData);
         using NativeActorActionFn = bool (*)(void* actor,void* action,void* target);
+        using NativePlaySoundFn = void (*)(RE::BGSSoundDescriptorForm*, std::uint32_t, const RE::NiPoint3*, RE::NiAVObject*);
+        std::atomic<NativePlaySoundFn> s_playSound{};
         std::atomic<NativeActorActionFn> s_originalBoltAction{};
         std::atomic<bool> s_boltActionReady{},s_boltActionFailed{};
         std::uint64_t s_blockedBoltActions{}; // PAPER owner thread only.
@@ -246,6 +248,19 @@ namespace paper::manual_reload_only
             }
         }
 
+        // One click on every weapon in place of the reload the trigger would have
+        // started. Fallout4.esm WPNRifleFireDry, played as native FC0D7E plays a
+        // weapon's own attack-fail sound when no ammo is left at all. ROCK plays the
+        // same form for slot 1, whose trigger never reaches this call site.
+        void playDryFire()
+        {
+            const auto play = s_playSound.load(std::memory_order_acquire);
+            auto* sound = RE::TESForm::GetFormByID<RE::BGSSoundDescriptorForm>(0x1DACD);
+            if (play && sound) {
+                play(sound, 0, nullptr, nullptr);
+            }
+        }
+
         bool onAutomaticReloadRequest(
             void* dispatcher,
             const std::int32_t actionId,
@@ -253,6 +268,7 @@ namespace paper::manual_reload_only
         {
             if (s_runtimeEnabled.load(std::memory_order_acquire)||provider::physicalReloadActive()) {
                 recordSuppressedRequest(AutomaticReloadSource::PostFire);
+                playDryFire();
                 return false;
             }
 
@@ -550,6 +566,17 @@ namespace paper::manual_reload_only
         }
         s_hookInstalled.store(true, std::memory_order_release);
         installActionExecutionObservationHook();
+
+        constexpr std::array<std::uint8_t, 15> kPlaySoundSignature{
+            0x48, 0x83, 0xEC, 0x48, 0x4C, 0x89, 0x4C, 0x24, 0x20, 0x4D, 0x8B, 0xC8, 0x44, 0x8B, 0xC2,
+        };
+        if (matchesAutomaticReloadProducerSignature(moduleBase + offsets::kFunc_PlaySoundDescriptor, kPlaySoundSignature)) {
+            s_playSound.store(
+                reinterpret_cast<NativePlaySoundFn>(moduleBase + offsets::kFunc_PlaySoundDescriptor),
+                std::memory_order_release);
+        } else {
+            PAPER_LOG_ERROR(Reload, "Dry-fire click disabled: the native sound call differs");
+        }
 
         PAPER_LOG_INFO(
             Reload,

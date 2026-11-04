@@ -35,7 +35,9 @@ iLogLevel = {}
 ; true blocks automatic reload when ammunition reaches zero, including
 ; immediate, delayed, and post-fire requests. false (default) allows normal
 ; automatic reload. Manual input, ROCK reload dispatch, Tactical Reload,
-; and reload resumption remain available with either value.
+; and reload resumption remain available with either value. While true, each
+; trigger pull on an empty gun with rounds to load plays one dry-fire click,
+; except on a charging-reload gun such as the laser musket.
 bManualReloadOnly = {}
 
 ; Seconds the left hand takes to move from your controller or grip onto the

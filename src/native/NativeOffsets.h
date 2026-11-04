@@ -9,6 +9,7 @@ namespace paper::offsets
     inline constexpr std::uintptr_t kCallsite_PlayerControls_ExecuteAction = 0x0FC0C39;
     inline constexpr std::uintptr_t kSignature_PlayerControls_AutomaticReload = 0x0FC0D18;
     inline constexpr std::uintptr_t kCallsite_PlayerControls_AutomaticReload = 0x0FC0D4F;
+    inline constexpr std::uintptr_t kFunc_PlaySoundDescriptor = 0x081FBF0;
     inline constexpr std::uintptr_t kFunc_TESActionData_Process = 0x0F9BEF0;
     inline constexpr std::uintptr_t kSignature_PlayerCharacter_ImmediateAutomaticReload = 0x0F7A4A5;
     inline constexpr std::uintptr_t kCallsite_PlayerCharacter_ImmediateAutomaticReload = 0x0F7A579;
