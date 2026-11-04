@@ -117,9 +117,13 @@ namespace paper::manual_reload_only
                 0x03, 0x4B, 0x09, 0x00,
             };
 
-        constexpr std::array<std::uint8_t, 15> kActionDataDispatcherSignature{
+        // MOV RDX,RCX; MOV RCX,[processor]; JMP. PAPER only calls this thunk,
+        // and another plugin may route its jump (SCISSORS Redux installs at
+        // F4SE load to refuse a steered NPC's attacks, before this check runs),
+        // so the jump's opcode is checked and its target is not.
+        constexpr std::array<std::uint8_t, 11> kActionDataDispatcherSignature{
             0x48, 0x8B, 0xD1, 0x48, 0x8B, 0x0D, 0x76, 0x88,
-            0xB6, 0x04, 0xE9, 0x01, 0x93, 0xED, 0xFF,
+            0xB6, 0x04, 0xE9,
         };
 
         enum class AutomaticReloadSource : std::size_t
@@ -551,6 +555,11 @@ namespace paper::manual_reload_only
             Reload,
             "Manual-reload-only automatic producers ready: post-fire, immediate, delayed; manual reload dispatchers remain untouched");
         return true;
+    }
+
+    bool runtimeEnabled() noexcept
+    {
+        return s_runtimeEnabled.load(std::memory_order_acquire);
     }
 
     bool physicalControlReady() noexcept
