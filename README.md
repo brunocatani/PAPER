@@ -153,7 +153,7 @@ Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload p
 - [vcpkg](https://github.com/microsoft/vcpkg), with the `VCPKG_ROOT` environment variable pointing to it
   - `git clone https://github.com/microsoft/vcpkg.git`, run `bootstrap-vcpkg.bat`, then `setx VCPKG_ROOT "<path to vcpkg>"`
 - A [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) checkout. PAPER links it directly.
-- [ROCK](https://github.com/brunocatani/ROCK) and [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) checkouts. PAPER compiles against ROCK's `include/` headers and RPS UI's `SDK/include/` headers.
+- [ROCK](https://github.com/brunocatani/ROCK) and [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) checkouts. PAPER compiles against the `include/` headers of both.
 
 PAPER uses C++23. vcpkg installs the other libraries from `vcpkg.json`.
 
@@ -163,7 +163,7 @@ Copy [CMakeUserPresets.json.template](CMakeUserPresets.json.template) to `CMakeU
 
 - `COMMON_LIB_F4VR_PATH` to your CommonLibF4VR checkout;
 - `COPY_PLUGIN_BASE_PATH` to the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into (an MO2 mod folder or the game's `Data` folder);
-- `ROCK_INCLUDE_DIR` (ROCK's `include` directory) and `RPSUI_INCLUDE_DIR` (RPS UI's `SDK/include` directory) when your checkouts are not where [CMakeLists.txt](CMakeLists.txt) looks by default.
+- `ROCK_INCLUDE_DIR` (ROCK's `include` directory) and `RPSUI_INCLUDE_DIR` (RPS UI's `include` directory) when your checkouts are not where [CMakeLists.txt](CMakeLists.txt) looks by default.
 
 Then, from the repository root:
 
@@ -192,7 +192,7 @@ cmake --preset custom-release
 cmake --build build-release --config Release --target PAPER
 ```
 
-This creates a `.7z` in `build-release/package` with `F4SE/Plugins/PAPER.dll`, its `.pdb` and the license: only what the game uses, never headers or other development files. It publishes nothing.
+This writes a release's two files to `build-release/package`: a `.zip` that installs as it is, holding only `F4SE/Plugins/PAPER.dll`, and this readme beside it. It publishes nothing.
 
 ### Source layout
 

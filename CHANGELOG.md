@@ -16,7 +16,7 @@
 ### Added
 
 - Mods that drive a reload or manual cycle with the player's own hands can take the weapon away from PAPER's animation through a renewed lease, including taking over early and owning the bolt cycle, chambering, casing ejection and their sounds. PAPER keeps that ownership after firing.
-- Release packaging: the `custom-release` preset builds a `.7z` with `PAPER.dll`, its PDB and the license.
+- Release packaging: the `custom-release` preset builds a `.zip` holding only `PAPER.dll`, with the readme beside it.
 
 ### Fixed
 
