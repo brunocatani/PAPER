@@ -8,12 +8,14 @@
 #include "RE/Bethesda/Actor.h"
 #include "RE/Bethesda/BSAnimationGraph.h"
 #include "RE/Bethesda/BSFixedString.h"
+#include "RE/Bethesda/MemoryManager.h"
 #include "RE/Bethesda/PlayerCharacter.h"
 #include "RE/Bethesda/PowerArmor.h"
 #include "RE/Bethesda/TESBoundObjects.h"
 
 #include <Windows.h>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -40,16 +42,20 @@ namespace paper::exact_clip_preharvest
         constexpr std::uintptr_t kSimpleAnimationGraphManagerHolderDtor = 0x0811F50;
         constexpr std::uintptr_t kCreateBackgroundSimpleManager = 0x0811FE0;
         constexpr std::uintptr_t kIsAnimationLoadingComplete = 0x08122C0;
-        constexpr std::uintptr_t kRequestAnimationSubGraph = 0x10162B0;
+        // 10162B0 wraps this with no metadata list, which registers the sampled
+        // weapon's idle roots on the real player's animation process.
+        constexpr std::uintptr_t kRequestAnimationSubGraph = 0x1016340;
         constexpr std::uintptr_t kIsAnimationSubGraphLoaded = 0x07F4320;
         constexpr std::uintptr_t kReleaseAnimationSubGraph = 0x07F43C0;
         constexpr std::uintptr_t kAddItemToTargetKeywords = 0x0EDA2F0;
+        constexpr std::uintptr_t kGetClipGeneratorBinding = 0x1774800;
         constexpr std::uintptr_t kGetAnimationFilesForSubgraph = 0x1769140;
         constexpr std::uintptr_t kLoadAnimationResource = 0x1728BA0;
         constexpr std::uintptr_t kMoveAnimationResourceHandle = 0x172AB40;
         constexpr std::uintptr_t kIsHkxDerivativeDbData = 0x152C0D0;
         constexpr std::uintptr_t kRetrieveBindingFromContainer = 0x17865C0;
         constexpr std::uintptr_t kFindBoneWithName = 0x190A580;
+        constexpr std::uintptr_t kBehaviorGraphSwapSingleton = 0x5AB9200;
         constexpr std::uintptr_t kAnimationFileLookupSingleton = 0x5B64318;
 
         constexpr std::size_t kSimpleAnimationGraphManagerHolderSize = 0x18;
@@ -74,6 +80,7 @@ namespace paper::exact_clip_preharvest
         constexpr std::ptrdiff_t kPartitionStartBoneOffset = 0x08;
         constexpr std::ptrdiff_t kPartitionBoneCountOffset = 0x0A;
 
+        constexpr std::ptrdiff_t kBindingFromBindingWithTriggersOffset = 0x10;
         constexpr std::ptrdiff_t kAnimationFromBindingOffset = 0x18;
         constexpr std::ptrdiff_t kTrackToBoneMappingOffset = 0x20;
         constexpr std::ptrdiff_t kTrackToBoneMappingCountOffset = 0x28;
@@ -90,15 +97,17 @@ namespace paper::exact_clip_preharvest
 
         // ROCK's independently established loaded-subgraph binding-table
         // layout. Some weapon projects load a complete exact subgraph but do
-        // not expose AnimationFileData through the numeric lookup. The table
-        // is the graph's authoritative set of bound clip paths for the same
-        // selected subgraph identifier, so it is an exact discovery fallback
-        // rather than the old shared/live-graph evidence tier.
+        // not expose AnimationFileData through the numeric lookup. The entry
+        // with the requested handle is the graph's authoritative set of its
+        // clips, keyed by clip name rather than file path. It records its own
+        // subgraph identifier, which differs from the requested one and is what
+        // resolves those names to their bindings.
         constexpr std::ptrdiff_t kGraphLoadedSubgraphsOffset = 0x3A0;
         constexpr std::ptrdiff_t kLoadedSubgraphsEntriesOffset = 0x00;
         constexpr std::ptrdiff_t kLoadedSubgraphsCountOffset = 0x10;
         constexpr std::ptrdiff_t kLoadedSubgraphsLockOffset = 0x28;
         constexpr std::size_t kLoadedSubgraphEntryStride = 0x48;
+        constexpr std::ptrdiff_t kLoadedSubgraphHandleOffset = 0x00;
         constexpr std::ptrdiff_t kLoadedSubgraphBindingTableOffset = 0x08;
         constexpr std::ptrdiff_t kBindingTableBucketCountOffset = 0x0C;
         constexpr std::ptrdiff_t kBindingTableBucketsOffset = 0x28;
@@ -135,15 +144,77 @@ namespace paper::exact_clip_preharvest
         };
         static_assert(sizeof(AnimationResourceHandle) == sizeof(void*));
 
+        // FO4VR 1016340 accepts this heap list as argument nine, which keeps an
+        // off-screen request out of the actor's live idle roots; native
+        // ExtraAnimGraphPreload uses it the same way. 10198D0 fills it with
+        // retained strings in blocks from 1B96110, so it is destroyed here: its
+        // scrap counterpart's destructor 101B590 must not touch this list.
+        struct SubgraphMetadataList
+        {
+            struct Record
+            {
+                RE::BSFixedString name;
+                std::uint64_t flags;
+                std::uint64_t identifier;
+            };
+
+            struct Block
+            {
+                std::array<std::byte, 0x300> records;
+                Block* next;
+            };
+
+            Block* head{ nullptr };
+            Block** tail{ &head };
+            Block* current{ nullptr };
+            Block* free{ nullptr };
+            Record* write{ nullptr };
+            Record* read{ nullptr };
+            std::uint32_t count{ 0 };
+            std::uint32_t pad{ 0 };
+
+            SubgraphMetadataList() = default;
+            SubgraphMetadataList(const SubgraphMetadataList&) = delete;
+            SubgraphMetadataList& operator=(const SubgraphMetadataList&) = delete;
+
+            ~SubgraphMetadataList()
+            {
+                auto* block = head;
+                auto* record = read;
+                for (std::uint32_t index = 0; index < count; ++index) {
+                    record->name.~BSFixedString();
+                    ++record;
+                    if (block && reinterpret_cast<std::byte*>(record) >= block->records.data() + 0x300) {
+                        block = block->next;
+                        record = block ? reinterpret_cast<Record*>(block->records.data()) : nullptr;
+                    }
+                }
+                while (head) {
+                    auto* next = head->next;
+                    RE::free(head);
+                    head = next;
+                }
+                while (free) {
+                    auto* next = free->next;
+                    RE::free(free);
+                    free = next;
+                }
+            }
+        };
+        static_assert(sizeof(SubgraphMetadataList) == 0x38);
+        static_assert(sizeof(SubgraphMetadataList::Record) == 0x18);
+        static_assert(sizeof(SubgraphMetadataList::Block) == 0x308);
+
         using GraphHolderCtorFn = void* (*)(void*);
         using GraphHolderDtorFn = void (*)(void*);
         using CreateBackgroundSimpleManagerFn = bool (*)(void*, RE::BSScrapArray<RE::BSStaticStringT<260>>*, std::int32_t);
         using IsAnimationLoadingCompleteFn = bool (*)(void*);
         using AddItemToTargetKeywordsFn = void (*)(RE::BGSObjectInstance*, RE::BSScrapArray<RE::IKeywordFormBase*>*);
-        using RequestAnimationSubGraphFn = void (*)(RE::Actor*, RE::BSAnimationGraphManager*, std::int32_t*, RE::BSScrapArray<RE::IKeywordFormBase*>*, std::int32_t*,
-            RE::BSTSmallArray<RE::SubgraphHandle, 2>*, RE::BSTSmallArray<RE::SubgraphIdentifier, 2>*);
+        using RequestAnimationSubGraphFn = bool (*)(RE::Actor*, RE::TESRace*, RE::BSAnimationGraphManager*, std::int32_t*, RE::BSScrapArray<RE::IKeywordFormBase*>*, std::int32_t*,
+            RE::BSTSmallArray<RE::SubgraphHandle, 2>*, RE::BSTSmallArray<RE::SubgraphIdentifier, 2>*, SubgraphMetadataList*);
         using IsAnimationSubGraphLoadedFn = bool (*)(RE::BSTSmartPointer<RE::BSAnimationGraphManager>*, RE::BSTSmallArray<RE::SubgraphHandle, 2>*, std::int32_t*);
         using ReleaseAnimationSubGraphFn = void (*)(RE::BSTSmartPointer<RE::BSAnimationGraphManager>*, RE::BSTSmallArray<RE::SubgraphHandle, 2>*);
+        using GetClipGeneratorBindingFn = void* (*)(void*, RE::BShkbAnimationGraph*, std::uint64_t, char*);
         using GetAnimationFilesForSubgraphFn = const RE::BSTArray<RE::BSFixedString>* (*)(const std::uint64_t*);
         using LoadAnimationResourceFn = bool (*)(RE::BSFixedString*, AnimationResourceHandle*);
         using MoveAnimationResourceHandleFn = AnimationResourceHandle* (*)(AnimationResourceHandle*, AnimationResourceHandle*);
@@ -162,6 +233,7 @@ namespace paper::exact_clip_preharvest
             RequestAnimationSubGraphFn requestAnimationSubGraph{ nullptr };
             IsAnimationSubGraphLoadedFn isAnimationSubGraphLoaded{ nullptr };
             ReleaseAnimationSubGraphFn releaseAnimationSubGraph{ nullptr };
+            GetClipGeneratorBindingFn getClipGeneratorBinding{ nullptr };
             GetAnimationFilesForSubgraphFn getAnimationFilesForSubgraph{ nullptr };
             LoadAnimationResourceFn loadAnimationResource{ nullptr };
             MoveAnimationResourceHandleFn moveAnimationResourceHandle{ nullptr };
@@ -173,9 +245,18 @@ namespace paper::exact_clip_preharvest
         struct BoneTarget
         {
             std::array<char, animation_evidence::kBoneNameCapacity> name{};
+            std::uint32_t nameIndex{ 0 };
             std::int16_t boneIndex{ -1 };
             std::uint16_t chainCount{ 0 };
+            bool tracked{ false };
             std::array<std::int16_t, kMaxBoneChainDepth> chain{};
+        };
+
+        struct Consumer
+        {
+            ClipSink sink{ nullptr };
+            void* sinkUserData{ nullptr };
+            const PoseReader* reader{ nullptr };
         };
 
         struct ClipWork
@@ -219,9 +300,14 @@ namespace paper::exact_clip_preharvest
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint32_t animationPathCount{ 0 };
             std::uint32_t animationPathIndex{ 0 };
+            std::uint32_t preferredClipCount{ 0 };
             std::uint64_t subgraphIdentifier{ 0 };
+            std::uint64_t boundSubgraphIdentifier{ 0 };
             ULONGLONG phaseStartedAtMilliseconds{ 0 };
             State phase{ State::Idle };
+            // The list holds the graph's clip names instead of file paths.
+            bool clipsAreGraphBound{ false };
+            bool readsPoses{ false };
             bool inPowerArmor{ false };
             bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
@@ -236,6 +322,8 @@ namespace paper::exact_clip_preharvest
             RuntimeDiagnostics diagnostics{};
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
             std::array<RE::NiTransform, kMaxBonesAndTracks> sampledLocals{};
+            std::array<PoseBone, animation_evidence::kMaxExactTracksPerClip> poseBones{};
+            const char* prepareFailure{ "" };
             std::atomic<DWORD> ownerThreadId{ 0 };
             // F4SE session messages can request teardown off the ROCK frame
             // thread. Only the established owner may touch retained Bethesda
@@ -358,6 +446,10 @@ namespace paper::exact_clip_preharvest
                     kAddItemToTargetKeywords,
                     std::array<std::uint8_t, 5>{ 0x48, 0x89, 0x5C, 0x24, 0x08 }) &&
                 validateNativeEntry(
+                    "GetClipGeneratorBinding",
+                    kGetClipGeneratorBinding,
+                    std::array<std::uint8_t, 10>{ 0x48, 0x8B, 0xC4, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56 }) &&
+                validateNativeEntry(
                     "AnimationFileData numeric lookup",
                     kGetAnimationFilesForSubgraph,
                     std::array<std::uint8_t, 6>{ 0x48, 0x8B, 0xD1, 0x48, 0x8B, 0x0D }) &&
@@ -401,6 +493,8 @@ namespace paper::exact_clip_preharvest
                 REL::Offset(kReleaseAnimationSubGraph).address());
             state.native.addItemToTargetKeywords = reinterpret_cast<AddItemToTargetKeywordsFn>(
                 REL::Offset(kAddItemToTargetKeywords).address());
+            state.native.getClipGeneratorBinding = reinterpret_cast<GetClipGeneratorBindingFn>(
+                REL::Offset(kGetClipGeneratorBinding).address());
             state.native.getAnimationFilesForSubgraph = reinterpret_cast<GetAnimationFilesForSubgraphFn>(
                 REL::Offset(kGetAnimationFilesForSubgraph).address());
             state.native.loadAnimationResource = reinterpret_cast<LoadAnimationResourceFn>(
@@ -467,9 +561,13 @@ namespace paper::exact_clip_preharvest
             job.weaponGenerationKey = 0;
             job.animationPathCount = 0;
             job.animationPathIndex = 0;
+            job.preferredClipCount = 0;
             job.subgraphIdentifier = 0;
+            job.boundSubgraphIdentifier = 0;
             job.phaseStartedAtMilliseconds = 0;
             job.phase = State::Idle;
+            job.clipsAreGraphBound = false;
+            job.readsPoses = false;
             job.inPowerArmor = false;
             job.graphHolderConstructed = false;
             job.longLoadLogged = false;
@@ -522,10 +620,12 @@ namespace paper::exact_clip_preharvest
             const auto formId = state.job.weaponFormId;
             const auto generation = state.job.weaponGenerationKey;
             const auto stats = state.stats;
+            const bool readsPoses = state.job.readsPoses;
             releaseNativeOwnership(state);
             clearJob(state.job);
             state.job.weaponFormId = formId;
             state.job.weaponGenerationKey = generation;
+            state.job.readsPoses = readsPoses;
             state.job.phase = terminalState;
             state.stats = stats;
 
@@ -722,6 +822,27 @@ namespace paper::exact_clip_preharvest
 #endif
         }
 
+        [[nodiscard]] bool guardedGetClipGeneratorBinding(
+            const GetClipGeneratorBindingFn function,
+            void* swapSingleton,
+            RE::BShkbAnimationGraph* graph,
+            const std::uint64_t subgraphIdentifier,
+            char* clipName,
+            void*& outBindingWithTriggers) noexcept
+        {
+#if defined(_MSC_VER)
+            __try {
+                outBindingWithTriggers = function(swapSingleton, graph, subgraphIdentifier, clipName);
+                return true;
+            } __except (EXCEPTION_EXECUTE_HANDLER) {
+                return false;
+            }
+#else
+            outBindingWithTriggers = function(swapSingleton, graph, subgraphIdentifier, clipName);
+            return true;
+#endif
+        }
+
         [[nodiscard]] bool guardedFindBoneWithName(
             const FindBoneWithNameFn function,
             void* skeleton,
@@ -785,10 +906,11 @@ namespace paper::exact_clip_preharvest
             return copyCString(name, outName.data(), outName.size());
         }
 
-        [[nodiscard]] bool nameIsAllowed(
+        [[nodiscard]] bool findAllowedName(
             const std::string_view boneName,
             const char* const* allowedNodeNames,
-            const std::uint32_t allowedNodeNameCount)
+            const std::uint32_t allowedNodeNameCount,
+            std::uint32_t& outIndex)
         {
             if (!allowedNodeNames || boneName.empty()) {
                 return false;
@@ -798,6 +920,7 @@ namespace paper::exact_clip_preharvest
                 if (candidate &&
                     animation_preharvest_policy::boneNameMatchesSceneNode(
                         boneName, std::string_view{ candidate })) {
+                    outIndex = index;
                     return true;
                 }
             }
@@ -822,22 +945,12 @@ namespace paper::exact_clip_preharvest
             return manager->graph[index].get();
         }
 
-        [[nodiscard]] bool resolveRetainedClip(
-            Runtime& state,
-            RE::BShkbAnimationGraph*& outGraph,
-            void*& outSkeleton,
-            void*& outBinding,
-            void*& outAnimation)
+        [[nodiscard]] bool resolveDirectClipBinding(Runtime& state, void*& outBinding)
         {
-            outGraph = nullptr;
-            outSkeleton = nullptr;
-            outBinding = nullptr;
-            outAnimation = nullptr;
             auto& job = state.job;
-            if (!job.clipResource.entry || job.currentClipPath[0] == '\0') {
+            if (!job.clipResource.entry) {
                 return false;
             }
-
             void* animationData = nullptr;
             if (!native_memory::tryReadField(
                     job.clipResource.entry, kAnimationResourceDataOffset, animationData) ||
@@ -851,22 +964,68 @@ namespace paper::exact_clip_preharvest
                 return false;
             }
             void* rootContainer = nullptr;
-            if (!native_memory::tryReadField(
-                    animationData, kRootContainerFromAnimationDataOffset, rootContainer) ||
-                !rootContainer ||
-                !guardedRetrieveBindingFromContainer(
-                    state.native.retrieveBindingFromContainer,
-                    rootContainer,
-                    outBinding,
-                    job.currentClipPath.data()) ||
-                !outBinding ||
+            return native_memory::tryReadField(
+                       animationData, kRootContainerFromAnimationDataOffset, rootContainer) &&
+                   rootContainer &&
+                   guardedRetrieveBindingFromContainer(
+                       state.native.retrieveBindingFromContainer,
+                       rootContainer,
+                       outBinding,
+                       job.currentClipPath.data());
+        }
+
+        [[nodiscard]] bool resolveGraphClipBinding(
+            Runtime& state,
+            RE::BShkbAnimationGraph* graph,
+            void*& outBinding)
+        {
+            auto& job = state.job;
+            void* swapSingleton = nullptr;
+            void* bindingWithTriggers = nullptr;
+            return graph &&
+                   native_memory::tryReadValue(
+                       reinterpret_cast<void* const*>(REL::Offset(kBehaviorGraphSwapSingleton).address()),
+                       swapSingleton) &&
+                   swapSingleton &&
+                   guardedGetClipGeneratorBinding(
+                       state.native.getClipGeneratorBinding,
+                       swapSingleton,
+                       graph,
+                       job.boundSubgraphIdentifier,
+                       job.currentClipPath.data(),
+                       bindingWithTriggers) &&
+                   bindingWithTriggers &&
+                   native_memory::tryReadField(
+                       bindingWithTriggers, kBindingFromBindingWithTriggersOffset, outBinding);
+        }
+
+        [[nodiscard]] bool resolveRetainedClip(
+            Runtime& state,
+            RE::BShkbAnimationGraph*& outGraph,
+            void*& outSkeleton,
+            void*& outBinding,
+            void*& outAnimation)
+        {
+            outGraph = nullptr;
+            outSkeleton = nullptr;
+            outBinding = nullptr;
+            outAnimation = nullptr;
+            auto& job = state.job;
+            if (job.currentClipPath[0] == '\0') {
+                return false;
+            }
+
+            outGraph = firstPersonGraph(state);
+            const bool bound = job.clipsAreGraphBound ?
+                resolveGraphClipBinding(state, outGraph, outBinding) :
+                resolveDirectClipBinding(state, outBinding);
+            if (!bound || !outBinding ||
                 !native_memory::tryReadField(
                     outBinding, kAnimationFromBindingOffset, outAnimation) ||
                 !outAnimation) {
                 return false;
             }
 
-            outGraph = firstPersonGraph(state);
             void* skeletonOwner = nullptr;
             return outGraph &&
                    native_memory::tryReadField(
@@ -981,18 +1140,21 @@ namespace paper::exact_clip_preharvest
         [[nodiscard]] bool prepareClipWork(
             Runtime& state,
             const char* const* allowedNodeNames,
-            const std::uint32_t allowedNodeNameCount)
+            const std::uint32_t allowedNodeNameCount,
+            const float samplesPerSecond)
         {
             RE::BShkbAnimationGraph* graph = nullptr;
             void* skeleton = nullptr;
             void* binding = nullptr;
             void* animation = nullptr;
+            state.prepareFailure = "bindingUnavailable";
             if (!resolveRetainedClip(state, graph, skeleton, binding, animation)) {
                 return false;
             }
 
             clearClipWork(state.clip);
             auto& prepared = state.clip;
+            state.prepareFailure = "animationHeaderInvalid";
             if (!native_memory::tryReadField(
                     animation, kAnimationTypeOffset, prepared.animationType) ||
                 !native_memory::tryReadField(
@@ -1011,7 +1173,8 @@ namespace paper::exact_clip_preharvest
             }
             prepared.sampleCount =
                 animation_preharvest_policy::clipSampleCount(
-                    prepared.durationSeconds);
+                    prepared.durationSeconds,
+                    samplesPerSecond);
             if (prepared.sampleCount < 2 ||
                 prepared.sampleCount > animation_evidence::kMaxExactClipSamples) {
                 return false;
@@ -1020,6 +1183,7 @@ namespace paper::exact_clip_preharvest
             const std::int16_t* parents = nullptr;
             std::int32_t parentCount = 0;
             const void* bones = nullptr;
+            state.prepareFailure = "trackMappingInvalid";
             if (!native_memory::tryReadField(
                     skeleton, kSkeletonBoneCountOffset, prepared.boneCount) ||
                 !native_memory::tryReadField(
@@ -1045,6 +1209,7 @@ namespace paper::exact_clip_preharvest
             }
 
             std::uint64_t weaponBoneRaw = 0xFFFFFFFFull;
+            state.prepareFailure = "weaponBoneUnavailable";
             if (!guardedFindBoneWithName(
                     state.native.findBoneWithName,
                     skeleton,
@@ -1059,6 +1224,7 @@ namespace paper::exact_clip_preharvest
             const HkQsTransform* referencePose = nullptr;
             std::int32_t referencePoseCount = 0;
             std::array<HkQsTransform, kMaxBonesAndTracks> referenceBuffer{};
+            state.prepareFailure = "referencePoseInvalid";
             if (!native_memory::tryReadField(
                     skeleton, kSkeletonReferencePoseOffset, referencePose) ||
                 !native_memory::tryReadField(
@@ -1075,6 +1241,7 @@ namespace paper::exact_clip_preharvest
             for (std::int32_t bone = 0; bone < prepared.boneCount; ++bone) {
                 auto& metadata = prepared.skeletonBones[static_cast<std::size_t>(bone)];
                 metadata.boneIndex = static_cast<std::int16_t>(bone);
+                metadata.transformTrackIndex = -1;
                 metadata.parentBoneIndex =
                     prepared.parentIndices[static_cast<std::size_t>(bone)];
                 if (skeletonBoneName(bones, bone, metadata.name)) {
@@ -1105,7 +1272,8 @@ namespace paper::exact_clip_preharvest
                     continue;
                 }
                 const std::string_view nameView{ name.data() };
-                if (!nameIsAllowed(nameView, allowedNodeNames, allowedNodeNameCount)) {
+                std::uint32_t nameIndex = 0;
+                if (!findAllowedName(nameView, allowedNodeNames, allowedNodeNameCount, nameIndex)) {
                     continue;
                 }
                 std::array<std::int16_t, kMaxBoneChainDepth> chain{};
@@ -1127,8 +1295,11 @@ namespace paper::exact_clip_preharvest
                 }
                 auto& target = prepared.targets[prepared.targetCount];
                 target.name = name;
+                target.nameIndex = nameIndex;
                 target.boneIndex = static_cast<std::int16_t>(bone);
                 target.chainCount = static_cast<std::uint16_t>(chainCount);
+                target.tracked =
+                    prepared.skeletonBones[static_cast<std::size_t>(bone)].transformTrackIndex >= 0;
                 target.chain = chain;
                 auto& track = prepared.tracks[prepared.targetCount];
                 track.sampleCount = 0;
@@ -1232,7 +1403,42 @@ namespace paper::exact_clip_preharvest
                    outSampler != nullptr;
         }
 
-        [[nodiscard]] bool sampleClipBatch(Runtime& state)
+        [[nodiscard]] bool clipTracksFirstName(const ClipWork& clip)
+        {
+            for (std::uint32_t index = 0; index < clip.targetCount; ++index) {
+                if (clip.targets[index].nameIndex == 0 && clip.targets[index].tracked) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        void publishPose(Runtime& state, const PoseReader& reader, const float timeSeconds)
+        {
+            const auto& clip = state.clip;
+            std::uint32_t boneCount = 0;
+            for (std::uint32_t index = 0; index < clip.targetCount; ++index) {
+                const auto& target = clip.targets[index];
+                if (target.tracked) {
+                    auto& bone = state.poseBones[boneCount++];
+                    bone.nameIndex = target.nameIndex;
+                    bone.local = state.sampledLocals[static_cast<std::size_t>(target.boneIndex)];
+                }
+            }
+            reader.pose(
+                PoseFrame{
+                    .animationPath = state.job.currentClipPath.data(),
+                    .preferredClip = state.job.animationPathIndex < state.job.preferredClipCount,
+                    .sampleIndex = clip.nextSample,
+                    .sampleCount = clip.sampleCount,
+                    .timeSeconds = timeSeconds,
+                    .bones = state.poseBones.data(),
+                    .boneCount = boneCount,
+                },
+                reader.userData);
+        }
+
+        [[nodiscard]] bool sampleClipBatch(Runtime& state, const PoseReader* reader)
         {
             auto& clip = state.clip;
             RE::BShkbAnimationGraph* graph = nullptr;
@@ -1302,6 +1508,13 @@ namespace paper::exact_clip_preharvest
                     }
                 }
 
+                if (reader) {
+                    publishPose(state, *reader, timeSeconds);
+                    ++clip.nextSample;
+                    ++samplesCompletedThisFrame;
+                    continue;
+                }
+
                 const auto& weaponInParent = state.sampledLocals[
                     static_cast<std::size_t>(clip.weaponBoneIndex)];
                 if (!isFiniteTransform(weaponInParent)) {
@@ -1368,10 +1581,13 @@ namespace paper::exact_clip_preharvest
 
         [[nodiscard]] std::uint32_t publishSampledClip(
             Runtime& state,
-            const ClipSink sink,
-            void* sinkUserData)
+            const Consumer& consumer)
         {
-            if (!sink) {
+            if (consumer.reader) {
+                ++state.stats.clipsSampled;
+                return 0;
+            }
+            if (!consumer.sink) {
                 return 0;
             }
             auto& clip = state.clip;
@@ -1396,7 +1612,7 @@ namespace paper::exact_clip_preharvest
                 .weaponBoneIndex = clip.weaponBoneIndex,
                 .targetTracksTruncated = clip.targetTracksTruncated,
             };
-            sink(view, sinkUserData);
+            consumer.sink(view, consumer.sinkUserData);
             ++state.stats.clipsSampled;
             ++state.stats.clipsPublished;
             PAPER_LOG_DEBUG(Animation,
@@ -1448,24 +1664,26 @@ namespace paper::exact_clip_preharvest
             auto* player = RE::PlayerCharacter::GetSingleton();
             auto* middleHigh =
                 player && player->currentProcess ? player->currentProcess->middleHigh : nullptr;
-            if (!middleHigh || middleHigh->equippedItems.empty()) {
+            if (!middleHigh) {
                 return false;
             }
-            auto& equipped = middleHigh->equippedItems[0];
-            auto* object = equipped.item.object;
-            auto* weapon = object ? object->As<RE::TESObjectWEAP>() : nullptr;
-            if (!weapon || weapon->GetFormID() != expectedFormId) {
-                return false;
+            for (auto& equipped : middleHigh->equippedItems) {
+                auto* object = equipped.item.object;
+                auto* weapon = object ? object->As<RE::TESObjectWEAP>() : nullptr;
+                if (weapon && weapon->GetFormID() == expectedFormId) {
+                    outWeapon = weapon;
+                    outInstanceData = equipped.item.instanceData.get();
+                    return true;
+                }
             }
-            outWeapon = weapon;
-            outInstanceData = equipped.item.instanceData.get();
-            return true;
+            return false;
         }
 
         [[nodiscard]] bool startJob(
             Runtime& state,
             const std::uint32_t weaponFormId,
-            const std::uint64_t weaponGenerationKey)
+            const std::uint64_t weaponGenerationKey,
+            const bool readsPoses)
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             RE::TESObjectWEAP* weapon = nullptr;
@@ -1482,6 +1700,7 @@ namespace paper::exact_clip_preharvest
             state.job.weaponFormId = weaponFormId;
             state.job.weaponGenerationKey = weaponGenerationKey;
             state.job.inPowerArmor = RE::PowerArmor::PlayerInPowerArmor();
+            state.job.readsPoses = readsPoses;
             state.job.phase = State::LoadingBaseGraphs;
             state.job.phaseStartedAtMilliseconds = GetTickCount64();
             clearClipWork(state.clip);
@@ -1619,11 +1838,12 @@ namespace paper::exact_clip_preharvest
             return false;
         }
 
-        [[nodiscard]] bool copyLoadedExactSubgraphPaths(
+        [[nodiscard]] bool copyLoadedSubgraphClipNames(
             Runtime& state,
-            RE::BShkbAnimationGraph* graph)
+            RE::BShkbAnimationGraph* graph,
+            const std::uint64_t subgraphHandle)
         {
-            if (!graph || state.job.subgraphIdentifier == 0) {
+            if (!graph || subgraphHandle == 0) {
                 return false;
             }
 
@@ -1665,30 +1885,33 @@ namespace paper::exact_clip_preharvest
             }
 
             void* bindingTable = nullptr;
+            std::uint64_t boundIdentifier = 0;
             for (std::uint32_t index = 0; index < entryCount; ++index) {
                 const auto* entry =
                     reinterpret_cast<const std::byte*>(entries) +
                     static_cast<std::size_t>(index) *
                         kLoadedSubgraphEntryStride;
-                void* candidateTable = nullptr;
-                std::uint64_t candidateIdentifier = 0;
-                if (!native_memory::tryReadField(
+                std::uint64_t candidateHandle = 0;
+                if (native_memory::tryReadField(
+                        entry,
+                        kLoadedSubgraphHandleOffset,
+                        candidateHandle) &&
+                    candidateHandle == subgraphHandle &&
+                    native_memory::tryReadField(
                         entry,
                         kLoadedSubgraphBindingTableOffset,
-                        candidateTable) ||
-                    !candidateTable ||
-                    !native_memory::tryReadField(
-                        candidateTable,
+                        bindingTable) &&
+                    bindingTable &&
+                    native_memory::tryReadField(
+                        bindingTable,
                         kBindingTableSubgraphIdentifierOffset,
-                        candidateIdentifier)) {
-                    continue;
-                }
-                if (candidateIdentifier == state.job.subgraphIdentifier) {
-                    bindingTable = candidateTable;
+                        boundIdentifier)) {
                     break;
                 }
+                bindingTable = nullptr;
+                boundIdentifier = 0;
             }
-            if (!bindingTable) {
+            if (!bindingTable || boundIdentifier == 0) {
                 return false;
             }
 
@@ -1749,12 +1972,15 @@ namespace paper::exact_clip_preharvest
                 state.job.animationPathCount = 0;
                 return false;
             }
+            state.job.clipsAreGraphBound = true;
+            state.job.boundSubgraphIdentifier = boundIdentifier;
             state.stats.usedLoadedGraphPathFallback = true;
             PAPER_LOG_INFO(Animation,
-                "Authored animation preharvest recovered {} exact clip path(s) from loaded subgraph bindings weapon={:08X} subgraph={:016X} buckets={}",
+                "Authored animation preharvest recovered {} clip name(s) from loaded subgraph bindings weapon={:08X} handle={:016X} boundSubgraph={:016X} buckets={}",
                 state.job.animationPathCount,
                 state.job.weaponFormId,
-                state.job.subgraphIdentifier,
+                subgraphHandle,
+                boundIdentifier,
                 bucketCount);
             return true;
         }
@@ -1769,7 +1995,8 @@ namespace paper::exact_clip_preharvest
             const auto selection =
                 animation_preharvest_policy::selectFirstPersonGraph(
                     manager->graph.size(), state.job.subgraphIdentifiers.size());
-            if (!selection.valid) {
+            if (!selection.valid ||
+                state.job.subgraphHandles.size() <= selection.graphIndex) {
                 return false;
             }
             const auto identifierIndex =
@@ -1780,6 +2007,9 @@ namespace paper::exact_clip_preharvest
             if (state.job.subgraphIdentifier == 0) {
                 return false;
             }
+            const std::uint64_t subgraphHandle =
+                state.job.subgraphHandles[static_cast<decltype(state.job.subgraphHandles)::size_type>(
+                    selection.graphIndex)].handle;
 
             const auto graphIndex =
                 static_cast<decltype(manager->graph)::size_type>(
@@ -1817,7 +2047,7 @@ namespace paper::exact_clip_preharvest
                 }
             }
 
-            if (!copyLoadedExactSubgraphPaths(state, graph)) {
+            if (!copyLoadedSubgraphClipNames(state, graph, subgraphHandle)) {
                 return false;
             }
             state.stats.animationFileCount = state.job.animationPathCount;
@@ -1837,12 +2067,23 @@ namespace paper::exact_clip_preharvest
                    equippedInstanceData == job.instanceData.get();
         }
 
+        void moveReaderPreferredClipsFirst(Job& job, const PoseReader& reader)
+        {
+            auto* first = job.animationPaths.data();
+            auto* preferredEnd = std::partition(
+                first,
+                first + job.animationPathCount,
+                [&](const std::array<char, kAnimationPathCapacity>& path) {
+                    return reader.isPreferredClip(std::string_view{ path.data() });
+                });
+            job.preferredClipCount = static_cast<std::uint32_t>(preferredEnd - first);
+        }
+
         [[nodiscard]] StepResult progressJob(
             Runtime& state,
             const char* const* allowedNodeNames,
             const std::uint32_t allowedNodeNameCount,
-            const ClipSink sink,
-            void* sinkUserData)
+            const Consumer& consumer)
         {
             auto& job = state.job;
             if (job.phase == State::Idle || job.phase == State::Completed ||
@@ -1892,16 +2133,25 @@ namespace paper::exact_clip_preharvest
                     finishTerminal(state, State::Failed, "weaponInstanceProducedNoTargetKeywords");
                     return StepResult{ .state = State::Failed };
                 }
+                auto* player = RE::PlayerCharacter::GetSingleton();
+                auto* visualsRace = player ? player->GetVisualsRace() : nullptr;
+                if (!visualsRace) {
+                    finishTerminal(state, State::Failed, "visualsRaceUnavailable");
+                    return StepResult{ .state = State::Failed };
+                }
                 std::int32_t role = kWeaponAnimationRole;
                 std::int32_t priority = kIoTaskPriority;
+                SubgraphMetadataList privateMetadata;
                 state.native.requestAnimationSubGraph(
-                    RE::PlayerCharacter::GetSingleton(),
+                    player,
+                    visualsRace,
                     manager,
                     &role,
                     &targetKeywords,
                     &priority,
                     &job.subgraphHandles,
-                    &job.subgraphIdentifiers);
+                    &job.subgraphIdentifiers,
+                    &privateMetadata);
                 if (job.subgraphHandles.empty() || job.subgraphIdentifiers.empty()) {
                     finishTerminal(state, State::Failed, "exactWeaponSubgraphRequestReturnedEmpty");
                     return StepResult{ .state = State::Failed };
@@ -1933,6 +2183,9 @@ namespace paper::exact_clip_preharvest
                     finishTerminal(state, State::Failed, "exactAnimationFileListUnavailable");
                     return StepResult{ .state = State::Failed };
                 }
+                if (consumer.reader) {
+                    moveReaderPreferredClipsFirst(job, *consumer.reader);
+                }
                 job.animationPathIndex = 0;
                 job.phase = State::LoadingClip;
                 job.phaseStartedAtMilliseconds = now;
@@ -1947,50 +2200,65 @@ namespace paper::exact_clip_preharvest
             }
 
             if (job.phase == State::LoadingClip) {
-                if (job.animationPathIndex >= job.animationPathCount) {
+                const bool readerIsDone = consumer.reader && !job.clipResource.entry &&
+                    job.animationPathIndex >= job.preferredClipCount &&
+                    !consumer.reader->readsOtherClips(consumer.reader->userData);
+                if (job.animationPathIndex >= job.animationPathCount || readerIsDone) {
                     finishTerminal(state, State::Completed, "allExactAnimationFilesSampled");
                     return StepResult{ .state = State::Completed };
                 }
-                if (!job.clipResource.entry) {
+                if (job.clipsAreGraphBound) {
+                    // The loaded subgraph already holds these clips.
                     job.currentClipPath =
                         job.animationPaths[job.animationPathIndex];
-                    RE::BSFixedString path{ job.currentClipPath.data() };
-                    if (!state.native.loadAnimationResource(
-                            &path, &job.clipResource) ||
-                        !job.clipResource.entry) {
-                        rejectCurrentClip(state, "directClipLoadRequestFailed");
+                } else {
+                    if (!job.clipResource.entry) {
+                        job.currentClipPath =
+                            job.animationPaths[job.animationPathIndex];
+                        RE::BSFixedString path{ job.currentClipPath.data() };
+                        if (!state.native.loadAnimationResource(
+                                &path, &job.clipResource) ||
+                            !job.clipResource.entry) {
+                            rejectCurrentClip(state, "directClipLoadRequestFailed");
+                            return StepResult{ .state = job.phase };
+                        }
+                        job.phaseStartedAtMilliseconds = now;
+                        job.longLoadLogged = false;
                         return StepResult{ .state = job.phase };
                     }
-                    job.phaseStartedAtMilliseconds = now;
-                    job.longLoadLogged = false;
-                    return StepResult{ .state = job.phase };
-                }
-                if (elapsed >= kClipLoadTimeoutMilliseconds) {
-                    rejectCurrentClip(state, "directClipLoadTimedOut");
-                    return StepResult{ .state = job.phase };
-                }
-                std::uint32_t resourceFlags = 0;
-                if (!native_memory::tryReadField(
-                        job.clipResource.entry,
-                        kAnimationResourceFlagsOffset,
-                        resourceFlags)) {
-                    rejectCurrentClip(state, "directClipResourceLayoutUnavailable");
-                    return StepResult{ .state = job.phase };
-                }
-                if (!animation_preharvest_policy::animationResourceCanExposeData(
-                        resourceFlags)) {
-                    return StepResult{ .state = job.phase };
+                    if (elapsed >= kClipLoadTimeoutMilliseconds) {
+                        rejectCurrentClip(state, "directClipLoadTimedOut");
+                        return StepResult{ .state = job.phase };
+                    }
+                    std::uint32_t resourceFlags = 0;
+                    if (!native_memory::tryReadField(
+                            job.clipResource.entry,
+                            kAnimationResourceFlagsOffset,
+                            resourceFlags)) {
+                        rejectCurrentClip(state, "directClipResourceLayoutUnavailable");
+                        return StepResult{ .state = job.phase };
+                    }
+                    if (!animation_preharvest_policy::animationResourceCanExposeData(
+                            resourceFlags)) {
+                        return StepResult{ .state = job.phase };
+                    }
                 }
                 if (!prepareClipWork(
-                        state, allowedNodeNames, allowedNodeNameCount)) {
-                    rejectCurrentClip(state, "animationBindingOrSkeletonMappingInvalid");
+                        state,
+                        allowedNodeNames,
+                        allowedNodeNameCount,
+                        consumer.reader
+                            ? consumer.reader->samplesPerSecond
+                            : animation_preharvest_policy::kSamplesPerSecond)) {
+                    rejectCurrentClip(state, state.prepareFailure);
+                    return StepResult{ .state = job.phase };
+                }
+                if (consumer.reader && !clipTracksFirstName(state.clip)) {
+                    advancePastCurrentClip(state);
                     return StepResult{ .state = job.phase };
                 }
                 if (state.clip.targetCount == 0) {
-                    const auto published = publishSampledClip(
-                        state,
-                        sink,
-                        sinkUserData);
+                    const auto published = publishSampledClip(state, consumer);
                     advancePastCurrentClip(state);
                     return StepResult{
                         .state = job.phase,
@@ -2004,21 +2272,18 @@ namespace paper::exact_clip_preharvest
             }
 
             if (job.phase == State::SamplingClip) {
-                if (!sink) {
+                if (!consumer.sink && !consumer.reader) {
                     finishTerminal(state, State::Failed, "rawClipSinkUnavailable");
                     return StepResult{ .state = State::Failed };
                 }
-                if (!sampleClipBatch(state)) {
+                if (!sampleClipBatch(state, consumer.reader)) {
                     rejectCurrentClip(state, "nativeTrackSamplingOrHierarchyCompositionFailed");
                     return StepResult{ .state = job.phase };
                 }
                 if (state.clip.nextSample < state.clip.sampleCount) {
                     return StepResult{ .state = job.phase };
                 }
-                const auto published = publishSampledClip(
-                    state,
-                    sink,
-                    sinkUserData);
+                const auto published = publishSampledClip(state, consumer);
                 advancePastCurrentClip(state);
                 return StepResult{
                     .state = job.phase,
@@ -2028,6 +2293,63 @@ namespace paper::exact_clip_preharvest
 
             finishTerminal(state, State::Failed, "unknownPreharvestState");
             return StepResult{ .state = State::Failed };
+        }
+
+        [[nodiscard]] StepResult advanceJob(
+            const std::uint32_t weaponFormId,
+            const std::uint64_t weaponGenerationKey,
+            const char* const* allowedNodeNames,
+            const std::uint32_t allowedNodeNameCount,
+            const Consumer& consumer) noexcept
+        {
+            auto& state = runtime();
+            state.diagnostics.samplesCompletedLastStep = 0;
+            state.diagnostics.samplingMicrosecondsLastStep = 0;
+            state.diagnostics.samplingBudgetYielded = false;
+            state.diagnostics.sampleLimitYielded = false;
+            if (!claimOrValidateThread(state)) {
+                return StepResult{ .state = State::Failed };
+            }
+            if (state.resetRequested.exchange(
+                    false, std::memory_order_acq_rel)) {
+                resetRuntimeJob(state);
+            }
+            if (weaponFormId == 0 || weaponGenerationKey == 0) {
+                resetRuntimeJob(state);
+                return {};
+            }
+            if (!allowedNodeNames || allowedNodeNameCount == 0) {
+                return StepResult{ .state = state.job.phase };
+            }
+            if (!consumer.sink && !consumer.reader) {
+                return StepResult{ .state = State::Failed };
+            }
+            if (!resolveNativeFunctions(state)) {
+                return StepResult{ .state = State::Failed };
+            }
+
+            const bool readsPoses = consumer.reader != nullptr;
+            if (state.job.weaponFormId != weaponFormId ||
+                state.job.weaponGenerationKey != weaponGenerationKey ||
+                state.job.readsPoses != readsPoses) {
+                resetRuntimeJob(state);
+                if (!startJob(state, weaponFormId, weaponGenerationKey, readsPoses)) {
+                    // ROCK's committed scene generation can precede the actor's
+                    // equipped-item/process view by a few frames. An unavailable
+                    // initial context is pending, not a terminal failure; leave
+                    // identity clear so the same generation retries next frame.
+                    return StepResult{
+                        .state = state.job.phase == State::Failed
+                            ? State::Failed
+                            : State::Idle,
+                    };
+                }
+            }
+            return progressJob(
+                state,
+                allowedNodeNames,
+                allowedNodeNameCount,
+                consumer);
         }
     }
 
@@ -2039,53 +2361,27 @@ namespace paper::exact_clip_preharvest
         const ClipSink sink,
         void* sinkUserData) noexcept
     {
-        auto& state = runtime();
-        state.diagnostics.samplesCompletedLastStep = 0;
-        state.diagnostics.samplingMicrosecondsLastStep = 0;
-        state.diagnostics.samplingBudgetYielded = false;
-        state.diagnostics.sampleLimitYielded = false;
-        if (!claimOrValidateThread(state)) {
-            return StepResult{ .state = State::Failed };
-        }
-        if (state.resetRequested.exchange(
-                false, std::memory_order_acq_rel)) {
-            resetRuntimeJob(state);
-        }
-        if (weaponFormId == 0 || weaponGenerationKey == 0) {
-            resetRuntimeJob(state);
-            return {};
-        }
-        if (!allowedNodeNames || allowedNodeNameCount == 0) {
-            return StepResult{ .state = state.job.phase };
-        }
-        if (!sink) {
-            return StepResult{ .state = State::Failed };
-        }
-        if (!resolveNativeFunctions(state)) {
-            return StepResult{ .state = State::Failed };
-        }
-
-        if (state.job.weaponFormId != weaponFormId ||
-            state.job.weaponGenerationKey != weaponGenerationKey) {
-            resetRuntimeJob(state);
-            if (!startJob(state, weaponFormId, weaponGenerationKey)) {
-                // ROCK's committed scene generation can precede the actor's
-                // equipped-item/process view by a few frames. An unavailable
-                // initial context is pending, not a terminal failure; leave
-                // identity clear so the same generation retries next frame.
-                return StepResult{
-                    .state = state.job.phase == State::Failed
-                        ? State::Failed
-                        : State::Idle,
-                };
-            }
-        }
-        return progressJob(
-            state,
+        return advanceJob(
+            weaponFormId,
+            weaponGenerationKey,
             allowedNodeNames,
             allowedNodeNameCount,
-            sink,
-            sinkUserData);
+            Consumer{ .sink = sink, .sinkUserData = sinkUserData });
+    }
+
+    StepResult stepPoses(
+        const std::uint32_t weaponFormId,
+        const std::uint64_t weaponGenerationKey,
+        const char* const* nodeNames,
+        const std::uint32_t nodeNameCount,
+        const PoseReader& reader) noexcept
+    {
+        return advanceJob(
+            weaponFormId,
+            weaponGenerationKey,
+            nodeNames,
+            nodeNameCount,
+            Consumer{ .reader = &reader });
     }
 
     void reset() noexcept

@@ -58,13 +58,15 @@ namespace paper::animation_preharvest_policy
         return state == 3u || state == 4u;
     }
 
-    [[nodiscard]] inline std::uint32_t clipSampleCount(const float durationSeconds) noexcept
+    [[nodiscard]] inline std::uint32_t clipSampleCount(
+        const float durationSeconds,
+        const float samplesPerSecond = kSamplesPerSecond) noexcept
     {
         if (!std::isfinite(durationSeconds) || !(durationSeconds > 0.0f)) {
             return 0;
         }
         const auto requested = static_cast<std::uint32_t>(
-            std::ceil(durationSeconds * kSamplesPerSecond)) + 1u;
+            std::ceil(durationSeconds * samplesPerSecond)) + 1u;
         return (std::min)(kMaximumClipSamples,
             (std::max)(kMinimumClipSamples, requested));
     }
@@ -183,10 +185,10 @@ namespace paper::animation_preharvest_policy
             return track == transformTrackCount;
         }
 
-        // With no explicit/partition map, identity is only valid when the
-        // animation covers the complete skeleton. A prefix-sized animation
-        // does not prove track N belongs to bone N.
-        if (transformTrackCount != skeletonBoneCount) {
+        // No explicit or partition map is Havok's identity map: track N drives
+        // bone N. Weapon clips have fewer tracks than the first-person skeleton
+        // has bones, so only a clip with more tracks than bones is malformed.
+        if (transformTrackCount > skeletonBoneCount) {
             return false;
         }
         for (std::uint32_t track = 0; track < transformTrackCount; ++track) {

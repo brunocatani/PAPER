@@ -2,11 +2,12 @@
 
 #include <PAPER/Provider.h>
 
+#include "animation_evidence/AnimationPreharvestPolicy.h"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <string_view>
 
 namespace paper::bolt_hold_policy
@@ -14,8 +15,8 @@ namespace paper::bolt_hold_policy
     // The action's bones on the game's own weapon skeleton: the bolt and the
     // helper bones animators use for what moves with it (a tilting barrel, a
     // slide stop, a bolt catch). A gun that animates its bolt under another name
-    // is not covered.
-    inline constexpr std::array<std::string_view, 10> kActionBoneNames{
+    // is not covered. The bolt comes first: a clip without it is not read.
+    inline constexpr std::array<const char*, 10> kActionBoneNames{
         "WeaponBolt",
         "WeaponExtra1",
         "WeaponExtra2",
@@ -37,6 +38,13 @@ namespace paper::bolt_hold_policy
     // The bolt must sit still this long, outside a reload, to count as closed.
     inline constexpr std::uint32_t kRestStillFrames = 10;
     inline constexpr float kRestStillGameUnits = 0.01f;
+
+    // Samples land 17 ms apart, and a fire stroke lasts about 90 ms.
+    inline constexpr float kClipSamplesPerSecond = 60.0f;
+    // A clip must also show the bolt where the game keeps it closed. An additive
+    // layer's track is a delta, and a paired kill's bolt sits where another gun
+    // has it: both look parked open at a position this gun's bolt never takes.
+    inline constexpr float kClipRestGameUnits = 0.1f;
 
     // A clip's dwell is the bolt parked open: the animator's locked-back pose.
     // Parts get this long to arrive with the bolt, and those that then keep
@@ -62,44 +70,29 @@ namespace paper::bolt_hold_policy
                moveGameUnits <= boltTravelGameUnits && turnDegrees <= kPartMaximumTurnDegrees;
     }
 
-    [[nodiscard]] constexpr std::uint64_t familyBits(std::initializer_list<api::WeaponFamilyFlag> flags) noexcept
+    // Judged on the file name: a folder can be named after a mod's reloads.
+    [[nodiscard]] constexpr bool clipNamesReload(const std::string_view animationPath) noexcept
     {
-        std::uint64_t bits = 0;
-        for (const auto flag : flags) {
-            bits |= static_cast<std::uint64_t>(flag);
+        constexpr std::string_view kReload{ "reload" };
+        const auto separator = animationPath.find_last_of("/\\");
+        const auto file = separator == std::string_view::npos ? animationPath : animationPath.substr(separator + 1);
+        for (std::size_t start = 0; start + kReload.size() <= file.size(); ++start) {
+            bool matches = true;
+            for (std::size_t index = 0; index < kReload.size() && matches; ++index) {
+                matches = animation_preharvest_policy::asciiLower(file[start + index]) == kReload[index];
+            }
+            if (matches) {
+                return true;
+            }
         }
-        return bits;
+        return false;
     }
 
-    // A manual action stays where the hand left it, and a gun fed from a belt,
-    // tube or the shooter's hand has no follower to catch the bolt. Energy and
-    // heavy weapons have no bolt to hold.
-    inline constexpr std::uint64_t kExcludedFamilies = familyBits({
-        api::WeaponFamilyFlag::ManualCycle,
-        api::WeaponFamilyFlag::Revolver,
-        api::WeaponFamilyFlag::BoltAction,
-        api::WeaponFamilyFlag::LeverAction,
-        api::WeaponFamilyFlag::PumpAction,
-        api::WeaponFamilyFlag::BreakAction,
-        api::WeaponFamilyFlag::CylinderFed,
-        api::WeaponFamilyFlag::BeltFed,
-        api::WeaponFamilyFlag::TubeFed,
-        api::WeaponFamilyFlag::InternalFeed,
-        api::WeaponFamilyFlag::SingleLoad,
-        api::WeaponFamilyFlag::ShellFed,
-        api::WeaponFamilyFlag::LooseRoundFed,
-        api::WeaponFamilyFlag::EnergyWeapon,
-        api::WeaponFamilyFlag::LaserCellFed,
-        api::WeaponFamilyFlag::HeavyWeapon,
-        api::WeaponFamilyFlag::Launcher,
-        api::WeaponFamilyFlag::MeleeWeapon,
-        api::WeaponFamilyFlag::ThrownWeapon,
-    });
-
+    // A manual action stays where the hand left it. Every other gun is judged by
+    // its own clips: if none of them opens its bolt there is no pose to hold.
     [[nodiscard]] constexpr bool familyHoldsOpen(const std::uint64_t familyFlags) noexcept
     {
-        return (familyFlags & static_cast<std::uint64_t>(api::WeaponFamilyFlag::MagazineFed)) != 0 &&
-               (familyFlags & kExcludedFamilies) == 0;
+        return (familyFlags & static_cast<std::uint64_t>(api::WeaponFamilyFlag::ManualCycle)) == 0;
     }
 
     // Opens at the bolt's own speed; closes over the configured blend, or at

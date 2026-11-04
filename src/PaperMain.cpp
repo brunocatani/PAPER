@@ -1168,6 +1168,7 @@ namespace
                     .enabled = operational && g_config.boltHoldOpen,
                     .playerReloadActive = native_animation_authority::playerReloadActive(),
                     .physicalReloadActive = provider::physicalReloadActive(),
+                    .clipSamplerAvailable = !enrichmentDemand.exactAnimationEvidence,
                 });
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();

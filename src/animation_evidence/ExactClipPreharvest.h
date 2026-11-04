@@ -3,6 +3,7 @@
 #include "animation_evidence/AnimationEvidenceTypes.h"
 
 #include <cstdint>
+#include <string_view>
 
 namespace paper::exact_clip_preharvest
 {
@@ -50,6 +51,56 @@ namespace paper::exact_clip_preharvest
         std::uint32_t allowedNodeNameCount,
         ClipSink sink,
         void* sinkUserData) noexcept;
+
+    struct PoseBone
+    {
+        std::uint32_t nameIndex{ 0 };
+        // In the bone's skeleton parent: the space the graph writes to its node.
+        RE::NiTransform local{};
+    };
+
+    // One sampled pose. Only the bones this clip has a track for are present: an
+    // untracked bone would show the shared skeleton's bind pose, which is no
+    // position of this weapon.
+    struct PoseFrame
+    {
+        const char* animationPath{ nullptr };
+        bool preferredClip{ false };
+        std::uint32_t sampleIndex{ 0 };
+        std::uint32_t sampleCount{ 0 };
+        float timeSeconds{ 0.0f };
+        const PoseBone* bones{ nullptr };
+        std::uint32_t boneCount{ 0 };
+    };
+
+    using PreferredClipFn = bool (*)(std::string_view animationPath) noexcept;
+    using ReadsOtherClipsFn = bool (*)(void* userData) noexcept;
+    using PoseFn = void (*)(const PoseFrame& frame, void* userData) noexcept;
+
+    struct PoseReader
+    {
+        float samplesPerSecond{ 0.0f };
+        // These clips are read first.
+        PreferredClipFn isPreferredClip{ nullptr };
+        // Asked before each other clip; false ends the read as completed.
+        ReadsOtherClipsFn readsOtherClips{ nullptr };
+        PoseFn pose{ nullptr };
+        void* userData{ nullptr };
+    };
+
+    /*
+     * The same off-screen job as step, for a reader that wants poses rather than
+     * stored tracks: each sampled pose goes to the reader and nothing is kept. A
+     * clip with no track for the first name is skipped unread. Finds the weapon in
+     * any equipped slot. One job runs at a time, so this and step must not be
+     * driven in the same frame; switching between them restarts the job.
+     */
+    [[nodiscard]] StepResult stepPoses(
+        std::uint32_t weaponFormId,
+        std::uint64_t weaponGenerationKey,
+        const char* const* nodeNames,
+        std::uint32_t nodeNameCount,
+        const PoseReader& reader) noexcept;
 
     void reset() noexcept;
 

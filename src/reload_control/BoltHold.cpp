@@ -1,6 +1,7 @@
 #include "reload_control/BoltHold.h"
 
 #include "PaperLog.h"
+#include "animation_evidence/ExactClipPreharvest.h"
 #include "api/ApiTransform.h"
 #include "api/RockApiClient.h"
 #include "reload_control/BoltHoldPolicy.h"
@@ -9,10 +10,12 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <format>
 #include <numbers>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace paper::bolt_hold
@@ -20,27 +23,41 @@ namespace paper::bolt_hold
     namespace
     {
         namespace policy = bolt_hold_policy;
+        namespace sampler = exact_clip_preharvest;
         using WeaponStateFlag = rock::api::weapon::WeaponStateFlag;
+        using Clock = std::chrono::steady_clock;
 
         constexpr std::size_t kBoneCount = policy::kActionBoneNames.size();
         constexpr std::uint32_t kDriveLeaseFrames = 2;
         // ROCK generates a weapon's parts over several frames after its equip.
         constexpr std::uint32_t kResolveFrames = 240;
+        // The actor's equipped items can trail ROCK's weapon by a few frames.
+        constexpr std::uint32_t kReadStartFrames = 240;
 
+        // Best last. A dwell is the animator's locked-back pose. A stroke's
+        // farthest frame only stands in for one, and a stroke outside a reload is
+        // the safer of the two: a reload moves props through it.
         enum class PoseSource : std::uint8_t
         {
             None,
-            ClipPeak,
+            ReloadStroke,
+            OtherStroke,
             Dwell,
         };
 
-        struct LearnedPose
+        struct OpenPose
         {
-            std::uint32_t form{ 0 };
             PoseSource source{ PoseSource::None };
             float travel{ 0.0f };
             std::array<bool, kBoneCount> posed{};
             std::array<RE::NiTransform, kBoneCount> open{};
+        };
+
+        // A form with PoseSource::None has been read and has no pose.
+        struct LearnedPose
+        {
+            std::uint32_t form{ 0 };
+            OpenPose pose{};
         };
 
         struct Bone
@@ -48,8 +65,6 @@ namespace paper::bolt_hold
             std::uint64_t key{ 0 };
             RE::NiTransform current{};
             RE::NiTransform rest{};
-            RE::NiTransform dwell{};
-            bool still{ false };
         };
 
         struct Slot
@@ -64,11 +79,6 @@ namespace paper::bolt_hold
             std::uint32_t stillFrames{ 0 };
             bool lastBoltValid{ false };
             bool restValid{ false };
-            RE::NiTransform dwellBolt{};
-            float dwellSeconds{ 0.0f };
-            bool dwelling{ false };
-            bool dwellSettled{ false };
-            bool dwellCommitted{ false };
             float weight{ 0.0f };
             bool holding{ false };
             bool driveRefusalLogged{ false };
@@ -80,10 +90,53 @@ namespace paper::bolt_hold
             float turnDegrees{ 0.0f };
         };
 
+        struct ClipDwell
+        {
+            bool active{ false };
+            bool settled{ false };
+            bool committed{ false };
+            float startSeconds{ 0.0f };
+            RE::NiTransform bolt{};
+            std::array<RE::NiTransform, kBoneCount> parked{};
+            std::array<bool, kBoneCount> still{};
+        };
+
+        using ClipPose = std::array<const RE::NiTransform*, kBoneCount>;
+
+        struct PoseCandidate
+        {
+            OpenPose pose{};
+            std::array<char, 64> clip{};
+            float seconds{ 0.0f };
+        };
+
+        struct PoseRead
+        {
+            bool active{ false };
+            std::uint32_t slot{ 0 };
+            std::uint32_t form{ 0 };
+            std::uint64_t generation{ 0 };
+            std::uint32_t startFrames{ 0 };
+            // Where the running game keeps this gun's bones closed. The skeleton's
+            // bind pose is shared by every weapon and says nothing about that.
+            std::array<bool, kBoneCount> known{};
+            std::array<RE::NiTransform, kBoneCount> rest{};
+            // The clip being read: it counts only if it also shows the rest pose.
+            ClipDwell dwell{};
+            bool clipShowsRest{ false };
+            PoseCandidate clipBest{};
+            PoseCandidate best{};
+            std::uint32_t clipsRead{ 0 };
+            Clock::time_point started{};
+            std::int64_t longestStepMicroseconds{ 0 };
+        };
+
         // Frame thread only. A fixed table: the oldest pose gives way.
         std::array<LearnedPose, 64> s_learned{};
         std::size_t s_learnedNext{ 0 };
         std::array<Slot, rock::api::kMaxWeaponSlots> s_slots{};
+        PoseRead s_read{};
+        std::uint64_t s_readFailedGeneration{ 0 };
         // Kept between frames: a weapon retries while ROCK builds its parts.
         std::vector<rock::api::weaponparts::Source> s_sources;
         std::vector<rock::api::weaponparts::EvidenceDetail> s_evidence;
@@ -108,6 +161,20 @@ namespace paper::bolt_hold
             };
         }
 
+        [[nodiscard]] const char* poseName(const PoseSource source)
+        {
+            switch (source) {
+            case PoseSource::Dwell:
+                return "dwell";
+            case PoseSource::OtherStroke:
+                return "stroke";
+            case PoseSource::ReloadStroke:
+                return "reload-stroke";
+            default:
+                return "none";
+            }
+        }
+
         [[nodiscard]] LearnedPose* findLearned(const std::uint32_t form)
         {
             for (auto& entry : s_learned) {
@@ -118,48 +185,174 @@ namespace paper::bolt_hold
             return nullptr;
         }
 
-        [[nodiscard]] LearnedPose& learnedEntry(const std::uint32_t form)
+        void storeLearned(const std::uint32_t form, const OpenPose& pose)
         {
-            if (auto* entry = findLearned(form)) {
-                return *entry;
+            auto* entry = findLearned(form);
+            if (!entry) {
+                entry = &s_learned[s_learnedNext];
+                s_learnedNext = (s_learnedNext + 1) % s_learned.size();
             }
-            auto& entry = s_learned[s_learnedNext];
-            s_learnedNext = (s_learnedNext + 1) % s_learned.size();
-            entry = {};
-            entry.form = form;
-            return entry;
+            entry->form = form;
+            entry->pose = pose;
         }
 
-        // The bolt where it is now, and each part where it is now if it sits
-        // apart from its rest as a part of the action does.
-        void storePose(LearnedPose& entry, const Slot& slot, const float travel, const bool requireStill)
+        [[nodiscard]] bool outranks(const PoseSource source, const float travel, const OpenPose& pose)
         {
-            entry.travel = travel;
-            entry.posed = {};
-            entry.posed[policy::kBoltBone] = true;
-            entry.open[policy::kBoltBone] = slot.bones[policy::kBoltBone].current;
+            return source > pose.source || (source == pose.source && travel > pose.travel);
+        }
+
+        // The bolt where this frame has it, and each part that sits apart from its
+        // rest as a part of the action does. Parts a dwell saw move stay out.
+        void offerPose(
+            PoseRead& read,
+            const sampler::PoseFrame& frame,
+            const ClipPose& pose,
+            const float travel,
+            const PoseSource source,
+            const std::array<bool, kBoneCount>* stillParts)
+        {
+            auto& candidate = read.clipBest;
+            if (!outranks(source, travel, candidate.pose)) {
+                return;
+            }
+            candidate.pose = {};
+            candidate.pose.source = source;
+            candidate.pose.travel = travel;
+            candidate.pose.posed[policy::kBoltBone] = true;
+            candidate.pose.open[policy::kBoltBone] = *pose[policy::kBoltBone];
             for (std::size_t index = policy::kBoltBone + 1; index < kBoneCount; ++index) {
-                const auto& bone = slot.bones[index];
-                if (!bone.key || (requireStill && !bone.still)) {
+                if (!pose[index] || !read.known[index] || (stillParts && !(*stillParts)[index])) {
                     continue;
                 }
-                const auto moved = displacement(bone.rest, bone.current);
+                const auto moved = displacement(read.rest[index], *pose[index]);
                 if (policy::partBelongsToPose(moved.moveGameUnits, moved.turnDegrees, travel)) {
-                    entry.posed[index] = true;
-                    entry.open[index] = bone.current;
+                    candidate.pose.posed[index] = true;
+                    candidate.pose.open[index] = *pose[index];
                 }
+            }
+            candidate.seconds = frame.timeSeconds;
+            candidate.clip = {};
+            const std::string_view path{ frame.animationPath };
+            const auto separator = path.find_last_of("/\\");
+            const auto file = separator == std::string_view::npos ? path : path.substr(separator + 1);
+            file.substr(0, candidate.clip.size() - 1).copy(candidate.clip.data(), candidate.clip.size() - 1);
+        }
+
+        void observeClipDwell(
+            PoseRead& read,
+            const sampler::PoseFrame& frame,
+            const ClipPose& pose,
+            const float travel)
+        {
+            auto& dwell = read.dwell;
+            if (travel < policy::kMinimumOpenTravelGameUnits) {
+                dwell.active = false;
+                return;
+            }
+            const auto& bolt = *pose[policy::kBoltBone];
+            if (!dwell.active ||
+                bolt.translate.GetDistance(dwell.bolt.translate) > policy::kDwellBoltDriftGameUnits) {
+                dwell = {};
+                dwell.active = true;
+                dwell.startSeconds = frame.timeSeconds;
+                dwell.bolt = bolt;
+                return;
+            }
+            const float parkedSeconds = frame.timeSeconds - dwell.startSeconds;
+            if (parkedSeconds < policy::kDwellSettleSeconds) {
+                return;
+            }
+            if (!dwell.settled) {
+                dwell.settled = true;
+                for (std::size_t index = 0; index < kBoneCount; ++index) {
+                    dwell.still[index] = pose[index] != nullptr;
+                    if (pose[index]) {
+                        dwell.parked[index] = *pose[index];
+                    }
+                }
+                return;
+            }
+            for (std::size_t index = 0; index < kBoneCount; ++index) {
+                if (dwell.still[index]) {
+                    const auto drift = displacement(dwell.parked[index], *pose[index]);
+                    dwell.still[index] = drift.moveGameUnits <= policy::kPartStillGameUnits &&
+                                         drift.turnDegrees <= policy::kPartStillDegrees;
+                }
+            }
+            if (!dwell.committed && parkedSeconds >= policy::kDwellCommitSeconds) {
+                dwell.committed = true;
+                offerPose(read, frame, pose, travel, PoseSource::Dwell, &dwell.still);
             }
         }
 
-        void logDwellPose(const LearnedPose& entry, const Slot& slot)
+        void readClipPose(const sampler::PoseFrame& frame, void* userData) noexcept
+        {
+            auto& read = *static_cast<PoseRead*>(userData);
+            if (frame.sampleIndex == 0) {
+                read.dwell = {};
+                read.clipShowsRest = false;
+                read.clipBest = {};
+                ++read.clipsRead;
+            }
+            ClipPose pose{};
+            for (std::uint32_t index = 0; index < frame.boneCount; ++index) {
+                const auto& bone = frame.bones[index];
+                if (bone.nameIndex < kBoneCount) {
+                    pose[bone.nameIndex] = &bone.local;
+                }
+            }
+            if (!pose[policy::kBoltBone]) {
+                return;
+            }
+            const float travel = pose[policy::kBoltBone]->translate.GetDistance(
+                read.rest[policy::kBoltBone].translate);
+            read.clipShowsRest = read.clipShowsRest || travel <= policy::kClipRestGameUnits;
+            if (travel >= policy::kMinimumOpenTravelGameUnits) {
+                offerPose(
+                    read,
+                    frame,
+                    pose,
+                    travel,
+                    frame.preferredClip ? PoseSource::ReloadStroke : PoseSource::OtherStroke,
+                    nullptr);
+            }
+            observeClipDwell(read, frame, pose, travel);
+
+            if (frame.sampleIndex + 1 == frame.sampleCount && read.clipShowsRest &&
+                outranks(read.clipBest.pose.source, read.clipBest.pose.travel, read.best.pose)) {
+                read.best = read.clipBest;
+            }
+        }
+
+        // A dwell in any reload variant settles it. Otherwise any other clip might
+        // still park the bolt, or show the stroke of a gun whose reloads hide it.
+        bool readsOtherClips(void* userData) noexcept
+        {
+            return static_cast<const PoseRead*>(userData)->best.pose.source != PoseSource::Dwell;
+        }
+
+        bool isReloadClip(const std::string_view animationPath) noexcept
+        {
+            return policy::clipNamesReload(animationPath);
+        }
+
+        void stopRead()
+        {
+            if (s_read.active) {
+                sampler::reset();
+                s_read.active = false;
+            }
+        }
+
+        void logRead(const PoseRead& read)
         {
             std::array<char, 96> parts{};
             std::size_t used = 0;
             for (std::size_t index = policy::kBoltBone + 1; index < kBoneCount; ++index) {
-                if (!entry.posed[index]) {
+                if (!read.best.pose.posed[index]) {
                     continue;
                 }
-                const auto moved = displacement(slot.bones[index].rest, entry.open[index]);
+                const auto moved = displacement(read.rest[index], read.best.pose.open[index]);
                 const auto written = std::format_to_n(
                     parts.data() + used,
                     parts.size() - used - 1,
@@ -171,81 +364,111 @@ namespace paper::bolt_hold
             }
             PAPER_LOG_INFO(
                 Reload,
-                "BOLT_HOLD learned dwell pose weapon={:08X} travel={:.2f}gu parts=[{}]",
-                entry.form,
-                entry.travel,
+                "BOLT_HOLD read clips weapon={:08X} clips={} ms={} longestStepUs={} pose={} travel={:.2f}gu clip='{}' at={:.2f}s parts=[{}]",
+                read.form,
+                read.clipsRead,
+                std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - read.started).count(),
+                read.longestStepMicroseconds,
+                poseName(read.best.pose.source),
+                read.best.pose.travel,
+                read.best.clip.data(),
+                read.best.seconds,
                 parts.data());
         }
 
-        void learnClipPeak(const Slot& slot, const float travel)
+        void beginRead(const std::uint32_t index, const Slot& slot)
         {
-            auto& entry = learnedEntry(slot.form);
-            if (entry.source == PoseSource::Dwell || travel <= entry.travel) {
-                return;
-            }
-            storePose(entry, slot, travel, false);
-            entry.source = PoseSource::ClipPeak;
-        }
-
-        void learnDwell(const Slot& slot, const float travel)
-        {
-            auto& entry = learnedEntry(slot.form);
-            const bool first = entry.source != PoseSource::Dwell;
-            storePose(entry, slot, travel, true);
-            entry.source = PoseSource::Dwell;
-            if (first) {
-                logDwellPose(entry, slot);
+            s_read = {};
+            s_read.active = true;
+            s_read.slot = index;
+            s_read.form = slot.form;
+            s_read.generation = slot.generation;
+            s_read.started = Clock::now();
+            for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
+                s_read.known[bone] = slot.bones[bone].key != 0;
+                s_read.rest[bone] = slot.bones[bone].rest;
             }
         }
 
-        void observeDwell(Slot& slot, const float travel, const float deltaSeconds)
+        void startReadIfNeeded()
         {
-            if (travel < policy::kMinimumOpenTravelGameUnits) {
-                slot.dwelling = false;
-                return;
-            }
-            const auto& bolt = slot.bones[policy::kBoltBone].current;
-            if (!slot.dwelling ||
-                bolt.translate.GetDistance(slot.dwellBolt.translate) > policy::kDwellBoltDriftGameUnits) {
-                slot.dwelling = true;
-                slot.dwellSettled = false;
-                slot.dwellCommitted = false;
-                slot.dwellSeconds = 0.0f;
-                slot.dwellBolt = bolt;
-                return;
-            }
-            slot.dwellSeconds += deltaSeconds;
-            if (slot.dwellSeconds < policy::kDwellSettleSeconds) {
-                return;
-            }
-            if (!slot.dwellSettled) {
-                slot.dwellSettled = true;
-                for (auto& bone : slot.bones) {
-                    bone.dwell = bone.current;
-                    bone.still = true;
-                }
-                return;
-            }
-            for (auto& bone : slot.bones) {
-                if (bone.key && bone.still) {
-                    const auto drift = displacement(bone.dwell, bone.current);
-                    bone.still = drift.moveGameUnits <= policy::kPartStillGameUnits &&
-                                 drift.turnDegrees <= policy::kPartStillDegrees;
+            for (std::uint32_t index = 0; index < s_slots.size(); ++index) {
+                const auto& slot = s_slots[index];
+                if (slot.eligible && slot.restValid && !findLearned(slot.form) &&
+                    slot.generation != s_readFailedGeneration) {
+                    beginRead(index, slot);
+                    return;
                 }
             }
-            if (!slot.dwellCommitted && slot.dwellSeconds >= policy::kDwellCommitSeconds) {
-                slot.dwellCommitted = true;
-                learnDwell(slot, travel);
+        }
+
+        void failRead(const char* reason)
+        {
+            s_readFailedGeneration = s_read.generation;
+            PAPER_LOG_WARN(
+                Reload,
+                "BOLT_HOLD could not read the clips of weapon={:08X}: {}; no hold until it is equipped again",
+                s_read.form,
+                reason);
+            stopRead();
+        }
+
+        void updateRead(const FrameInput& input)
+        {
+            if (!input.enabled || !input.clipSamplerAvailable) {
+                stopRead();
+                return;
+            }
+            if (!s_read.active) {
+                startReadIfNeeded();
+                if (!s_read.active) {
+                    return;
+                }
+            }
+
+            const sampler::PoseReader reader{
+                .samplesPerSecond = policy::kClipSamplesPerSecond,
+                .isPreferredClip = &isReloadClip,
+                .readsOtherClips = &readsOtherClips,
+                .pose = &readClipPose,
+                .userData = &s_read,
+            };
+            const auto stepStarted = Clock::now();
+            const auto result = sampler::stepPoses(
+                s_read.form,
+                s_read.generation,
+                policy::kActionBoneNames.data(),
+                static_cast<std::uint32_t>(kBoneCount),
+                reader);
+            s_read.longestStepMicroseconds = (std::max)(
+                s_read.longestStepMicroseconds,
+                std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - stepStarted).count());
+
+            switch (result.state) {
+            case sampler::State::Completed:
+                storeLearned(s_read.form, s_read.best.pose);
+                logRead(s_read);
+                stopRead();
+                break;
+            case sampler::State::Failed:
+                failRead("the sampler failed");
+                break;
+            case sampler::State::Idle:
+                if (++s_read.startFrames >= kReadStartFrames) {
+                    failRead("it is not among the player's equipped items");
+                }
+                break;
+            default:
+                s_read.startFrames = 0;
+                break;
             }
         }
 
-        void observe(Slot& slot, const bool reloading, const float deltaSeconds)
+        // Stops at the first still spell: the read needs one closed pose, and a
+        // later clip that parks the bolt without a reload must not replace it.
+        void observeRest(Slot& slot, const bool reloading)
         {
-            // A hold's own output says nothing about the clips.
-            if (slot.weight > 0.0f) {
-                slot.stillFrames = 0;
-                slot.lastBoltValid = false;
-                slot.dwelling = false;
+            if (slot.restValid || slot.weight > 0.0f) {
                 return;
             }
             const auto& bolt = slot.bones[policy::kBoltBone].current;
@@ -260,14 +483,6 @@ namespace paper::bolt_hold
                 }
                 slot.restValid = true;
             }
-            if (!slot.restValid) {
-                return;
-            }
-            const float travel = bolt.translate.GetDistance(slot.bones[policy::kBoltBone].rest.translate);
-            if (travel >= policy::kMinimumOpenTravelGameUnits) {
-                learnClipPeak(slot, travel);
-            }
-            observeDwell(slot, travel, deltaSeconds);
         }
 
         void endHold(RockApiClient& rock, const std::uint32_t index, Slot& slot)
@@ -282,6 +497,9 @@ namespace paper::bolt_hold
         void forgetWeapon(RockApiClient& rock, const std::uint32_t index, Slot& slot)
         {
             endHold(rock, index, slot);
+            if (s_read.active && s_read.slot == index) {
+                stopRead();
+            }
             slot = {};
         }
 
@@ -322,7 +540,7 @@ namespace paper::bolt_hold
             std::array<std::uint32_t, kBoneCount> matches{};
             for (const auto& source : s_sources) {
                 for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
-                    if (policy::kActionBoneNames[bone] == source.name) {
+                    if (std::string_view{ policy::kActionBoneNames[bone] } == source.name) {
                         slot.bones[bone].key = source.sourceKey;
                         ++matches[bone];
                     }
@@ -370,13 +588,13 @@ namespace paper::bolt_hold
             return true;
         }
 
-        void driveHold(RockApiClient& rock, const std::uint32_t index, Slot& slot, const LearnedPose& learned)
+        void driveHold(RockApiClient& rock, const std::uint32_t index, Slot& slot, const OpenPose& pose)
         {
             const float blend = policy::easeHoldWeight(slot.weight);
             std::array<rock::api::weaponparts::DriveTarget, kBoneCount> drives{};
             std::uint32_t count = 0;
             for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
-                if (!learned.posed[bone] || !slot.bones[bone].key) {
+                if (!pose.posed[bone] || !slot.bones[bone].key) {
                     continue;
                 }
                 auto& drive = drives[count++];
@@ -386,7 +604,7 @@ namespace paper::bolt_hold
                 drive.sourceKey = slot.bones[bone].key;
                 drive.leaseFrames = kDriveLeaseFrames;
                 api_transform::fromNi(
-                    transform_math::interpolateTransforms(slot.bones[bone].current, learned.open[bone], blend),
+                    transform_math::interpolateTransforms(slot.bones[bone].current, pose.open[bone], blend),
                     drive.targetTransform);
             }
             if (!rock.setWeaponDrives(index, std::span(drives).first(count)) && !slot.driveRefusalLogged) {
@@ -443,10 +661,11 @@ namespace paper::bolt_hold
             const bool reloading = index == 0 ?
                 input.playerReloadActive :
                 hasFlag(state.flags, WeaponStateFlag::SecondaryReloadActive);
-            observe(slot, reloading, input.deltaSeconds);
+            observeRest(slot, reloading);
 
             const auto* learned = findLearned(slot.form);
-            const bool hold = input.enabled && learned && hasFlag(state.flags, WeaponStateFlag::AmmoKnown) &&
+            const bool hasPose = learned && learned->pose.source != PoseSource::None;
+            const bool hold = input.enabled && hasPose && hasFlag(state.flags, WeaponStateFlag::AmmoKnown) &&
                 state.loadedRounds == 0 && !reloading && !(index == 0 && input.physicalReloadActive);
             const float weight = policy::advanceHoldWeight(slot.weight, hold, input.deltaSeconds, input.closeSeconds);
             if (hold != slot.holding) {
@@ -459,8 +678,8 @@ namespace paper::bolt_hold
                     index,
                     state.loadedRounds,
                     reloading,
-                    learned ? learned->travel : 0.0f,
-                    learned && learned->source == PoseSource::Dwell ? "dwell" : "clip-peak");
+                    learned ? learned->pose.travel : 0.0f,
+                    poseName(learned ? learned->pose.source : PoseSource::None));
             }
             if (weight <= 0.0f) {
                 if (slot.weight > 0.0f) {
@@ -470,8 +689,8 @@ namespace paper::bolt_hold
                 return;
             }
             slot.weight = weight;
-            if (learned) {
-                driveHold(rock, index, slot, *learned);
+            if (hasPose) {
+                driveHold(rock, index, slot, learned->pose);
             }
         }
     }
@@ -481,6 +700,7 @@ namespace paper::bolt_hold
         for (std::uint32_t index = 0; index < s_slots.size(); ++index) {
             updateSlot(rock, index, input);
         }
+        updateRead(input);
     }
 
     void reset(RockApiClient& rock)
@@ -488,5 +708,7 @@ namespace paper::bolt_hold
         for (std::uint32_t index = 0; index < s_slots.size(); ++index) {
             forgetWeapon(rock, index, s_slots[index]);
         }
+        stopRead();
+        s_readFailedGeneration = 0;
     }
 }
