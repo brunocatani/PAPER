@@ -65,7 +65,6 @@ namespace paper::exact_clip_preharvest
     struct PoseFrame
     {
         const char* animationPath{ nullptr };
-        bool preferredClip{ false };
         std::uint32_t sampleIndex{ 0 };
         std::uint32_t sampleCount{ 0 };
         float timeSeconds{ 0.0f };
@@ -73,17 +72,18 @@ namespace paper::exact_clip_preharvest
         std::uint32_t boneCount{ 0 };
     };
 
-    using PreferredClipFn = bool (*)(std::string_view animationPath) noexcept;
-    using ReadsOtherClipsFn = bool (*)(void* userData) noexcept;
-    using PoseFn = void (*)(const PoseFrame& frame, void* userData) noexcept;
+    using ClipOrderFn = std::uint32_t (*)(std::string_view animationPath) noexcept;
+    using ReadsClipFn = bool (*)(std::string_view animationPath, void* userData) noexcept;
+    using PoseFn = bool (*)(const PoseFrame& frame, void* userData) noexcept;
 
     struct PoseReader
     {
         float samplesPerSecond{ 0.0f };
-        // These clips are read first.
-        PreferredClipFn isPreferredClip{ nullptr };
-        // Asked before each other clip; false ends the read as completed.
-        ReadsOtherClipsFn readsOtherClips{ nullptr };
+        // Clips are read in ascending order; equal clips keep the graph's order.
+        ClipOrderFn clipOrder{ nullptr };
+        // Asked before each clip; false ends the read as completed.
+        ReadsClipFn readsClip{ nullptr };
+        // False skips the rest of this clip.
         PoseFn pose{ nullptr };
         void* userData{ nullptr };
     };

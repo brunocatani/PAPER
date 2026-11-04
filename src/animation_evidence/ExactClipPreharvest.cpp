@@ -300,7 +300,6 @@ namespace paper::exact_clip_preharvest
             std::uint64_t weaponGenerationKey{ 0 };
             std::uint32_t animationPathCount{ 0 };
             std::uint32_t animationPathIndex{ 0 };
-            std::uint32_t preferredClipCount{ 0 };
             std::uint64_t subgraphIdentifier{ 0 };
             std::uint64_t boundSubgraphIdentifier{ 0 };
             ULONGLONG phaseStartedAtMilliseconds{ 0 };
@@ -561,7 +560,6 @@ namespace paper::exact_clip_preharvest
             job.weaponGenerationKey = 0;
             job.animationPathCount = 0;
             job.animationPathIndex = 0;
-            job.preferredClipCount = 0;
             job.subgraphIdentifier = 0;
             job.boundSubgraphIdentifier = 0;
             job.phaseStartedAtMilliseconds = 0;
@@ -1413,7 +1411,7 @@ namespace paper::exact_clip_preharvest
             return false;
         }
 
-        void publishPose(Runtime& state, const PoseReader& reader, const float timeSeconds)
+        [[nodiscard]] bool publishPose(Runtime& state, const PoseReader& reader, const float timeSeconds)
         {
             const auto& clip = state.clip;
             std::uint32_t boneCount = 0;
@@ -1425,10 +1423,9 @@ namespace paper::exact_clip_preharvest
                     bone.local = state.sampledLocals[static_cast<std::size_t>(target.boneIndex)];
                 }
             }
-            reader.pose(
+            return reader.pose(
                 PoseFrame{
                     .animationPath = state.job.currentClipPath.data(),
-                    .preferredClip = state.job.animationPathIndex < state.job.preferredClipCount,
                     .sampleIndex = clip.nextSample,
                     .sampleCount = clip.sampleCount,
                     .timeSeconds = timeSeconds,
@@ -1509,8 +1506,8 @@ namespace paper::exact_clip_preharvest
                 }
 
                 if (reader) {
-                    publishPose(state, *reader, timeSeconds);
-                    ++clip.nextSample;
+                    const bool wantsMore = publishPose(state, *reader, timeSeconds);
+                    clip.nextSample = wantsMore ? clip.nextSample + 1 : clip.sampleCount;
                     ++samplesCompletedThisFrame;
                     continue;
                 }
@@ -2067,16 +2064,17 @@ namespace paper::exact_clip_preharvest
                    equippedInstanceData == job.instanceData.get();
         }
 
-        void moveReaderPreferredClipsFirst(Job& job, const PoseReader& reader)
+        void orderClipsForReader(Job& job, const PoseReader& reader)
         {
             auto* first = job.animationPaths.data();
-            auto* preferredEnd = std::partition(
+            std::stable_sort(
                 first,
                 first + job.animationPathCount,
-                [&](const std::array<char, kAnimationPathCapacity>& path) {
-                    return reader.isPreferredClip(std::string_view{ path.data() });
+                [&](const std::array<char, kAnimationPathCapacity>& left,
+                    const std::array<char, kAnimationPathCapacity>& right) {
+                    return reader.clipOrder(std::string_view{ left.data() }) <
+                           reader.clipOrder(std::string_view{ right.data() });
                 });
-            job.preferredClipCount = static_cast<std::uint32_t>(preferredEnd - first);
         }
 
         [[nodiscard]] StepResult progressJob(
@@ -2184,7 +2182,7 @@ namespace paper::exact_clip_preharvest
                     return StepResult{ .state = State::Failed };
                 }
                 if (consumer.reader) {
-                    moveReaderPreferredClipsFirst(job, *consumer.reader);
+                    orderClipsForReader(job, *consumer.reader);
                 }
                 job.animationPathIndex = 0;
                 job.phase = State::LoadingClip;
@@ -2201,8 +2199,10 @@ namespace paper::exact_clip_preharvest
 
             if (job.phase == State::LoadingClip) {
                 const bool readerIsDone = consumer.reader && !job.clipResource.entry &&
-                    job.animationPathIndex >= job.preferredClipCount &&
-                    !consumer.reader->readsOtherClips(consumer.reader->userData);
+                    job.animationPathIndex < job.animationPathCount &&
+                    !consumer.reader->readsClip(
+                        std::string_view{ job.animationPaths[job.animationPathIndex].data() },
+                        consumer.reader->userData);
                 if (job.animationPathIndex >= job.animationPathCount || readerIsDone) {
                     finishTerminal(state, State::Completed, "allExactAnimationFilesSampled");
                     return StepResult{ .state = State::Completed };

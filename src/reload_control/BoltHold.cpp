@@ -64,7 +64,6 @@ namespace paper::bolt_hold
         {
             std::uint64_t key{ 0 };
             RE::NiTransform current{};
-            RE::NiTransform rest{};
         };
 
         struct Slot
@@ -75,10 +74,6 @@ namespace paper::bolt_hold
             bool resolved{ false };
             bool eligible{ false };
             std::array<Bone, kBoneCount> bones{};
-            RE::NiTransform lastBolt{};
-            std::uint32_t stillFrames{ 0 };
-            bool lastBoltValid{ false };
-            bool restValid{ false };
             float weight{ 0.0f };
             bool holding{ false };
             bool driveRefusalLogged{ false };
@@ -117,13 +112,19 @@ namespace paper::bolt_hold
             std::uint32_t form{ 0 };
             std::uint64_t generation{ 0 };
             std::uint32_t startFrames{ 0 };
-            // Where the running game keeps this gun's bones closed. The skeleton's
-            // bind pose is shared by every weapon and says nothing about that.
-            std::array<bool, kBoneCount> known{};
-            std::array<RE::NiTransform, kBoneCount> rest{};
-            // The clip being read: it counts only if it also shows the rest pose.
+            // The bones ROCK publishes on this weapon, in the same order as the names.
+            std::array<bool, kBoneCount> published{};
+            // Each bone its idle clip tracks, where that clip keeps it: the action
+            // closed. Never the live bones, which sit wherever they were left until
+            // the graph is running this weapon's subgraph, and never the skeleton's
+            // bind pose, which every weapon shares.
+            bool closedKnown{ false };
+            std::array<bool, kBoneCount> closedTracked{};
+            std::array<RE::NiTransform, kBoneCount> closed{};
+            // The clip being read: it counts only if it also shows the bolt closed.
+            policy::ClipKind clipKind{ policy::ClipKind::Other };
             ClipDwell dwell{};
-            bool clipShowsRest{ false };
+            bool clipShowsClosed{ false };
             PoseCandidate clipBest{};
             PoseCandidate best{};
             std::uint32_t clipsRead{ 0 };
@@ -202,7 +203,7 @@ namespace paper::bolt_hold
         }
 
         // The bolt where this frame has it, and each part that sits apart from its
-        // rest as a part of the action does. Parts a dwell saw move stay out.
+        // closed pose as a part of the action does. Parts a dwell saw move stay out.
         void offerPose(
             PoseRead& read,
             const sampler::PoseFrame& frame,
@@ -221,10 +222,11 @@ namespace paper::bolt_hold
             candidate.pose.posed[policy::kBoltBone] = true;
             candidate.pose.open[policy::kBoltBone] = *pose[policy::kBoltBone];
             for (std::size_t index = policy::kBoltBone + 1; index < kBoneCount; ++index) {
-                if (!pose[index] || !read.known[index] || (stillParts && !(*stillParts)[index])) {
+                if (!pose[index] || !read.published[index] || !read.closedTracked[index] ||
+                    (stillParts && !(*stillParts)[index])) {
                     continue;
                 }
-                const auto moved = displacement(read.rest[index], *pose[index]);
+                const auto moved = displacement(read.closed[index], *pose[index]);
                 if (policy::partBelongsToPose(moved.moveGameUnits, moved.turnDegrees, travel)) {
                     candidate.pose.posed[index] = true;
                     candidate.pose.open[index] = *pose[index];
@@ -285,12 +287,13 @@ namespace paper::bolt_hold
             }
         }
 
-        void readClipPose(const sampler::PoseFrame& frame, void* userData) noexcept
+        bool readClipPose(const sampler::PoseFrame& frame, void* userData) noexcept
         {
             auto& read = *static_cast<PoseRead*>(userData);
             if (frame.sampleIndex == 0) {
+                read.clipKind = policy::classifyClip(frame.animationPath);
                 read.dwell = {};
-                read.clipShowsRest = false;
+                read.clipShowsClosed = false;
                 read.clipBest = {};
                 ++read.clipsRead;
             }
@@ -302,38 +305,65 @@ namespace paper::bolt_hold
                 }
             }
             if (!pose[policy::kBoltBone]) {
-                return;
+                return false;
             }
+            // One pose of the first idle clip that tracks the bolt is the whole answer.
+            if (read.clipKind == policy::ClipKind::Idle) {
+                if (!read.closedKnown) {
+                    read.closedKnown = true;
+                    for (std::size_t index = 0; index < kBoneCount; ++index) {
+                        read.closedTracked[index] = pose[index] != nullptr;
+                        if (pose[index]) {
+                            read.closed[index] = *pose[index];
+                        }
+                    }
+                }
+                return false;
+            }
+
             const float travel = pose[policy::kBoltBone]->translate.GetDistance(
-                read.rest[policy::kBoltBone].translate);
-            read.clipShowsRest = read.clipShowsRest || travel <= policy::kClipRestGameUnits;
+                read.closed[policy::kBoltBone].translate);
+            read.clipShowsClosed = read.clipShowsClosed || travel <= policy::kClipClosedGameUnits;
             if (travel >= policy::kMinimumOpenTravelGameUnits) {
                 offerPose(
                     read,
                     frame,
                     pose,
                     travel,
-                    frame.preferredClip ? PoseSource::ReloadStroke : PoseSource::OtherStroke,
+                    read.clipKind == policy::ClipKind::Reload ? PoseSource::ReloadStroke : PoseSource::OtherStroke,
                     nullptr);
             }
             observeClipDwell(read, frame, pose, travel);
 
-            if (frame.sampleIndex + 1 == frame.sampleCount && read.clipShowsRest &&
+            if (frame.sampleIndex + 1 == frame.sampleCount && read.clipShowsClosed &&
                 outranks(read.clipBest.pose.source, read.clipBest.pose.travel, read.best.pose)) {
                 read.best = read.clipBest;
             }
+            return true;
         }
 
-        // A dwell in any reload variant settles it. Otherwise any other clip might
-        // still park the bolt, or show the stroke of a gun whose reloads hide it.
-        bool readsOtherClips(void* userData) noexcept
+        // Every reload variant is read: the farthest dwell wins. With none, the fire
+        // clips show the stroke, and only a gun neither of them moves reads the rest.
+        // Without a closed pose no clip can be judged, so the read ends with no pose.
+        bool readsClip(const std::string_view animationPath, void* userData) noexcept
         {
-            return static_cast<const PoseRead*>(userData)->best.pose.source != PoseSource::Dwell;
+            const auto& read = *static_cast<const PoseRead*>(userData);
+            const auto source = read.best.pose.source;
+            switch (policy::classifyClip(animationPath)) {
+            case policy::ClipKind::Idle:
+                return true;
+            case policy::ClipKind::Reload:
+                return read.closedKnown;
+            case policy::ClipKind::Fire:
+                return read.closedKnown && source != PoseSource::Dwell;
+            default:
+                return read.closedKnown && source == PoseSource::None;
+            }
         }
 
-        bool isReloadClip(const std::string_view animationPath) noexcept
+        std::uint32_t clipOrder(const std::string_view animationPath) noexcept
         {
-            return policy::clipNamesReload(animationPath);
+            return static_cast<std::uint32_t>(policy::classifyClip(animationPath));
         }
 
         void stopRead()
@@ -344,7 +374,7 @@ namespace paper::bolt_hold
             }
         }
 
-        void logRead(const PoseRead& read)
+        void logRead(const PoseRead& read, const RE::NiTransform& liveBolt)
         {
             std::array<char, 96> parts{};
             std::size_t used = 0;
@@ -352,7 +382,7 @@ namespace paper::bolt_hold
                 if (!read.best.pose.posed[index]) {
                     continue;
                 }
-                const auto moved = displacement(read.rest[index], read.best.pose.open[index]);
+                const auto moved = displacement(read.closed[index], read.best.pose.open[index]);
                 const auto written = std::format_to_n(
                     parts.data() + used,
                     parts.size() - used - 1,
@@ -362,13 +392,20 @@ namespace paper::bolt_hold
                     moved.turnDegrees);
                 used = (std::min)(parts.size() - 1, used + static_cast<std::size_t>(written.size));
             }
+            // How far the live bolt sits from the idle clip's: near zero says the clips
+            // and the running graph agree about this gun.
+            const float liveOffset = read.closedKnown ?
+                liveBolt.translate.GetDistance(read.closed[policy::kBoltBone].translate) :
+                0.0f;
             PAPER_LOG_INFO(
                 Reload,
-                "BOLT_HOLD read clips weapon={:08X} clips={} ms={} longestStepUs={} pose={} travel={:.2f}gu clip='{}' at={:.2f}s parts=[{}]",
+                "BOLT_HOLD read clips weapon={:08X} clips={} ms={} longestStepUs={} closed={} liveOffset={:.2f}gu pose={} travel={:.2f}gu clip='{}' at={:.2f}s parts=[{}]",
                 read.form,
                 read.clipsRead,
                 std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - read.started).count(),
                 read.longestStepMicroseconds,
+                read.closedKnown,
+                liveOffset,
                 poseName(read.best.pose.source),
                 read.best.pose.travel,
                 read.best.clip.data(),
@@ -385,8 +422,7 @@ namespace paper::bolt_hold
             s_read.generation = slot.generation;
             s_read.started = Clock::now();
             for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
-                s_read.known[bone] = slot.bones[bone].key != 0;
-                s_read.rest[bone] = slot.bones[bone].rest;
+                s_read.published[bone] = slot.bones[bone].key != 0;
             }
         }
 
@@ -394,8 +430,7 @@ namespace paper::bolt_hold
         {
             for (std::uint32_t index = 0; index < s_slots.size(); ++index) {
                 const auto& slot = s_slots[index];
-                if (slot.eligible && slot.restValid && !findLearned(slot.form) &&
-                    slot.generation != s_readFailedGeneration) {
+                if (slot.eligible && !findLearned(slot.form) && slot.generation != s_readFailedGeneration) {
                     beginRead(index, slot);
                     return;
                 }
@@ -428,8 +463,8 @@ namespace paper::bolt_hold
 
             const sampler::PoseReader reader{
                 .samplesPerSecond = policy::kClipSamplesPerSecond,
-                .isPreferredClip = &isReloadClip,
-                .readsOtherClips = &readsOtherClips,
+                .clipOrder = &clipOrder,
+                .readsClip = &readsClip,
                 .pose = &readClipPose,
                 .userData = &s_read,
             };
@@ -447,7 +482,7 @@ namespace paper::bolt_hold
             switch (result.state) {
             case sampler::State::Completed:
                 storeLearned(s_read.form, s_read.best.pose);
-                logRead(s_read);
+                logRead(s_read, s_slots[s_read.slot].bones[policy::kBoltBone].current);
                 stopRead();
                 break;
             case sampler::State::Failed:
@@ -461,27 +496,6 @@ namespace paper::bolt_hold
             default:
                 s_read.startFrames = 0;
                 break;
-            }
-        }
-
-        // Stops at the first still spell: the read needs one closed pose, and a
-        // later clip that parks the bolt without a reload must not replace it.
-        void observeRest(Slot& slot, const bool reloading)
-        {
-            if (slot.restValid || slot.weight > 0.0f) {
-                return;
-            }
-            const auto& bolt = slot.bones[policy::kBoltBone].current;
-            const bool still = slot.lastBoltValid &&
-                bolt.translate.GetDistance(slot.lastBolt.translate) <= policy::kRestStillGameUnits;
-            slot.lastBolt = bolt;
-            slot.lastBoltValid = true;
-            slot.stillFrames = still && !reloading ? slot.stillFrames + 1 : 0;
-            if (slot.stillFrames >= policy::kRestStillFrames) {
-                for (auto& bone : slot.bones) {
-                    bone.rest = bone.current;
-                }
-                slot.restValid = true;
             }
         }
 
@@ -661,7 +675,6 @@ namespace paper::bolt_hold
             const bool reloading = index == 0 ?
                 input.playerReloadActive :
                 hasFlag(state.flags, WeaponStateFlag::SecondaryReloadActive);
-            observeRest(slot, reloading);
 
             const auto* learned = findLearned(slot.form);
             const bool hasPose = learned && learned->pose.source != PoseSource::None;

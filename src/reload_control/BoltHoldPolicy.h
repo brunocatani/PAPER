@@ -35,16 +35,13 @@ namespace paper::bolt_hold_policy
     inline constexpr float kMinimumOpenTravelGameUnits = 1.0f;
     // A bolt flies back in about a third of a Glock's 90 ms fire stroke.
     inline constexpr float kOpenSeconds = 0.05f;
-    // The bolt must sit still this long, outside a reload, to count as closed.
-    inline constexpr std::uint32_t kRestStillFrames = 10;
-    inline constexpr float kRestStillGameUnits = 0.01f;
 
     // Samples land 17 ms apart, and a fire stroke lasts about 90 ms.
     inline constexpr float kClipSamplesPerSecond = 60.0f;
-    // A clip must also show the bolt where the game keeps it closed. An additive
+    // A clip must also show the bolt where the idle clip keeps it. An additive
     // layer's track is a delta, and a paired kill's bolt sits where another gun
     // has it: both look parked open at a position this gun's bolt never takes.
-    inline constexpr float kClipRestGameUnits = 0.1f;
+    inline constexpr float kClipClosedGameUnits = 0.1f;
 
     // A clip's dwell is the bolt parked open: the animator's locked-back pose.
     // Parts get this long to arrive with the bolt, and those that then keep
@@ -70,22 +67,57 @@ namespace paper::bolt_hold_policy
                moveGameUnits <= boltTravelGameUnits && turnDegrees <= kPartMaximumTurnDegrees;
     }
 
-    // Judged on the file name: a folder can be named after a mod's reloads.
-    [[nodiscard]] constexpr bool clipNamesReload(const std::string_view animationPath) noexcept
+    // The read order. Idle shows the action closed, a reload may park the bolt and
+    // a shot shows its stroke. Any other clip is read only when none of these moves
+    // the bolt, because a gun's roughly 90 clips take about 8 s at the sampling budget.
+    enum class ClipKind : std::uint32_t
     {
-        constexpr std::string_view kReload{ "reload" };
-        const auto separator = animationPath.find_last_of("/\\");
-        const auto file = separator == std::string_view::npos ? animationPath : animationPath.substr(separator + 1);
-        for (std::size_t start = 0; start + kReload.size() <= file.size(); ++start) {
-            bool matches = true;
-            for (std::size_t index = 0; index < kReload.size() && matches; ++index) {
-                matches = animation_preharvest_policy::asciiLower(file[start + index]) == kReload[index];
-            }
-            if (matches) {
-                return true;
+        Idle,
+        Reload,
+        Fire,
+        Other,
+    };
+
+    // `pattern` is lower case.
+    [[nodiscard]] constexpr bool matchesAt(
+        const std::string_view text,
+        const std::string_view pattern,
+        const std::size_t start) noexcept
+    {
+        if (start + pattern.size() > text.size()) {
+            return false;
+        }
+        for (std::size_t index = 0; index < pattern.size(); ++index) {
+            if (animation_preharvest_policy::asciiLower(text[start + index]) != pattern[index]) {
+                return false;
             }
         }
-        return false;
+        return true;
+    }
+
+    // Judged on the file name without its extension: a folder can be named after
+    // a mod's reloads, and a graph-bound clip has only a name.
+    [[nodiscard]] constexpr ClipKind classifyClip(const std::string_view animationPath) noexcept
+    {
+        const auto separator = animationPath.find_last_of("/\\");
+        auto stem = separator == std::string_view::npos ? animationPath : animationPath.substr(separator + 1);
+        const auto extension = stem.rfind('.');
+        if (extension != std::string_view::npos) {
+            stem = stem.substr(0, extension);
+        }
+
+        constexpr std::array<std::string_view, 3> kIdleStems{ "wpnidleready", "wpnidle", "wpnidlesighted" };
+        for (const auto idle : kIdleStems) {
+            if (stem.size() == idle.size() && matchesAt(stem, idle, 0)) {
+                return ClipKind::Idle;
+            }
+        }
+        for (std::size_t start = 0; start < stem.size(); ++start) {
+            if (matchesAt(stem, "reload", start)) {
+                return ClipKind::Reload;
+            }
+        }
+        return matchesAt(stem, "wpnfire", 0) ? ClipKind::Fire : ClipKind::Other;
     }
 
     // A manual action stays where the hand left it. Every other gun is judged by
