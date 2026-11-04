@@ -43,6 +43,18 @@ bManualReloadOnly = {}
 ; ends. 0 moves it instantly.
 fHandBlendSeconds = {:.2f}
 
+; true leaves the bolt or slide open on an empty magazine-fed gun, in either
+; hand, until a reload starts or rounds arrive, with the parts that move with
+; it such as a tilting barrel. It needs a bolt on the game's standard WeaponBolt
+; bone, and the clips show the open position: a gun whose firing does not move
+; its bolt learns it from its first reload of the session. Manual actions,
+; revolvers and energy or heavy weapons never hold.
+bBoltHoldOpen = {}
+
+; Seconds the open bolt takes to return to the animation when a reload starts.
+; 0 moves it instantly.
+fBoltHoldCloseSeconds = {:.2f}
+
 [Debug]
 ; Draws Paper's native weapon frame, native hand targets, ROCK live grip
 ; targets, applied FRIK hands, and their target-error lines through RPS UI
@@ -92,6 +104,8 @@ iMaximumEntries = {}
             defaults.logLevel,
             defaults.manualReloadOnly,
             defaults.handBlendSeconds,
+            defaults.boltHoldOpen,
+            defaults.boltHoldCloseSeconds,
             defaults.debugDrawNativeAnimation,
             defaults.debugDrawNativeAnimationText,
             defaults.debugNativeAnimationAxisLength,

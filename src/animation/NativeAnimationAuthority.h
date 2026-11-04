@@ -162,6 +162,8 @@ namespace paper::native_animation_authority
     void resetTransientState();
 
     [[nodiscard]] bool isHookInstalled();
+    // The player's graph is between its reload start and end events.
+    [[nodiscard]] bool playerReloadActive() noexcept;
     [[nodiscard]] RuntimeStatus queryRuntimeStatus();
     [[nodiscard]] std::uint32_t currentLocalAuthorityFlags();
     [[nodiscard]] std::uint32_t copyCapturedTransforms(

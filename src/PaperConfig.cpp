@@ -106,6 +106,10 @@ namespace paper
                 "Reload", "bManualReloadOnly", config.manualReloadOnly);
             config.handBlendSeconds = static_cast<float>(ini.GetDoubleValue(
                 "Reload", "fHandBlendSeconds", config.handBlendSeconds));
+            config.boltHoldOpen = ini.GetBoolValue(
+                "Reload", "bBoltHoldOpen", config.boltHoldOpen);
+            config.boltHoldCloseSeconds = static_cast<float>(ini.GetDoubleValue(
+                "Reload", "fBoltHoldCloseSeconds", config.boltHoldCloseSeconds));
             config.debugDrawNativeAnimation = ini.GetBoolValue(
                 "Debug",
                 "bDebugDrawNativeAnimation",
@@ -173,6 +177,10 @@ namespace paper
                 config.handBlendSeconds = PaperConfig{}.handBlendSeconds;
             }
             config.handBlendSeconds = std::clamp(config.handBlendSeconds, 0.0f, 1.0f);
+            if (!std::isfinite(config.boltHoldCloseSeconds)) {
+                config.boltHoldCloseSeconds = PaperConfig{}.boltHoldCloseSeconds;
+            }
+            config.boltHoldCloseSeconds = std::clamp(config.boltHoldCloseSeconds, 0.0f, 1.0f);
             if (!std::isfinite(config.debugNativeAnimationAxisLength)) {
                 config.debugNativeAnimationAxisLength = 5.0f;
             }
@@ -190,12 +198,14 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
                 config.enabled,
                 config.manualReloadOnly,
                 config.handBlendSeconds,
+                config.boltHoldOpen,
+                config.boltHoldCloseSeconds,
                 static_cast<std::uint32_t>(config.developmentCaptureMode),
                 config.developmentCaptureAutoStart,
                 config.developmentCaptureAllowApiActivation,

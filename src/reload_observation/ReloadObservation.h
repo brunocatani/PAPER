@@ -4,6 +4,7 @@
 #include "api/RockTypes.h"
 
 #include <cstdint>
+#include <span>
 
 namespace paper::reload_observation
 {
@@ -31,6 +32,13 @@ namespace paper::reload_observation
     };
 
     void reset();
+
+    // The live form's WeaponFamilyFlag bits from ROCK's classification of it and
+    // its parts' evidence, for either weapon slot.
+    [[nodiscard]] std::uint64_t classifyWeaponFamilyFlags(
+        std::uint32_t weaponFormId,
+        const rock::api::weapon::Classification& classification,
+        std::span<const rock::api::weaponparts::EvidenceDetail> evidence);
 
     // Game-thread ROCK phase ownership. The grip state's scene pointer is a
     // current-callback witness only and is never retained by this subsystem.

@@ -3189,6 +3189,11 @@ namespace paper::native_animation_authority
         }
     }
 
+    bool playerReloadActive() noexcept
+    {
+        return s_playerReloadEventActive.load(std::memory_order_acquire);
+    }
+
     bool isHookInstalled()
     {
         return s_hookInstalled.load(std::memory_order_acquire);

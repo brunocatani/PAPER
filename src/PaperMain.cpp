@@ -17,6 +17,7 @@
 #include "development/DevelopmentCapturePolicy.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
+#include "reload_control/BoltHold.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
@@ -44,6 +45,7 @@ namespace
     std::uint32_t s_lastAuthorityPublishFailureFlags{ UINT32_MAX };
     bool s_runtimeOperational{ false };
     bool s_climbingAnimationSuppressed{ false };
+    bool s_automaticReloadBlockSent{ false };
     bool s_reloadObservationDemandActive{ false };
     bool s_animationTelemetryDemandActive{ false };
     bool s_reloadStageDemandActive{ false };
@@ -1151,6 +1153,22 @@ namespace
             const bool climbingAnimationSuppressed =
                 operational && refreshClimbingAnimationSuppression();
             const auto weaponObservation = refreshWeaponState(*context);
+            // Manual-only reaches the second weapon through ROCK, whose own
+            // empty-trigger reload never passes the hooks above.
+            const bool automaticReloadBlocked = manual_reload_only::runtimeEnabled();
+            if (automaticReloadBlocked != s_automaticReloadBlockSent &&
+                rockApiClient().setAutomaticReloadBlocked(automaticReloadBlocked)) {
+                s_automaticReloadBlockSent = automaticReloadBlocked;
+            }
+            bolt_hold::update(
+                rockApiClient(),
+                bolt_hold::FrameInput{
+                    .deltaSeconds = context->deltaSeconds,
+                    .closeSeconds = g_config.boltHoldCloseSeconds,
+                    .enabled = operational && g_config.boltHoldOpen,
+                    .playerReloadActive = native_animation_authority::playerReloadActive(),
+                    .physicalReloadActive = provider::physicalReloadActive(),
+                });
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
                 reload_observation::advanceFrame(
@@ -1368,6 +1386,9 @@ namespace
         merged_reload_compatibility::setRuntimeEnabled(false);
         reload_selection_trace::setRuntimeEnabled(false);
         debug_visualization::clear();
+        bolt_hold::reset(rockApiClient());
+        (void)rockApiClient().setAutomaticReloadBlocked(false);
+        s_automaticReloadBlockSent = false;
         rockApiClient().clearNativeAnimationAuthority();
         native_animation_authority::resetTransientState();
         attachment_bindings::reset();

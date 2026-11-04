@@ -17,7 +17,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 | --- | --- |
 | `src/PaperMain.cpp` | F4SE Query/Load, version guard, ROCK connection, frame and session lifecycle |
 | `src/animation/` | Native animation authority and the hand pose pipeline |
-| `src/reload_control/` | Manual-reload-only control and the physical-reload lease |
+| `src/reload_control/` | Manual-reload-only control, the empty-gun bolt hold and the physical-reload lease |
 | `src/reload_observation/`, `src/reload_stages/`, `src/animation_evidence/` | Reload observation and weapon classification, stage identification, clip telemetry and exact preharvest |
 | `src/weapon_motion/` | Weapon-part motion paths, learning and the motion cache |
 | `src/attachment_bindings/` | Weapon attachment node remapping |
@@ -67,6 +67,8 @@ Tests live in `build-fast` but outside the default build. Every test target name
 - PAPER takes hand authority only for a native reload or cycle action; `WeaponFire` alone is telemetry.
 - A reload always plays both hands. During a cycle the left hand is driven only when the clip works the weapon with it, meaning it moves against both the gun and the body; otherwise it stays where ROCK puts it. A pump stroke reaches PAPER as a reload start, so it plays as a reload.
 - `[Reload] fHandBlendSeconds` blends the left hand between ROCK's pose and the animation in both directions; 0 moves it instantly.
+- `[Reload] bBoltHoldOpen` leaves an empty magazine-fed gun's action open on both weapon slots until a reload starts or rounds arrive. PAPER decides and ROCK applies it through WeaponParts drives under a two-frame lease, so the pose ends by itself if PAPER stops. The pose is the weapon's own, read from its clips: the `WeaponBolt` bone and the `WeaponExtra` bones that keep still beside it during a clip's dwell, or the farthest frame of any clip until a dwell has played. A dwell is what leaves magazine props out and takes a barrel's tilt or a bolt catch in, so never select parts by name or evidence. A gun whose firing never moves its bolt has no pose before its first reload. Manual actions, revolvers and energy or heavy weapons never hold.
+- `[Reload] bManualReloadOnly` hooks the game's automatic reload call sites and asks ROCK to dry-fire an empty second weapon, whose reload ROCK starts itself. The check of the action-dispatcher thunk stops at its jump's opcode, because another plugin may route that jump.
 - PAPER stands down while ROCK latches a hand to a fixed surface (climbing), and leaves reloads and cycles native for a weapon ROCK seats from a FRIK user weapon offset.
 - A physical-reload lease and Provider animation authority exclude each other: the lease is refused while any consumer holds authority.
 - Native-pose and weapon-motion records are observations. They grant no pose, IK or scene-node control.

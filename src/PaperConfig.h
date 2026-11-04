@@ -12,6 +12,8 @@ namespace paper
         bool enabled{ true };
         bool manualReloadOnly{ false };
         float handBlendSeconds{ 0.15f };
+        bool boltHoldOpen{ true };
+        float boltHoldCloseSeconds{ 0.15f };
         bool debugDrawNativeAnimation{ false };
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };

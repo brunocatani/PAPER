@@ -4,6 +4,7 @@
 #include <ROCK/Client.h>
 
 #include <cstdint>
+#include <span>
 
 namespace RE { class NiAVObject; }
 
@@ -57,6 +58,35 @@ namespace paper
             std::uint32_t bodyId,
             rock::api::Point3* outPoints,
             std::uint32_t maxPoints) const;
+        // Per weapon slot: what the bolt hold needs on both equipped weapons.
+        [[nodiscard]] bool queryWeaponState(
+            std::uint32_t weaponSlot,
+            rock::api::weapon::WeaponState& outState) const;
+        [[nodiscard]] bool queryWeaponClassification(
+            std::uint32_t weaponSlot,
+            rock::api::weapon::Classification& outClassification) const;
+        [[nodiscard]] std::uint32_t copyWeaponEvidenceDetails(
+            std::uint32_t weaponSlot,
+            rock::api::weaponparts::EvidenceDetail* outDetails,
+            std::uint32_t maxDetails,
+            std::uint32_t& outTotal) const;
+        [[nodiscard]] rock::api::Status copyWeaponSources(
+            std::uint32_t weaponSlot,
+            std::uint64_t generation,
+            rock::api::weaponparts::Source* outSources,
+            std::uint32_t maxSources,
+            std::uint32_t& outTotal) const;
+        [[nodiscard]] bool queryWeaponSourcePose(
+            std::uint32_t weaponSlot,
+            std::uint64_t generation,
+            std::uint64_t sourceKey,
+            rock::api::weaponparts::SourcePose& outPose) const;
+        [[nodiscard]] bool setWeaponDrives(
+            std::uint32_t weaponSlot,
+            std::span<const rock::api::weaponparts::DriveTarget> drives) const;
+        void clearWeaponDrives(std::uint32_t weaponSlot) const;
+        // An empty second weapon dry-fires on its trigger instead of reloading.
+        [[nodiscard]] bool setAutomaticReloadBlocked(bool blocked) const;
         [[nodiscard]] bool setHandVisualAuthority(
             const rock::api::animation::HandVisualAuthorityRequest& request) const;
         void clearHandVisualAuthority(rock::api::Hand hand) const;

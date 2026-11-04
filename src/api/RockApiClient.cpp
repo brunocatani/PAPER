@@ -49,8 +49,8 @@ namespace paper
         if ((status=_client.acquire(permissions(api::core::Permission::Read),_core))!=api::Status::Ok) missing="Core";
         else if ((status=_client.acquire(permissions(api::hands::Permission::Read),_hands))!=api::Status::Ok) missing="Hands";
         else if ((status=_client.acquire(permissions(api::grab::Permission::Read),_grab))!=api::Status::Ok) missing="Grab";
-        else if ((status=_client.acquire(permissions(api::weapon::Permission::Read),_weapon))!=api::Status::Ok) missing="Weapon";
-        else if ((status=_client.acquire(permissions(api::weaponparts::Permission::Read),_parts))!=api::Status::Ok) missing="WeaponParts";
+        else if ((status=_client.acquire(permissions(api::weapon::Permission::Read,api::weapon::Permission::Write),_weapon))!=api::Status::Ok) missing="Weapon";
+        else if ((status=_client.acquire(permissions(api::weaponparts::Permission::Read,api::weaponparts::Permission::Write),_parts))!=api::Status::Ok) missing="WeaponParts";
         else if ((status=_client.acquire(permissions(api::animation::Permission::Read,api::animation::Permission::Write,
                      api::animation::Permission::Callbacks),_animation))!=api::Status::Ok) missing="Animation";
         if (missing) {
@@ -227,14 +227,44 @@ namespace paper
     }
 
     std::uint32_t RockApiClient::copyWeaponEvidenceDetails(rock::api::weaponparts::EvidenceDetail* output,std::uint32_t capacity,std::uint32_t& outTotal) const {
+        return copyWeaponEvidenceDetails(kRockWeaponSlot,output,capacity,outTotal);
+    }
+    std::uint32_t RockApiClient::copyWeaponEvidenceDetails(std::uint32_t slot,rock::api::weaponparts::EvidenceDetail* output,std::uint32_t capacity,std::uint32_t& outTotal) const {
         outTotal=0;
         if (!reloadObservationEvidenceReady() || !output) return 0;
         const auto count=std::min(capacity,rock::api::weaponparts::kMaxEvidenceDetails);
         for (std::uint32_t i=0;i<count;++i) output[i]={};
-        if (_parts->copyEvidenceDetails(_ownerToken,kRockWeaponSlot,output,count,&outTotal)!=rock::api::Status::Ok) {
+        if (_parts->copyEvidenceDetails(_ownerToken,slot,output,count,&outTotal)!=rock::api::Status::Ok) {
             outTotal=0; return 0;
         }
         return std::min(outTotal,count);
+    }
+    bool RockApiClient::queryWeaponState(std::uint32_t slot,rock::api::weapon::WeaponState& outState) const {
+        outState={};
+        return ready() && _weapon->getWeaponState(_ownerToken,slot,&outState)==rock::api::Status::Ok;
+    }
+    bool RockApiClient::queryWeaponClassification(std::uint32_t slot,rock::api::weapon::Classification& outClassification) const {
+        outClassification={};
+        return ready() && _weapon->getClassification(_ownerToken,slot,&outClassification)==rock::api::Status::Ok;
+    }
+    rock::api::Status RockApiClient::copyWeaponSources(std::uint32_t slot,std::uint64_t generation,rock::api::weaponparts::Source* output,std::uint32_t capacity,std::uint32_t& outTotal) const {
+        outTotal=0;
+        if (!ready()) return rock::api::Status::NotReady;
+        for (std::uint32_t i=0;i<capacity;++i) output[i]={};
+        return _parts->copySources(_ownerToken,slot,generation,output,capacity,&outTotal);
+    }
+    bool RockApiClient::queryWeaponSourcePose(std::uint32_t slot,std::uint64_t generation,std::uint64_t key,rock::api::weaponparts::SourcePose& outPose) const {
+        outPose={};
+        return ready() && _parts->querySourcePose(_ownerToken,slot,generation,key,&outPose)==rock::api::Status::Ok;
+    }
+    bool RockApiClient::setWeaponDrives(std::uint32_t slot,std::span<const rock::api::weaponparts::DriveTarget> drives) const {
+        return ready() && _parts->setDriveTargets(_ownerToken,slot,drives.data(),static_cast<std::uint32_t>(drives.size()))==rock::api::Status::Ok;
+    }
+    void RockApiClient::clearWeaponDrives(std::uint32_t slot) const {
+        if (ready()) (void)_parts->clearDriveTargets(_ownerToken,slot);
+    }
+    bool RockApiClient::setAutomaticReloadBlocked(bool blocked) const {
+        return ready() && _weapon->setAutomaticReloadBlocked(_ownerToken,blocked?1u:0u)==rock::api::Status::Ok;
     }
     std::uint32_t RockApiClient::copyWeaponEvidencePoints(std::uint32_t body,rock::api::Point3* output,std::uint32_t capacity) const {
         if (!reloadObservationEvidenceReady() || !output) return 0;

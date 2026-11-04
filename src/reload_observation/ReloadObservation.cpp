@@ -280,6 +280,73 @@ namespace paper::reload_observation
             bool valid{ false };
         };
 
+        void addPartEvidence(
+            weapon_classification_policy::WeaponFamilySignals& signals,
+            const std::uint32_t partKindValue,
+            const std::uint32_t actionRoleValue)
+        {
+            switch (static_cast<rock::api::weaponparts::PartKind>(partKindValue)) {
+            case rock::api::weaponparts::PartKind::Magazine:
+                signals.magazinePart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Cylinder:
+                signals.cylinderPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Slide:
+                signals.slidePart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Stock:
+                signals.stockPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Handguard:
+                signals.handguardPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Foregrip:
+                signals.foregripPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Lever:
+                signals.leverPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Pump:
+                signals.pumpPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::BreakAction:
+                signals.breakActionPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::LaserCell:
+                signals.laserCellPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Shell:
+                signals.shellPart = true;
+                break;
+            case rock::api::weaponparts::PartKind::Round:
+                signals.looseRoundPart = true;
+                break;
+            default:
+                break;
+            }
+
+            switch (static_cast<rock::api::weaponparts::ActionRole>(actionRoleValue)) {
+            case rock::api::weaponparts::ActionRole::Slide:
+                signals.slidePart = true;
+                break;
+            case rock::api::weaponparts::ActionRole::Cylinder:
+                signals.cylinderPart = true;
+                break;
+            case rock::api::weaponparts::ActionRole::Lever:
+                signals.leverPart = true;
+                break;
+            case rock::api::weaponparts::ActionRole::Pump:
+                signals.pumpPart = true;
+                break;
+            case rock::api::weaponparts::ActionRole::BreakAction:
+                signals.breakActionPart = true;
+                break;
+            default:
+                break;
+            }
+        }
+
         void classifyCatalogWeaponFamily(CatalogBuffer& building)
         {
             auto& classification = building.state.classification;
@@ -324,68 +391,7 @@ namespace paper::reload_observation
             };
 
             for (const auto& record : building.evidence) {
-                const auto partKind = static_cast<rock::api::weaponparts::PartKind>(record.value.partKind);
-                switch (partKind) {
-                case rock::api::weaponparts::PartKind::Magazine:
-                    signals.magazinePart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Cylinder:
-                    signals.cylinderPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Slide:
-                    signals.slidePart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Stock:
-                    signals.stockPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Handguard:
-                    signals.handguardPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Foregrip:
-                    signals.foregripPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Lever:
-                    signals.leverPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Pump:
-                    signals.pumpPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::BreakAction:
-                    signals.breakActionPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::LaserCell:
-                    signals.laserCellPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Shell:
-                    signals.shellPart = true;
-                    break;
-                case rock::api::weaponparts::PartKind::Round:
-                    signals.looseRoundPart = true;
-                    break;
-                default:
-                    break;
-                }
-
-                const auto actionRole = static_cast<rock::api::weaponparts::ActionRole>(record.value.actionRole);
-                switch (actionRole) {
-                case rock::api::weaponparts::ActionRole::Slide:
-                    signals.slidePart = true;
-                    break;
-                case rock::api::weaponparts::ActionRole::Cylinder:
-                    signals.cylinderPart = true;
-                    break;
-                case rock::api::weaponparts::ActionRole::Lever:
-                    signals.leverPart = true;
-                    break;
-                case rock::api::weaponparts::ActionRole::Pump:
-                    signals.pumpPart = true;
-                    break;
-                case rock::api::weaponparts::ActionRole::BreakAction:
-                    signals.breakActionPart = true;
-                    break;
-                default:
-                    break;
-                }
+                addPartEvidence(signals, record.value.partKind, record.value.actionRole);
             }
 
             const auto result =
@@ -1243,6 +1249,33 @@ namespace paper::reload_observation
             copied = static_cast<std::uint32_t>(count);
             return Status::Ok;
         }
+    }
+
+    std::uint64_t classifyWeaponFamilyFlags(
+        const std::uint32_t weaponFormId,
+        const rock::api::weapon::Classification& classification,
+        const std::span<const rock::api::weaponparts::EvidenceDetail> evidence)
+    {
+        const auto runtimeSignals = runtimeWeaponFamilySignals(weaponFormId);
+        const auto identity = describeForm(weaponFormId);
+        weapon_classification_policy::WeaponFamilySignals signals{
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = classification.valid != 0,
+            .keywordFlags = classification.keywordFlags,
+            .sizeClass = static_cast<std::uint32_t>(classification.sizeClass),
+            .weaponDataAvailable = runtimeSignals.weaponDataAvailable,
+            .automaticWeaponFlag = runtimeSignals.automaticWeaponFlag,
+            .boltActionWeaponFlag = runtimeSignals.boltActionWeaponFlag,
+            .revolverAnimationKeyword = runtimeSignals.revolverAnimationKeyword,
+            .partEvidenceComplete = !evidence.empty(),
+            .pluginName = fixedStringView(identity.pluginName, std::size(identity.pluginName)),
+            .editorId = fixedStringView(identity.editorId, std::size(identity.editorId)),
+            .displayName = fixedStringView(identity.displayName, std::size(identity.displayName)),
+        };
+        for (const auto& detail : evidence) {
+            addPartEvidence(signals, detail.partKind, detail.actionRole);
+        }
+        return weapon_classification_policy::classifyWeaponFamily(signals).familyFlags;
     }
 
     void reset()
