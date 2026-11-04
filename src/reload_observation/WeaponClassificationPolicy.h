@@ -257,7 +257,12 @@ namespace paper::weapon_classification_policy
             add(WeaponFamilyFlag::MagazineFed,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }
-        if (signals.cylinderPart) {
+        // A part's name says little about how the gun cycles: a gas cylinder, a selector
+        // lever, a stock hinge or a mesh still named Cylinder.123 by its modelling tool
+        // all match. An automatic gun cycles itself, so no part name makes it manual.
+        const bool automatic = signals.automaticWeaponFlag ||
+            hasKeyword(WeaponKeywordFlag::Automatic);
+        if (signals.cylinderPart && !automatic) {
             add(WeaponFamilyFlag::Revolver,
                 WeaponFamilyEvidenceFlag::PartTopology);
             add(WeaponFamilyFlag::CylinderFed,
@@ -267,18 +272,17 @@ namespace paper::weapon_classification_policy
             add(WeaponFamilyFlag::SlideOperated,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }
-        // A part's name says little about how the gun cycles: a selector, slide catch
-        // or takedown lever all match. A real lever action has no magazine part, and
-        // the game flags it as a bolt action anyway.
-        if (signals.leverPart && !signals.magazinePart) {
+        // A slide catch or takedown lever also matches by name. A real lever action has
+        // no magazine part, and the game flags it as a bolt action anyway.
+        if (signals.leverPart && !signals.magazinePart && !automatic) {
             add(WeaponFamilyFlag::LeverAction,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }
-        if (signals.pumpPart) {
+        if (signals.pumpPart && !automatic) {
             add(WeaponFamilyFlag::PumpAction,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }
-        if (signals.breakActionPart) {
+        if (signals.breakActionPart && !automatic) {
             add(WeaponFamilyFlag::BreakAction,
                 WeaponFamilyEvidenceFlag::PartTopology);
         }

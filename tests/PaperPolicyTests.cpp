@@ -243,6 +243,26 @@ int main()
         tubeFedLeverAction,
         paper::api::WeaponFamilyFlag::ManualCycle));
 
+    // Captured: 44000F99 Cylinder.* meshes, 22000FD7 Buttstock_Hinge_LP:0.
+    constexpr auto automaticGunWithNoisyParts =
+        weapon_family::classifyWeaponFamily({
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = true,
+            .sizeClass = static_cast<std::uint32_t>(
+                paper::api::WeaponSizeClass::Rifle),
+            .weaponDataAvailable = true,
+            .automaticWeaponFlag = true,
+            .partEvidenceComplete = true,
+            .magazinePart = true,
+            .cylinderPart = true,
+            .leverPart = true,
+            .pumpPart = true,
+            .breakActionPart = true,
+        });
+    static_assert(!hasFamily(
+        automaticGunWithNoisyParts,
+        paper::api::WeaponFamilyFlag::ManualCycle));
+
     // Captured: double-barrel 00092217 has only animsDoubleBarrelShotgun to go on.
     constexpr auto doubleBarrel =
         weapon_family::classifyWeaponFamily({
