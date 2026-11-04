@@ -4,7 +4,7 @@
 
 > A Fallout 4 VR F4SE plugin that brings back reload and weapon-cycling animations: your arms, hands and fingers follow the weapon's own animation while ROCK keeps the weapon in your hand. Other mods read its reload data and take over reloads through its provider API.
 
-[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) · [API reference](docs/api/Provider.md) · [Developer guide](https://devartificial.pro/docs/rps-sdk/paper) · [Changelog](CHANGELOG.md)
+[Download on Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) · [API reference](docs/api/Provider.md) · [Developer guide](https://devartificial.pro/docs/apis/paper) · [Changelog](CHANGELOG.md)
 
 <p align="center">
   <img src=".github/assets/paper-nexus.png" alt="PAPER Nexus artwork: a paper-crafted pistol on a teal background" width="800">
@@ -56,7 +56,8 @@ Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/10
 - **Tactical Reload** - PAPER coordinates with it when `TacticalReload.esm` is loaded.
 - **Merged Root Behavior** - when the merged behavior graph has no reserve reload animation for the equipped weapon, PAPER plays that graph's normal reload instead, with the game's own timing and ammo count.
 - **Weapons with a FRIK weapon offset** - when ROCK seats a weapon from your FRIK weapon offset, PAPER leaves its reloads and cycles to the game.
-- **Mods built against PAPER's pre-2.0 API** (`PAPERApi.h`, the RPS SDK `RPS::PAPER` target) are refused: PAPER logs the refusal. They work again once rebuilt against the headers in [include/PAPER/](include/PAPER/).
+- **Mods built against PAPER's pre-2.0 API** (`PAPERApi.h`) stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against the headers in [include/PAPER/](include/PAPER/).
+- **An older ROCK** stops the game the same way: PAPER needs the ROCK it was built for, and the error box says so.
 
 ## Configuration
 
@@ -140,7 +141,7 @@ Call `paper.close()` on the game thread before your plugin's callback data goes 
 - Leases (physical reload, development capture, timed animation authority) last a set number of frames: renew them while you need them.
 - Copied state carries generations and sequences: drop cached data when they change, and restart a paged copy on `StaleSnapshot`.
 
-Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload page](docs/api/PhysicalReload.md) if you drive reloads. The [developer guide](https://devartificial.pro/docs/rps-sdk/paper) adds a first consumer, recipes and a table of where the pre-2.0 API moved.
+Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload page](docs/api/PhysicalReload.md) if you drive reloads. The [developer guide](https://devartificial.pro/docs/apis/paper) adds a first consumer, recipes and a table of where the pre-2.0 API moved.
 
 ## Building PAPER from source
 

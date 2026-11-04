@@ -8,7 +8,7 @@ frame.
 Interface `PhysicalReload`, major 2, minor 0, discovered through
 `PAPERAPI_QueryInterfaceV1` (see [Provider](Provider.md)); `Client::acquire`
 does it for you. It replaces the former `PAPERAPI_QueryPhysicalReloadV1`,
-`V2` and `V3` exports, which now refuse with a logged reason. Its semantics
+`V2` and `V3` exports, which now only refuse (see [Provider](Provider.md)). Its semantics
 are those of the former V3 early takeover; the V1 and V2 admission rules are
 gone. Every call runs on the game thread and takes a Provider owner token.
 

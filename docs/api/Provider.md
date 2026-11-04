@@ -31,15 +31,23 @@ paper.acquire(reload);                          // any further interface
 `PAPERAPI_QueryInterfaceV1(id, exactMajor, minimumMinor, minimumTableBytes,
 descriptor)` runs on any thread and returns a descriptor whose table stays
 valid for the process lifetime. It serves only major 2: any other major
-returns `UnsupportedMajor` with no table, and PAPER logs the refusal once.
-`UnsupportedMinor` and `TableTooSmall` mean the installed PAPER is older than
-your headers. `Client` (header-only, not part of the DLL ABI) wraps the query,
-registration and `unregisterConsumer`.
+returns `UnsupportedMajor` with no table. `UnsupportedMinor` and
+`TableTooSmall` mean the installed PAPER is older than your headers. `Client`
+(header-only, not part of the DLL ABI) wraps the query, registration and
+`unregisterConsumer`.
 
 The pre-2.0 exports `PAPERAPI_GetProviderApi`,
 `PAPERAPI_GetProviderDescriptorV1` and `PAPERAPI_QueryPhysicalReloadV1/V2/V3`
-still exist only to refuse outdated consumers: each returns null and logs
-once. A mod built against them must be rebuilt against these headers.
+still exist only to refuse outdated consumers: each returns null. A mod built
+against them must be rebuilt against these headers.
+
+A version mismatch stops the game. After any version refusal or a call to a
+pre-2.0 export, PAPER logs the calling DLL and, when the main menu opens (or
+at once, if it is already open), shows an error box naming that DLL and what
+to update; the game closes when the box is closed. Request exactly the
+versions your headers declare, as `Client` does; never probe for versions with
+trial queries. When `PAPER.dll` is not loaded, turn your PAPER features off and
+keep running.
 
 Every record starts with `size` and `version` (`kRecordVersion`, 1); calls
 reject a wrong size or version. All calls return `Status` unless noted.
