@@ -1,7 +1,10 @@
 #pragma once
 
 #include "PaperLog.h"
-#include "RPSUIWorldDrawApi.h"
+#include "api/RequiredUpdates.h"
+#include <RPS_UI_Framework/Client.h>
+#include <RPS_UI_Framework/WorldDraw.h>
+#include <Windows.h>
 
 #include <cstdint>
 #include <cstdio>
@@ -16,9 +19,9 @@ namespace paper::debug_visualization
     class WorldDrawClient
     {
     public:
-        [[nodiscard]] bool submit(const rpsui::sdk::WorldDrawPublicationV1& publication) noexcept
+        [[nodiscard]] bool submit(const rpsui::api::world_draw::Publication& publication) noexcept
         {
-            return bind() && _api->submit(_owner, &publication) == rpsui::sdk::ResultV1::Ok;
+            return bind() && _api->submit(_owner, &publication) == rpsui::api::Result::Ok;
         }
 
         void clear() noexcept
@@ -36,21 +39,26 @@ namespace paper::debug_visualization
                 return false;
             }
             _retryCountdown = kBindRetryCalls;
-            const auto* registry = rpsui::sdk::RequestApiV1();
-            const auto* draw = registry ? rpsui::sdk::RequestWorldDrawApiV1() : nullptr;
-            if (!draw) {
+            const auto module = GetModuleHandleW(rpsui::api::kModuleName);
+            const auto query = module ?
+                reinterpret_cast<rpsui::api::QueryInterfaceV1>(GetProcAddress(module, rpsui::api::kQueryExportName)) : nullptr;
+            const rpsui::api::framework::Api* registry{};
+            const rpsui::api::world_draw::Api* draw{};
+            if (rpsui::api::acquire(query, registry) != rpsui::api::Result::Ok ||
+                rpsui::api::acquire(query, draw) != rpsui::api::Result::Ok) {
                 if (!_unavailableLogged) {
                     _unavailableLogged = true;
-                    PAPER_LOG_WARN(Api, "Native-animation debug drawing unavailable: RPS UI Framework world drawing v1 is not loaded");
+                    PAPER_LOG_WARN(Api, "Native-animation debug drawing unavailable: RPS UI Framework world drawing 2.0 is not loaded");
+                    if (module && !query) required_updates::noteRpsUiWithoutDiscovery();
                 }
                 return false;
             }
-            rpsui::sdk::ConsumerRegistrationV1 registration{};
+            rpsui::api::framework::ConsumerRegistration registration{};
             std::snprintf(registration.consumerId, sizeof(registration.consumerId), "%s", "paper.debug");
             std::snprintf(registration.displayName, sizeof(registration.displayName), "%s", "PAPER native-animation diagnostics");
-            rpsui::sdk::ConsumerHandleV1 handle{};
+            rpsui::api::framework::ConsumerHandle handle{};
             const auto result = registry->registerConsumer(&registration, &handle);
-            if (result != rpsui::sdk::ResultV1::Ok || handle.ownerToken == 0) {
+            if (result != rpsui::api::Result::Ok || handle.ownerToken == 0) {
                 if (!_unavailableLogged) {
                     _unavailableLogged = true;
                     PAPER_LOG_WARN(Api, "Native-animation debug drawing unavailable: RPS UI consumer registration refused ({})",
@@ -65,7 +73,7 @@ namespace paper::debug_visualization
         }
 
         static constexpr std::uint32_t kBindRetryCalls = 90;
-        const rpsui::sdk::WorldDrawApiV1* _api{};
+        const rpsui::api::world_draw::Api* _api{};
         std::uint32_t _retryCountdown{};
         std::uint64_t _owner{};
         bool _unavailableLogged{};

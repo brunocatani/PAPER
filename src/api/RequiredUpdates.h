@@ -26,6 +26,10 @@ namespace paper::required_updates
     void noteRockMissingDiscovery() noexcept;
     void noteRockRefusal(rock::api::Status status, const char* interfaceName) noexcept;
 
+    // Any thread. RPS_UI_Framework.dll is loaded but older than the API PAPER
+    // was built for, so PAPER's diagnostic drawing would silently stay off.
+    void noteRpsUiWithoutDiscovery() noexcept;
+
     // Once, from the F4SE GameLoaded message.
     void watch() noexcept;
 }

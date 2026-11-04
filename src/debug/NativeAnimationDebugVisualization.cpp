@@ -40,8 +40,8 @@ namespace paper::debug_visualization
         constexpr Color kLeftTextColor{ 1.0f, 0.70f, 0.25f, 0.96f };
         constexpr float kGoodAppliedErrorGameUnits = 0.35f;
 
-        static_assert(kLineCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_LINES);
-        static_assert(kTextCapacity <= rpsui::sdk::RPSUI_WORLD_DRAW_MAX_TEXTS);
+        static_assert(kLineCapacity <= rpsui::api::world_draw::kMaxLines);
+        static_assert(kTextCapacity <= rpsui::api::world_draw::kMaxTexts);
         constexpr std::uint32_t kLeaseFrames = 3;
 
         WorldDrawClient s_worldDraw{};
@@ -88,8 +88,8 @@ namespace paper::debug_visualization
 
         struct Builder
         {
-            std::array<rpsui::sdk::WorldLineV1, kLineCapacity> lines{};
-            std::array<rpsui::sdk::WorldTextV1, kTextCapacity> textEntries{};
+            std::array<rpsui::api::world_draw::Line, kLineCapacity> lines{};
+            std::array<rpsui::api::world_draw::Text, kTextCapacity> textEntries{};
             std::uint32_t lineCount{ 0 };
             std::uint32_t textCount{ 0 };
 
@@ -506,7 +506,7 @@ namespace paper::debug_visualization
             return;
         }
 
-        rpsui::sdk::WorldDrawPublicationV1 publication{};
+        rpsui::api::world_draw::Publication publication{};
         publication.leaseFrames = kLeaseFrames;
         publication.lineCount = builder.lineCount;
         publication.textCount = builder.textCount;

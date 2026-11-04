@@ -14,8 +14,8 @@ if(NOT EXISTS "${ROCK_INCLUDE_DIR}/ROCK/Client.h")
   message(FATAL_ERROR "ROCK headers not found in '${ROCK_INCLUDE_DIR}'; set ROCK_INCLUDE_DIR.")
 endif()
 # RPS UI Framework draws PAPER's optional debug visualization.
-set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/SDK/include" CACHE PATH "RPS UI Framework public include directory")
-if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPSUIWorldDrawApi.h")
+set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/include" CACHE PATH "RPS UI Framework public include directory")
+if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPS_UI_Framework/WorldDraw.h")
   message(FATAL_ERROR "RPS UI Framework headers not found in '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
 # RPS Framework's header-only required-update stop (RPS/Runtime/RequiredUpdate.h).

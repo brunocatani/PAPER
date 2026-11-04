@@ -149,6 +149,17 @@ namespace paper::required_updates
         } catch (...) {}
     }
 
+    void noteRpsUiWithoutDiscovery() noexcept
+    {
+        try {
+            PAPER_LOG_CRITICAL(Api,
+                "RPS_UI_Framework.dll does not export its 2.0 discovery: it is older than PAPER supports. The game "
+                "stops at the main menu until they match.");
+            required_update::report(L"PAPER " + paperVersion() +
+                L" does not work with the installed RPS UI Framework: it is too old. Update RPS UI Framework.");
+        } catch (...) {}
+    }
+
     void watch() noexcept
     {
         if (!required_update::watchMainMenu(L"PAPER: update required", &flushLog)) {

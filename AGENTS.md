@@ -34,7 +34,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 
 ## Build and test
 
-Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, ROCK (its `include/` headers), RPS UI Framework (its `SDK/include/` headers) and RPS Framework (its `include/` headers). PAPER uses C++23.
+Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, ROCK, RPS UI Framework and RPS Framework (their `include/` headers). PAPER uses C++23.
 
 Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into, under `F4SE/Plugins`); set `ROCK_INCLUDE_DIR`, `RPSUI_INCLUDE_DIR` and `RPS_FRAMEWORK_INCLUDE_DIR` when the checkouts are not where `CMakeLists.txt` looks by default. Before building, check that the presets and the generated cache point at this checkout and PAPER's own mod folder, not an older copy. Then:
 
