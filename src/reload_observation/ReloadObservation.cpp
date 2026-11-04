@@ -184,10 +184,13 @@ namespace paper::reload_observation
             bool automaticWeaponFlag{ false };
             bool boltActionWeaponFlag{ false };
             bool revolverAnimationKeyword{ false };
+            bool doubleBarrelAnimationKeyword{ false };
         };
 
-        [[nodiscard]] bool hasRevolverAnimationKeyword(
-            const RE::BGSKeywordForm* keywords)
+        [[nodiscard]] bool hasKeywordContaining(
+            const RE::BGSKeywordForm* keywords,
+            const std::string_view token,
+            const std::string_view otherToken = {})
         {
             if (!keywords) {
                 return false;
@@ -202,10 +205,11 @@ namespace paper::reload_observation
                         std::string_view{};
                     if (weapon_classification_policy::containsIgnoreCase(
                             value,
-                            "revolver") ||
-                        weapon_classification_policy::containsIgnoreCase(
-                            value,
-                            "anims44")) {
+                            token) ||
+                        (!otherToken.empty() &&
+                            weapon_classification_policy::containsIgnoreCase(
+                                value,
+                                otherToken))) {
                         matched = true;
                         return RE::BSContainer::ForEachResult::kStop;
                     }
@@ -242,8 +246,11 @@ namespace paper::reload_observation
             result.boltActionWeaponFlag = weaponData->flags.any(
                 RE::WEAPON_FLAGS::kBoltAction);
             result.revolverAnimationKeyword =
-                hasRevolverAnimationKeyword(weapon) ||
-                hasRevolverAnimationKeyword(weaponData->keywords);
+                hasKeywordContaining(weapon, "revolver", "anims44") ||
+                hasKeywordContaining(weaponData->keywords, "revolver", "anims44");
+            result.doubleBarrelAnimationKeyword =
+                hasKeywordContaining(weapon, "doublebarrel") ||
+                hasKeywordContaining(weaponData->keywords, "doublebarrel");
             return result;
         }
 
@@ -369,6 +376,8 @@ namespace paper::reload_observation
                     runtimeSignals.boltActionWeaponFlag,
                 .revolverAnimationKeyword =
                     runtimeSignals.revolverAnimationKeyword,
+                .doubleBarrelAnimationKeyword =
+                    runtimeSignals.doubleBarrelAnimationKeyword,
                 .partEvidenceComplete =
                     building.state.reportedEvidenceCount > 0 &&
                     building.evidence.size() ==
@@ -1267,6 +1276,7 @@ namespace paper::reload_observation
             .automaticWeaponFlag = runtimeSignals.automaticWeaponFlag,
             .boltActionWeaponFlag = runtimeSignals.boltActionWeaponFlag,
             .revolverAnimationKeyword = runtimeSignals.revolverAnimationKeyword,
+            .doubleBarrelAnimationKeyword = runtimeSignals.doubleBarrelAnimationKeyword,
             .partEvidenceComplete = !evidence.empty(),
             .pluginName = fixedStringView(identity.pluginName, std::size(identity.pluginName)),
             .editorId = fixedStringView(identity.editorId, std::size(identity.editorId)),

@@ -18,6 +18,7 @@ namespace paper::weapon_classification_policy
         bool automaticWeaponFlag{ false };
         bool boltActionWeaponFlag{ false };
         bool revolverAnimationKeyword{ false };
+        bool doubleBarrelAnimationKeyword{ false };
 
         bool partEvidenceComplete{ false };
         bool magazinePart{ false };
@@ -300,6 +301,12 @@ namespace paper::weapon_classification_policy
             add(WeaponFamilyFlag::Revolver,
                 WeaponFamilyEvidenceFlag::AnimationKeyword);
         }
+        // No part of a double-barrel is named for its action, and the game gives it
+        // no bolt-action flag, so its animation keyword is what identifies it.
+        if (signals.doubleBarrelAnimationKeyword) {
+            add(WeaponFamilyFlag::BreakAction,
+                WeaponFamilyEvidenceFlag::AnimationKeyword);
+        }
         if (signals.boltActionWeaponFlag) {
             add(WeaponFamilyFlag::BoltAction,
                 WeaponFamilyEvidenceFlag::WeaponFlags);
@@ -360,7 +367,10 @@ namespace paper::weapon_classification_policy
         const bool namedBreakAction =
             anyIdentityContains(signals, "breakaction") ||
             anyIdentityContains(signals, "break-action") ||
-            anyIdentityContains(signals, "break action");
+            anyIdentityContains(signals, "break action") ||
+            anyIdentityContains(signals, "doublebarrel") ||
+            anyIdentityContains(signals, "double-barrel") ||
+            anyIdentityContains(signals, "double barrel");
 
         const auto addNamedFamily = [&](const bool matched,
                                         const WeaponFamilyFlag value) {

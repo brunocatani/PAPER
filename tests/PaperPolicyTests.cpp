@@ -243,6 +243,27 @@ int main()
         tubeFedLeverAction,
         paper::api::WeaponFamilyFlag::ManualCycle));
 
+    // Captured: double-barrel 00092217 has only animsDoubleBarrelShotgun to go on.
+    constexpr auto doubleBarrel =
+        weapon_family::classifyWeaponFamily({
+            .rockClassificationAvailable = true,
+            .rockClassificationValid = true,
+            .sizeClass = static_cast<std::uint32_t>(
+                paper::api::WeaponSizeClass::Rifle),
+            .weaponDataAvailable = true,
+            .doubleBarrelAnimationKeyword = true,
+            .partEvidenceComplete = true,
+        });
+    static_assert(hasFamily(
+        doubleBarrel,
+        paper::api::WeaponFamilyFlag::BreakAction));
+    static_assert(hasFamily(
+        doubleBarrel,
+        paper::api::WeaponFamilyFlag::ManualCycle));
+    static_assert(!hasFamily(
+        doubleBarrel,
+        paper::api::WeaponFamilyFlag::SemiAutomatic));
+
     constexpr auto boltWithMagazine =
         weapon_family::classifyWeaponFamily({
             .rockClassificationAvailable = true,

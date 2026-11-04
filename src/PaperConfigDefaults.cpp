@@ -48,7 +48,8 @@ fHandBlendSeconds = {:.2f}
 ; tilting barrel. It needs a bolt on the game's standard WeaponBolt bone. The open
 ; position is read off screen from the weapon's own clips the first time it is
 ; equipped each session, so a gun none of whose clips open its bolt never holds.
-; Manual actions such as bolt, lever and pump guns and revolvers never hold.
+; Manual actions such as bolt, lever, pump and double-barrel guns and revolvers
+; never hold.
 bBoltHoldOpen = {}
 
 ; Seconds the open bolt takes to return to the animation when a reload starts.
