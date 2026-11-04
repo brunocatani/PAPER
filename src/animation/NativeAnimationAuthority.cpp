@@ -45,7 +45,10 @@ namespace paper::native_animation_authority
 
         constexpr std::size_t kMaxBindings = 192;
         constexpr int kMaxFlattenedTransforms = 768;
-        constexpr std::uint32_t kLocalReloadTestLeaseFrames = 600;
+        // A reload holds its hands until the graph leaves the reload state, however
+        // long that takes: chained presses on a laser musket stay in one state for as
+        // long as they keep coming. This only bounds an exit that never arrives.
+        constexpr std::uint32_t kLocalReloadTestLeaseFrames = 5400;
         constexpr float kManualCycleFallbackWatchdogSeconds = 6.0f;
         constexpr float kManualCycleWatchdogPaddingSeconds = 0.75f;
         constexpr float kManualCycleMinimumWatchdogSeconds = 1.0f;
