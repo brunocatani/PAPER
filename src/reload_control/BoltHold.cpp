@@ -29,10 +29,10 @@ namespace paper::bolt_hold
 
         constexpr std::size_t kBoneCount = policy::kActionBoneNames.size();
         constexpr std::uint32_t kDriveLeaseFrames = 2;
-        // ROCK generates a weapon's parts over several frames after its equip.
-        constexpr std::uint32_t kResolveFrames = 240;
-        // The actor's equipped items can trail ROCK's weapon by a few frames.
-        constexpr std::uint32_t kReadStartFrames = 240;
+        // ROCK builds a weapon's part evidence over several frames after its equip, and
+        // a revolver with no keyword is known only by that. A gun with none by the end
+        // of this wait is judged on its flags and keywords.
+        constexpr std::uint32_t kEvidenceWaitFrames = 240;
 
         // Best last. A dwell is the animator's locked-back pose. A stroke's
         // farthest frame only stands in for one, and a stroke outside a reload is
@@ -70,11 +70,7 @@ namespace paper::bolt_hold
         {
             std::uint64_t generation{ 0 };
             std::uint32_t form{ 0 };
-            std::uint32_t resolveFrames{ 0 };
-            // The step resolve last stopped at, for the log when it gives up.
-            const char* resolveStep{ "" };
-            std::int32_t resolveStatus{ 0 };
-            std::uint32_t resolveTotal{ 0 };
+            std::uint32_t evidenceWaitFrames{ 0 };
             bool resolved{ false };
             bool eligible{ false };
             std::array<Bone, kBoneCount> bones{};
@@ -115,7 +111,6 @@ namespace paper::bolt_hold
             std::uint32_t slot{ 0 };
             std::uint32_t form{ 0 };
             std::uint64_t generation{ 0 };
-            std::uint32_t startFrames{ 0 };
             // The bones ROCK publishes on this weapon, in the same order as the names.
             std::array<bool, kBoneCount> published{};
             // Each bone its idle clip tracks, where that clip keeps it: the action
@@ -441,14 +436,13 @@ namespace paper::bolt_hold
             }
         }
 
-        void failRead(const char* reason)
+        void failRead()
         {
             s_readFailedGeneration = s_read.generation;
             PAPER_LOG_WARN(
                 Reload,
-                "BOLT_HOLD could not read the clips of weapon={:08X}: {}; no hold until it is equipped again",
-                s_read.form,
-                reason);
+                "BOLT_HOLD could not read the clips of weapon={:08X}: the sampler failed; no hold until it is equipped again",
+                s_read.form);
             stopRead();
         }
 
@@ -483,23 +477,13 @@ namespace paper::bolt_hold
                 s_read.longestStepMicroseconds,
                 std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - stepStarted).count());
 
-            switch (result.state) {
-            case sampler::State::Completed:
+            // Idle retries next frame: the actor's equipped items can trail ROCK's weapon.
+            if (result.state == sampler::State::Completed) {
                 storeLearned(s_read.form, s_read.best.pose);
                 logRead(s_read, s_slots[s_read.slot].bones[policy::kBoltBone].current);
                 stopRead();
-                break;
-            case sampler::State::Failed:
-                failRead("the sampler failed");
-                break;
-            case sampler::State::Idle:
-                if (++s_read.startFrames >= kReadStartFrames) {
-                    failRead("it is not among the player's equipped items");
-                }
-                break;
-            default:
-                s_read.startFrames = 0;
-                break;
+            } else if (result.state == sampler::State::Failed) {
+                failRead();
             }
         }
 
@@ -521,37 +505,30 @@ namespace paper::bolt_hold
             slot = {};
         }
 
-        // Finds the bones by name and decides the family, once ROCK has the
-        // weapon's parts. False keeps trying within kResolveFrames.
+        // Finds the bones by name and decides the family. False tries again next
+        // frame, for as long as the weapon stays equipped.
         [[nodiscard]] bool resolve(RockApiClient& rock, const std::uint32_t index, Slot& slot)
         {
-            const auto stopAt = [&](const char* step, const rock::api::Status status, const std::uint32_t found) {
-                slot.resolveStep = step;
-                slot.resolveStatus = static_cast<std::int32_t>(status);
-                slot.resolveTotal = found;
-                return false;
-            };
             std::uint32_t total = 0;
-            auto status = rock.copyWeaponSources(index, slot.generation, nullptr, 0, total);
-            if (status != rock::api::Status::Ok || !total) {
-                return stopAt("source count", status, total);
+            if (rock.copyWeaponSources(index, slot.generation, nullptr, 0, total) != rock::api::Status::Ok || !total) {
+                return false;
             }
             s_sources.resize((std::min)(total, rock::api::weaponparts::kMaxSources));
-            status = rock.copyWeaponSources(
+            const auto status = rock.copyWeaponSources(
                 index,
                 slot.generation,
                 s_sources.data(),
                 static_cast<std::uint32_t>(s_sources.size()),
                 total);
             if (status != rock::api::Status::Ok) {
-                return stopAt("source copy", status, total);
+                return false;
             }
 
             // An undecided size class (valid == 0) is no reason to wait: the keywords
             // still arrive, and only the family below is used.
             rock::api::weapon::Classification classification{};
             if (!rock.queryWeaponClassification(index, classification)) {
-                return stopAt("classification", rock::api::Status::NotReady, 0);
+                return false;
             }
             s_evidence.resize(rock::api::weaponparts::kMaxEvidenceDetails);
             std::uint32_t evidenceTotal = 0;
@@ -560,8 +537,8 @@ namespace paper::bolt_hold
                 s_evidence.data(),
                 static_cast<std::uint32_t>(s_evidence.size()),
                 evidenceTotal);
-            if (!evidenceCount) {
-                return stopAt("evidence", rock::api::Status::Ok, evidenceTotal);
+            if (!evidenceCount && ++slot.evidenceWaitFrames < kEvidenceWaitFrames) {
+                return false;
             }
 
             // A name on two nodes is ambiguous, and an ambiguous bone is not used.
@@ -590,12 +567,13 @@ namespace paper::bolt_hold
             slot.eligible = slot.bones[policy::kBoltBone].key != 0 && policy::familyHoldsOpen(family);
             PAPER_LOG_INFO(
                 Reload,
-                "BOLT_HOLD weapon={:08X}/{:016X} slot={} boltMatches={} parts={} family={:#x} eligible={}",
+                "BOLT_HOLD weapon={:08X}/{:016X} slot={} boltMatches={} parts={} evidence={} family={:#x} eligible={}",
                 slot.form,
                 slot.generation,
                 index,
                 matches[policy::kBoltBone],
                 parts,
+                evidenceCount,
                 family,
                 slot.eligible);
             return true;
@@ -665,18 +643,6 @@ namespace paper::bolt_hold
             }
             if (!slot.resolved) {
                 slot.resolved = resolve(rock, index, slot);
-                if (!slot.resolved && ++slot.resolveFrames >= kResolveFrames) {
-                    slot.resolved = true;
-                    PAPER_LOG_INFO(
-                        Reload,
-                        "BOLT_HOLD weapon={:08X}/{:016X} slot={} gave up at step '{}' status={} found={}; no hold",
-                        slot.form,
-                        slot.generation,
-                        index,
-                        slot.resolveStep,
-                        slot.resolveStatus,
-                        slot.resolveTotal);
-                }
                 if (!slot.resolved) {
                     return;
                 }
