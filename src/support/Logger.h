@@ -30,7 +30,9 @@ namespace paper::logger
         instance = std::make_shared<spdlog::logger>("PAPER", sink);
         instance->set_pattern("%Y-%m-%d %H:%M:%S.%e [%l] %v");
         instance->set_level(spdlog::level::info);
-        instance->flush_on(spdlog::level::err);
+        // Debug traces stay buffered; an info line reaches the file at once, so the
+        // tail of a session survives the game quitting or crashing.
+        instance->flush_on(spdlog::level::info);
         spdlog::set_default_logger(instance);
     }
 

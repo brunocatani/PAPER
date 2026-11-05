@@ -244,6 +244,10 @@ namespace paper
         outState={};
         return ready() && _weapon->getWeaponState(_ownerToken,slot,&outState)==rock::api::Status::Ok;
     }
+    std::uint64_t RockApiClient::queryWeaponInteractionKey(std::uint32_t slot) const {
+        std::uint64_t key=0;
+        return ready() && _weapon->getInteractionKey(_ownerToken,slot,&key)==rock::api::Status::Ok ? key : 0;
+    }
     bool RockApiClient::queryWeaponClassification(std::uint32_t slot,rock::api::weapon::Classification& outClassification) const {
         outClassification={};
         return ready() && _weapon->getClassification(_ownerToken,slot,&outClassification)==rock::api::Status::Ok;

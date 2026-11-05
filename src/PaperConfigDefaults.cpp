@@ -67,9 +67,8 @@ fBoltHoldCloseSeconds = {:.2f}
 ; reload stays there on top of the full magazine, and the rounds and chamber of each
 ; rifle are kept when you unequip it and in your saves. The ammo counter shows a
 ; cartridge for the chamber: solid with a round in it, dim without. false leaves all
-; of this off. A rifle whose cycle animation shows no hand on the bolt, or that has
-; no bolt to hold, keeps its usual cycle. Lever guns, pumps and revolvers are not
-; affected.
+; of this off. A rifle whose cycle animation shows no hand on the bolt keeps its usual
+; cycle. Lever guns, pumps and revolvers are not affected.
 bManualBoltCycle = {}
 
 ; The length of a full pull, in game units, the same on every rifle. 7 is about 9 cm.
@@ -77,9 +76,11 @@ bManualBoltCycle = {}
 ; rifle's own animation. Let go and the bolt stays where it is, open or closed.
 fBoltPullDistance = {:.1f}
 
-; true places and poses your hand on the bolt the way the rifle's cycle animation
-; does, as the bolt moves. false leaves it where your grip puts it, with
-; the fingers closed on the bolt's surface.
+; true lets the hand the rifle's cycle animation uses take the bolt the moment the
+; rifle is drawn, placed and posed the way the animation does as the bolt moves. Your
+; other hand takes it where your grip puts it, with the fingers closed on the bolt's
+; surface, once the weapon's collision is built, about a second after equipping.
+; false treats both hands that way.
 bBoltHandFromAnimation = {}
 
 [Debug]

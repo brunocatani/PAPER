@@ -63,6 +63,9 @@ namespace paper
         [[nodiscard]] bool queryWeaponState(
             std::uint32_t weaponSlot,
             rock::api::weapon::WeaponState& outState) const;
+        // What sources, drives, targets and grab points are keyed by: works from the
+        // moment the weapon is drawn, where WeaponState's key waits for its colliders.
+        [[nodiscard]] std::uint64_t queryWeaponInteractionKey(std::uint32_t weaponSlot) const;
         [[nodiscard]] bool queryWeaponClassification(
             std::uint32_t weaponSlot,
             rock::api::weapon::Classification& outClassification) const;

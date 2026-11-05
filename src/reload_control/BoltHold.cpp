@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <format>
@@ -551,9 +552,28 @@ namespace paper::bolt_hold
             slot = {};
         }
 
+        // The game flags lever guns and pumps as bolt actions too, and only their parts
+        // tell them apart. With no colliders yet, a source so named waits for them.
+        [[nodiscard]] bool sourcesCouldBeAnotherAction()
+        {
+            return std::any_of(s_sources.begin(), s_sources.end(), [](const rock::api::weaponparts::Source& source) {
+                const std::string_view name{ source.name };
+                const auto contains = [name](const std::string_view word) {
+                    return std::search(name.begin(), name.end(), word.begin(), word.end(), [](const char a, const char b) {
+                        return std::tolower(static_cast<unsigned char>(a)) == b;
+                    }) != name.end();
+                };
+                return contains("lever") || contains("pump");
+            });
+        }
+
         // Finds the bones by name and decides the family. False tries again next
         // frame, for as long as the weapon stays equipped.
-        [[nodiscard]] bool resolve(RockApiClient& rock, const std::uint32_t index, Slot& slot)
+        [[nodiscard]] bool resolve(
+            RockApiClient& rock,
+            const std::uint32_t index,
+            Slot& slot,
+            const bool manualBoltEnabled)
         {
             std::uint32_t total = 0;
             if (rock.copyWeaponSources(index, slot.generation, nullptr, 0, total) != rock::api::Status::Ok || !total) {
@@ -583,7 +603,13 @@ namespace paper::bolt_hold
                 s_evidence.data(),
                 static_cast<std::uint32_t>(s_evidence.size()),
                 evidenceTotal);
-            if (!evidenceCount && ++slot.evidenceWaitFrames < kEvidenceWaitFrames) {
+            // A hand can work a rifle's bolt before its colliders exist, so a rifle does
+            // not wait for them. Their parts decide the family again when they arrive,
+            // since that re-keys the weapon and brings it back here.
+            const bool rifleAlready = manualBoltEnabled && index == 0 && !evidenceCount &&
+                policy::familyIsBoltAction(reload_observation::classifyWeaponFamilyFlags(slot.form, classification, {})) &&
+                !sourcesCouldBeAnotherAction();
+            if (!evidenceCount && !rifleAlready && ++slot.evidenceWaitFrames < kEvidenceWaitFrames) {
                 return false;
             }
 
@@ -675,22 +701,30 @@ namespace paper::bolt_hold
         {
             auto& slot = s_slots[index];
             rock::api::weapon::WeaponState state{};
-            // Equipped and generated: every source and pose call below validates
-            // the live binding. ROCK publishes slot 1's state before that weapon's
-            // presentation runs, so its WeaponPresent says nothing here.
+            // Equipped and keyed: every source and pose call below validates the live
+            // binding. ROCK publishes slot 1's state before that weapon's presentation
+            // runs, so its WeaponPresent says nothing here.
+            const auto key = rock.queryWeaponInteractionKey(index);
             const bool present = rock.queryWeaponState(index, state) &&
-                hasFlag(state.flags, WeaponStateFlag::WeaponEquipped) && state.weaponGenerationKey != 0;
+                hasFlag(state.flags, WeaponStateFlag::WeaponEquipped) && key != 0;
             if (!present) {
                 forgetWeapon(rock, index, slot);
                 return;
             }
-            if (state.weaponGenerationKey != slot.generation || state.weaponFormId != slot.form) {
-                forgetWeapon(rock, index, slot);
-                slot.generation = state.weaponGenerationKey;
+            if (key != slot.generation || state.weaponFormId != slot.form) {
+                // ROCK re-keys a weapon when its colliders arrive or rebuild. Clips belong
+                // to the form, so a read of them carries on across that.
+                if (state.weaponFormId == slot.form) {
+                    endHold(rock, index, slot);
+                    slot = {};
+                } else {
+                    forgetWeapon(rock, index, slot);
+                }
+                slot.generation = key;
                 slot.form = state.weaponFormId;
             }
             if (!slot.resolved) {
-                slot.resolved = resolve(rock, index, slot);
+                slot.resolved = resolve(rock, index, slot, input.manualBoltEnabled);
                 if (!slot.resolved) {
                     return;
                 }

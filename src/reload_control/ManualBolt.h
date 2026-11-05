@@ -13,8 +13,8 @@ namespace paper::manual_bolt
         // Game units of a full pull, the same on every rifle. Crossing half of it
         // commits the stroke.
         float pullDistance{ 7.0f };
-        // The hand on the bolt is placed and posed as the cycle clip has it, rather
-        // than where ROCK's grip seats it.
+        // The clip's hand takes the bolt at once, at the clip's point and in its pose.
+        // Off, it takes ROCK's dynamic grip like any other hand, which needs colliders.
         bool handFromAnimation{ true };
         // The rifles PAPER animates the cycle of are the rifles this feature serves.
         bool cycleAllowed{ false };
@@ -36,14 +36,19 @@ namespace paper::manual_bolt
      * shown as a cartridge on ROCK's ammo counter, under a lease renewed here.
      *
      * Bolt: two resting positions, closed and back, and the rifle's own cycle clip
-     * between them (bolt_stroke). The hand the clip works the bolt with grips it at
-     * the point the clip holds it: when that is the firing hand, the other hand
-     * carries the gun first and ROCK frees the firing hand. The hand is then locked
-     * to the bolt, so the pull is read from that hand's controller: moving it past
-     * half the pull distance along the bolt's line commits the stroke, which plays
-     * at the clip's speed. Letting go never moves the bolt, so it can be left open.
-     * A rifle whose clip shows no hand on the bolt, or with no bolt collider, keeps
-     * its native cycle, while its rounds and chamber are still tracked.
+     * between them (bolt_stroke). The hand the clip works the bolt with takes it at
+     * the point the clip holds it, in the clip's pose, from the moment the rifle is
+     * known: ROCK holds a grab point through its own node, with no collider. When
+     * that is the firing hand, the other hand carries the gun first and ROCK frees
+     * the firing hand. Any other hand takes the bolt's colliders with ROCK's dynamic
+     * grip and finger posing, once they exist. A hand on the bolt is locked to it, so
+     * the pull is read from that hand's controller: moving it past half the pull
+     * distance along the bolt's line commits the stroke, which plays at the clip's
+     * speed. Letting go never moves the bolt, so it can be left open. A rifle whose
+     * clip shows no hand on the bolt keeps its native cycle, while its rounds and
+     * chamber are still tracked.
+     *
+     * ROCK re-keys the weapon when its colliders arrive, which changes nothing here.
      *
      * Rounds: the loaded count and the chamber of each inventory item survive
      * unequipping and saving, by ExtraUniqueID, in the co-save. The native count

@@ -52,8 +52,9 @@ namespace paper::manual_bolt
         // A manual bolt has two resting positions. Crossing this much of the pull commits
         // the whole stroke, and letting go never moves it.
         constexpr float kCommitAt = 0.5f;
-        // ROCK builds a weapon's colliders over many frames after an equip. A rifle with
-        // none on its bolt by then keeps its native cycle.
+        // ROCK builds a weapon's colliders over many frames after an equip. By then a
+        // rifle with none on its bolt offers only the clip's hand its point, and with
+        // that hand off the animation, keeps its native cycle.
         constexpr std::uint32_t kBoltColliderWaitFrames = 900;
         // Around the point the clip's hand holds the bolt, for the palm or fingers.
         constexpr float kGrabRadiusGameUnits = 8.0f;
@@ -109,8 +110,18 @@ namespace paper::manual_bolt
             bool handCycle{ false };
             bool handCycleRefused{ false };
             std::uint32_t boltColliderWaitFrames{ 0 };
+            // What ROCK was last told a hand can take: the key it is on, whether the
+            // clip's hand has its point, and how many bolt colliders are on offer.
+            std::uint64_t publishedGeneration{ 0 };
+            bool publishedPoint{ false };
+            std::size_t publishedBoltParts{ 0 };
             bolt_hold::ManualAction action{};
+            // The hand the clip works the bolt with.
             Hand workingHand{ Hand::None };
+            // The hand holding it now. Only the clip's hand, at the clip's point, takes
+            // its wrist and fingers from the clip; ROCK poses any other.
+            Hand gripHand{ Hand::None };
+            bool gripFromClip{ false };
             bolt_stroke::Pose pose{};
 
             bool handFromAnimation{ false };
@@ -134,11 +145,11 @@ namespace paper::manual_bolt
             bool driving{ false };
             bool gripHeld{ false };
             std::uint64_t gripSequence{ 0 };
-            // The working hand's controller in the weapon's frame, taken once the weapon
-            // is placed for the frame. The hand itself is locked to the bolt while it
-            // holds it, so only the controller can show the pull.
-            bool controllerValid{ false };
-            RE::NiPoint3 controllerInWeapon{};
+            // Each hand's controller in the weapon's frame, left then right, taken once
+            // the weapon is placed for the frame. A hand is locked to the bolt while it
+            // holds it, so only its controller can show the pull.
+            std::array<bool, 2> controllerValid{};
+            std::array<RE::NiPoint3, 2> controllerInWeapon{};
             RE::NiPoint3 gripStart{};
             float gripStartPull{ 0.0f };
             RE::NiPoint3 gripMoved{};
@@ -446,8 +457,13 @@ namespace paper::manual_bolt
                 state.reserveRounds);
         }
 
-        void refuseHandCycle(Gun& gun, const char* reason, const std::uint32_t status)
+        void refuseHandCycle(RockApiClient& rock, Gun& gun, const char* reason, const std::uint32_t status)
         {
+            if (gun.handCycle) {
+                rock.clearWeaponGrabPoints();
+                rock.clearWeaponPartTargets();
+                gun.handCycle = false;
+            }
             gun.handCycleRefused = true;
             PAPER_LOG_INFO(
                 Reload,
@@ -457,10 +473,17 @@ namespace paper::manual_bolt
                 status);
         }
 
-        // Once the clips are read: the part the clip's hand holds and where it holds it.
+        // Once the clips are read: what each hand can take. The clip's hand takes the
+        // point the clip holds the bolt at, which asks nothing of the colliders, so it is
+        // there as soon as the rifle is known. Any other hand takes the bolt's colliders
+        // with ROCK's dynamic grip, once they exist, so this comes back for them.
         void prepareHandCycle(RockApiClient& rock, Gun& gun)
         {
-            if (gun.handCycle || gun.handCycleRefused) {
+            if (gun.handCycleRefused) {
+                return;
+            }
+            const bool upToDate = gun.publishedGeneration == gun.generation && gun.publishedPoint == gun.handFromAnimation;
+            if (upToDate && (gun.publishedBoltParts != 0 || gun.boltColliderWaitFrames >= kBoltColliderWaitFrames)) {
                 return;
             }
             const auto action = bolt_hold::queryManualAction(gun.generation, gun.action);
@@ -468,7 +491,7 @@ namespace paper::manual_bolt
                 return;
             }
             if (action == bolt_hold::ManualActionState::None) {
-                refuseHandCycle(gun, "its cycle clip shows no hand working the bolt", 0);
+                refuseHandCycle(rock, gun, "its cycle clip shows no hand working the bolt", 0);
                 return;
             }
             const auto& stroke = *gun.action.stroke;
@@ -481,17 +504,12 @@ namespace paper::manual_bolt
                 static_cast<std::uint32_t>(s_evidence.size()),
                 total);
             std::vector<parts::Target> targets;
-            for (const auto& detail : std::span(s_evidence).first(count)) {
-                const bool boltPart = detail.partKind == static_cast<std::uint32_t>(parts::PartKind::Bolt) ||
-                    detail.actionRole == static_cast<std::uint32_t>(parts::ActionRole::Bolt);
-                if (!boltPart || !detail.sourceKey || detail.weaponGenerationKey != gun.generation) {
-                    continue;
-                }
+            const auto addTarget = [&](const std::uint64_t sourceKey) {
                 const bool known = std::any_of(targets.begin(), targets.end(), [&](const parts::Target& target) {
-                    return target.sourceKey == detail.sourceKey;
+                    return target.sourceKey == sourceKey;
                 });
                 if (known || targets.size() == parts::kMaxTargets) {
-                    continue;
+                    return;
                 }
                 auto& target = targets.emplace_back();
                 // NonExclusive: the rest of the gun can still be held as usual.
@@ -499,42 +517,68 @@ namespace paper::manual_bolt
                     static_cast<std::uint32_t>(parts::TargetFlag::NonExclusive);
                 target.grabMode = parts::GrabMode::AttachOnly;
                 target.weaponGenerationKey = gun.generation;
-                target.sourceKey = detail.sourceKey;
+                target.sourceKey = sourceKey;
                 target.groupId = kGroupId;
                 target.priority = 100;
+            };
+            for (const auto& detail : std::span(s_evidence).first(count)) {
+                const bool boltPart = detail.partKind == static_cast<std::uint32_t>(parts::PartKind::Bolt) ||
+                    detail.actionRole == static_cast<std::uint32_t>(parts::ActionRole::Bolt);
+                if (boltPart && detail.sourceKey && detail.weaponGenerationKey == gun.generation) {
+                    addTarget(detail.sourceKey);
+                }
+            }
+            const auto boltParts = targets.size();
+            // Nothing new to tell ROCK: the colliders are still to come, if they ever do.
+            if (upToDate && boltParts == gun.publishedBoltParts) {
+                if (++gun.boltColliderWaitFrames >= kBoltColliderWaitFrames) {
+                    PAPER_LOG_INFO(Reload, "MANUAL_BOLT weapon={:08X} has no bolt collider for another hand to hold", gun.form);
+                }
+                return;
+            }
+            if (gun.handFromAnimation) {
+                addTarget(gun.action.keys[policy::kBoltBone]);
             }
             if (targets.empty()) {
                 if (++gun.boltColliderWaitFrames >= kBoltColliderWaitFrames) {
-                    refuseHandCycle(gun, "no bolt collider to hold", 0);
+                    refuseHandCycle(rock, gun, "no bolt collider to hold", 0);
                 }
                 return;
             }
 
             if (const auto status = rock.setWeaponPartTargets(targets); status != rock::api::Status::Ok) {
-                refuseHandCycle(gun, "ROCK refused the bolt as a target", static_cast<std::uint32_t>(status));
+                refuseHandCycle(rock, gun, "ROCK refused the bolt as a target", static_cast<std::uint32_t>(status));
                 return;
             }
             gun.workingHand = stroke.hand == bolt_stroke::kLeftHand ? Hand::Left : Hand::Right;
-            parts::GrabPoint point{};
-            point.pointId = 1;
-            point.groupId = kGroupId;
-            point.weaponGenerationKey = gun.generation;
-            point.sourceKey = gun.action.keys[policy::kBoltBone];
-            point.handMask = stroke.hand == bolt_stroke::kLeftHand ? 1u : 2u;
-            point.radiusGame = kGrabRadiusGameUnits;
-            point.pointInSource = { stroke.graspInBolt.x, stroke.graspInBolt.y, stroke.graspInBolt.z };
-            if (const auto status = rock.setWeaponGrabPoints({ &point, 1 }); status != rock::api::Status::Ok) {
-                rock.clearWeaponPartTargets();
-                refuseHandCycle(gun, "ROCK refused the grab point", static_cast<std::uint32_t>(status));
-                return;
+            if (gun.handFromAnimation) {
+                parts::GrabPoint point{};
+                point.pointId = 1;
+                point.groupId = kGroupId;
+                point.weaponGenerationKey = gun.generation;
+                point.sourceKey = gun.action.keys[policy::kBoltBone];
+                point.handMask = stroke.hand == bolt_stroke::kLeftHand ? 1u : 2u;
+                point.radiusGame = kGrabRadiusGameUnits;
+                point.pointInSource = { stroke.graspInBolt.x, stroke.graspInBolt.y, stroke.graspInBolt.z };
+                if (const auto status = rock.setWeaponGrabPoints({ &point, 1 }); status != rock::api::Status::Ok) {
+                    rock.clearWeaponPartTargets();
+                    refuseHandCycle(rock, gun, "ROCK refused the grab point", static_cast<std::uint32_t>(status));
+                    return;
+                }
+            } else if (gun.publishedPoint) {
+                rock.clearWeaponGrabPoints();
             }
             gun.handCycle = true;
+            gun.publishedGeneration = gun.generation;
+            gun.publishedPoint = gun.handFromAnimation;
+            gun.publishedBoltParts = boltParts;
             PAPER_LOG_INFO(
                 Reload,
-                "MANUAL_BOLT hand cycle ready weapon={:08X} boltBodies={} hand={} travel={:.2f}gu turn={:.1f}deg",
+                "MANUAL_BOLT hand cycle ready weapon={:08X} boltBodies={} hand={} point={} travel={:.2f}gu turn={:.1f}deg",
                 gun.form,
-                targets.size(),
+                boltParts,
                 stroke.hand == bolt_stroke::kLeftHand ? "left" : "right",
+                gun.publishedPoint,
                 stroke.travelGameUnits,
                 stroke.turnDegrees);
         }
@@ -627,24 +671,48 @@ namespace paper::manual_bolt
             }
         }
 
-        // The working hand's controller decides which end the bolt goes to while the
-        // hand holds it, and the bolt gets there at the clip's speed, held or not. The
+        [[nodiscard]] std::size_t handIndex(const Hand hand) noexcept
+        {
+            return hand == Hand::Left ? 0u : 1u;
+        }
+
+        // The controller of the hand on the bolt decides which end the bolt goes to while
+        // it holds it, and the bolt gets there at the clip's speed, held or not. The
         // controller is measured in the weapon's frame, so moving the gun itself pulls
         // nothing. The grab point stays fixed so a slow pull adds up.
         void followHand(RockApiClient& rock, Gun& gun, const float pullDistance)
         {
             parts::GripState grip{};
-            const bool held = rock.queryWeaponPartGripState(gun.workingHand, grip) && grip.active && grip.attachOnly &&
-                grip.gripSequence && grip.weaponGenerationKey == gun.generation &&
-                grip.targetOwner == rock.ownerToken() && grip.targetGroupId == kGroupId;
-            if (held && gun.controllerValid) {
-                const auto& controller = gun.controllerInWeapon;
+            const auto holds = [&](const Hand hand) {
+                return rock.queryWeaponPartGripState(hand, grip) && grip.active && grip.attachOnly &&
+                    grip.gripSequence && grip.weaponGenerationKey == gun.generation &&
+                    grip.targetOwner == rock.ownerToken() && grip.targetGroupId == kGroupId;
+            };
+            const Hand otherHand = gun.workingHand == Hand::Left ? Hand::Right : Hand::Left;
+            const Hand holder = gun.gripHeld && holds(gun.gripHand) ? gun.gripHand :
+                holds(gun.workingHand)                              ? gun.workingHand :
+                holds(otherHand)                                    ? otherHand :
+                                                                      Hand::None;
+            const bool held = holder != Hand::None;
+            if (held && gun.controllerValid[handIndex(holder)]) {
+                const auto& controller = gun.controllerInWeapon[handIndex(holder)];
                 if (!gun.gripHeld || grip.gripSequence != gun.gripSequence) {
                     gun.gripSequence = grip.gripSequence;
+                    gun.gripHand = holder;
+                    gun.gripFromClip = gun.handFromAnimation && holder == gun.workingHand;
                     gun.gripStart = controller;
                     gun.gripStartPull = gun.pull;
-                    captureHandRest(rock, gun);
-                    PAPER_LOG_INFO(Reload, "MANUAL_BOLT grip weapon={:08X} pull={:.2f} fromAnimation={}", gun.form, gun.pull, gun.handFromAnimation);
+                    if (gun.gripFromClip) {
+                        captureHandRest(rock, gun);
+                    }
+                    PAPER_LOG_INFO(
+                        Reload,
+                        "MANUAL_BOLT grip weapon={:08X} pull={:.2f} hand={} fromClip={} body={}",
+                        gun.form,
+                        gun.pull,
+                        holder == Hand::Left ? "left" : "right",
+                        gun.gripFromClip,
+                        grip.bodyId);
                 }
                 gun.gripHeld = true;
                 gun.gripMoved = { controller.x - gun.gripStart.x, controller.y - gun.gripStart.y, controller.z - gun.gripStart.z };
@@ -654,6 +722,7 @@ namespace paper::manual_bolt
                 gun.pullTarget = gun.gripRequested > kCommitAt ? 1.0f : 0.0f;
             } else if (!held && gun.gripHeld) {
                 gun.gripHeld = false;
+                gun.gripFromClip = false;
                 PAPER_LOG_INFO(
                     Reload,
                     "MANUAL_BOLT let go weapon={:08X} moved=({:.2f},{:.2f},{:.2f})gu requested={:.2f} pull={:.2f} target={:.0f}",
@@ -832,9 +901,9 @@ namespace paper::manual_bolt
     {
         auto& gun = s_gun;
         rock::api::weapon::WeaponState state{};
+        const auto key = rock.queryWeaponInteractionKey(0);
         const bool present = input.enabled && manual_reload_only::physicalCycleReady() && rock.queryWeaponState(0, state) &&
-            (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponEquipped)) != 0 &&
-            state.weaponGenerationKey != 0;
+            (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponEquipped)) != 0 && key != 0;
         if (!present) {
             if (gun.generation) {
                 forget(rock);
@@ -843,12 +912,32 @@ namespace paper::manual_bolt
         }
         checkNatives();
         const auto savedGeneration = s_savedGeneration.load(std::memory_order_acquire);
-        if (state.weaponGenerationKey != gun.generation || state.weaponFormId != gun.form ||
-            savedGeneration != gun.savedGeneration) {
+        const auto startOver = [&] {
             forget(rock);
-            gun.generation = state.weaponGenerationKey;
+            gun.generation = key;
             gun.form = state.weaponFormId;
             gun.savedGeneration = savedGeneration;
+        };
+        if (key != gun.generation || state.weaponFormId != gun.form || savedGeneration != gun.savedGeneration) {
+            // The same rifle under a new key: ROCK's colliders arrived or were rebuilt.
+            // The bolt, the chamber and a hand on the bolt all carry on. The game can fill
+            // the magazine for as long after that as it did before ROCK knew the rifle.
+            const bool sameRifle = gun.tracked && state.weaponFormId == gun.form &&
+                savedGeneration == gun.savedGeneration && equippedItemIdentity(gun.form).unique == gun.item.unique;
+            if (sameRifle) {
+                gun.generation = key;
+                gun.boltColliderWaitFrames = 0;
+                if (gun.restoreTarget) {
+                    gun.restoreFrames = kRestoreFrames;
+                }
+            } else {
+                startOver();
+            }
+        }
+        // Its parts, once the colliders show them, can still say it is no rifle after all.
+        if (gun.tracked && bolt_hold::slotZeroFamily(gun.generation) == bolt_hold::BoltFamily::NotBoltAction) {
+            startOver();
+            return;
         }
 
         gun.handFromAnimation = input.handFromAnimation;
@@ -903,7 +992,7 @@ namespace paper::manual_bolt
             followHand(rock, gun, input.pullDistance);
             bolt_stroke::sample(*gun.action.stroke, gun.pull, gun.pose);
             applyStroke(gun, loaded);
-            if (gun.pull > 0.0f || gun.gripHeld) {
+            if ((gun.pull > 0.0f || gun.gripHeld) && gun.publishedGeneration == gun.generation) {
                 driveBolt(rock, gun);
             } else {
                 endDrive(rock, gun);
@@ -944,13 +1033,17 @@ namespace paper::manual_bolt
         parts::SourcePose bolt{};
         const bool boltRead =
             rock.queryWeaponSourcePose(0, gun.generation, gun.action.keys[policy::kBoltBone], bolt) && bolt.valid;
-        const auto* controller = f4vr::getControllerNode(gun.workingHand == Hand::Left);
-        gun.controllerValid = boltRead && controller;
-        if (gun.controllerValid) {
-            gun.controllerInWeapon = transform_math::worldPointToLocal(weaponRootWorld(bolt), controller->world.translate);
+        for (const Hand hand : { Hand::Left, Hand::Right }) {
+            const auto index = handIndex(hand);
+            const auto* controller = f4vr::getControllerNode(hand == Hand::Left);
+            gun.controllerValid[index] = boltRead && controller;
+            if (gun.controllerValid[index]) {
+                gun.controllerInWeapon[index] =
+                    transform_math::worldPointToLocal(weaponRootWorld(bolt), controller->world.translate);
+            }
         }
 
-        const bool wanted = gun.handFromAnimation && gun.gripHeld;
+        const bool wanted = gun.gripHeld && gun.gripFromClip;
         const float step = gun.handBlendSeconds > 0.0f && gun.handRestValid ? gun.deltaSeconds / gun.handBlendSeconds : 1.0f;
         gun.handWeight = std::clamp(gun.handWeight + (wanted ? step : -step), 0.0f, 1.0f);
         if (gun.handWeight <= 0.0f) {
