@@ -703,8 +703,7 @@ namespace paper::bolt_hold
             auto& slot = s_slots[index];
             rock::api::weapon::WeaponState state{};
             // Equipped and keyed: every source and pose call below validates the live
-            // binding. ROCK publishes slot 1's state before that weapon's presentation
-            // runs, so its WeaponPresent says nothing here.
+            // binding.
             const auto key = rock.queryWeaponInteractionKey(index);
             const bool present = rock.queryWeaponState(index, state) &&
                 hasFlag(state.flags, WeaponStateFlag::WeaponEquipped) && key != 0;
