@@ -72,12 +72,13 @@ fBoltHoldCloseSeconds = {:.2f}
 ; affected.
 bManualBoltCycle = {}
 
-; How far your hand moves, in game units, to take the bolt from closed to fully
-; back, the same on every rifle. 7 is about 9 cm.
+; The length of a full pull, in game units, the same on every rifle. 7 is about 9 cm.
+; Moving your hand past half of it takes the bolt all the way, at the speed of the
+; rifle's own animation. Let go and the bolt stays where it is, open or closed.
 fBoltPullDistance = {:.1f}
 
 ; true places and poses your hand on the bolt the way the rifle's cycle animation
-; does, at each point of the pull. false leaves it where your grip puts it, with
+; does, as the bolt moves. false leaves it where your grip puts it, with
 ; the fingers closed on the bolt's surface.
 bBoltHandFromAnimation = {}
 

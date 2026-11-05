@@ -47,6 +47,9 @@ namespace paper::manual_bolt
         // The bolt counts as home or back within this much of its stroke.
         constexpr float kClosedAt = 0.03f;
         constexpr float kBackAt = 0.97f;
+        // A manual bolt has two resting positions. Crossing this much of the pull commits
+        // the whole stroke, and letting go never moves it.
+        constexpr float kCommitAt = 0.5f;
         // Around the point the clip's hand holds the bolt, for the palm or fingers.
         constexpr float kGrabRadiusGameUnits = 8.0f;
         // PAPER's native cycle hand uses the same, above ROCK's own grip pose.
@@ -118,14 +121,17 @@ namespace paper::manual_bolt
             std::array<RE::NiTransform, bolt_stroke::kFingerJointCount> restFingers{};
 
             bool standingDown{ false };
-            std::uint32_t holdSignature{ 0 };
+            // Where the stroke is, and the end it is going to or resting at.
             float pull{ 0.0f };
+            float pullTarget{ 0.0f };
             bool atBack{ false };
             bool driving{ false };
             bool gripHeld{ false };
             std::uint64_t gripSequence{ 0 };
             RE::NiPoint3 gripStart{};
             float gripStartPull{ 0.0f };
+            RE::NiPoint3 gripMoved{};
+            float gripRequested{ 0.0f };
 
             bool triggerHeld{ false };
             std::uint32_t triggerFrames{ 0 };
@@ -608,44 +614,21 @@ namespace paper::manual_bolt
             }
         }
 
-        // Follows the working hand while it holds the bolt. The hand is measured in
-        // the weapon's frame, so moving the gun itself pulls nothing.
+        // The working hand decides which end the bolt goes to while it holds it, and
+        // the bolt gets there at the clip's speed, held or not. The hand is measured in
+        // the weapon's frame, so moving the gun itself pulls nothing. The grab point
+        // stays fixed so a slow pull adds up.
         void followHand(RockApiClient& rock, Gun& gun, const float pullDistance)
         {
             parts::GripState grip{};
-            const bool queried = rock.queryWeaponPartGripState(gun.workingHand, grip);
-            const bool held = queried && grip.active && grip.attachOnly &&
+            const bool held = rock.queryWeaponPartGripState(gun.workingHand, grip) && grip.active && grip.attachOnly &&
                 grip.gripSequence && grip.weaponGenerationKey == gun.generation &&
                 grip.targetOwner == rock.ownerToken() && grip.targetGroupId == kGroupId;
-            rock::api::hands::HandFrame frame{};
-            parts::SourcePose bolt{};
-            const bool handRead = rock.queryHandFrame(gun.workingHand, frame);
-            const bool boltRead = rock.queryWeaponSourcePose(0, gun.generation, gun.action.keys[policy::kBoltBone], bolt);
-            const std::uint32_t signature = (queried ? 1u : 0u) | (grip.active ? 2u : 0u) | (grip.attachOnly ? 4u : 0u) |
-                (grip.gripSequence ? 8u : 0u) | (grip.weaponGenerationKey == gun.generation ? 16u : 0u) |
-                (grip.targetOwner == rock.ownerToken() ? 32u : 0u) | (grip.targetGroupId == kGroupId ? 64u : 0u) |
-                (handRead ? 128u : 0u) | (boltRead ? 256u : 0u) | (bolt.valid ? 512u : 0u);
-            if (signature != gun.holdSignature) {
-                gun.holdSignature = signature;
-                PAPER_LOG_INFO(
-                    Reload,
-                    "MANUAL_BOLT hold check weapon={:08X} query={} active={} attachOnly={} sequence={} generation={:016X}/{:016X} owner={:016X}/{:016X} group={} hand={} boltStatus={} boltValid={}",
-                    gun.form,
-                    queried,
-                    grip.active,
-                    grip.attachOnly,
-                    grip.gripSequence,
-                    grip.weaponGenerationKey,
-                    gun.generation,
-                    grip.targetOwner,
-                    rock.ownerToken(),
-                    grip.targetGroupId,
-                    handRead,
-                    boltRead,
-                    bolt.valid);
-            }
             if (held) {
-                if (handRead && boltRead && bolt.valid) {
+                rock::api::hands::HandFrame frame{};
+                parts::SourcePose bolt{};
+                if (rock.queryHandFrame(gun.workingHand, frame) &&
+                    rock.queryWeaponSourcePose(0, gun.generation, gun.action.keys[policy::kBoltBone], bolt) && bolt.valid) {
                     const auto hand = transform_math::worldPointToLocal(
                         weaponRootWorld(bolt),
                         api_transform::toNi(frame.transform).translate);
@@ -656,15 +639,29 @@ namespace paper::manual_bolt
                         captureHandRest(rock, gun);
                         PAPER_LOG_INFO(Reload, "MANUAL_BOLT grip weapon={:08X} pull={:.2f} fromAnimation={}", gun.form, gun.pull, gun.handFromAnimation);
                     }
+                    gun.gripMoved = { hand.x - gun.gripStart.x, hand.y - gun.gripStart.y, hand.z - gun.gripStart.z };
                     const auto& axis = gun.action.stroke->backInWeapon;
-                    const float along = (hand.x - gun.gripStart.x) * axis.x + (hand.y - gun.gripStart.y) * axis.y +
-                        (hand.z - gun.gripStart.z) * axis.z;
-                    gun.pull = std::clamp(gun.gripStartPull + along / pullDistance, 0.0f, 1.0f);
+                    const float along = gun.gripMoved.x * axis.x + gun.gripMoved.y * axis.y + gun.gripMoved.z * axis.z;
+                    gun.gripRequested = gun.gripStartPull + along / pullDistance;
+                    gun.pullTarget = gun.gripRequested > kCommitAt ? 1.0f : 0.0f;
                 }
-            } else if (gun.pull <= kClosedAt) {
-                gun.pull = 0.0f;
+            } else if (gun.gripHeld) {
+                PAPER_LOG_INFO(
+                    Reload,
+                    "MANUAL_BOLT let go weapon={:08X} moved=({:.2f},{:.2f},{:.2f})gu requested={:.2f} pull={:.2f} target={:.0f}",
+                    gun.form,
+                    gun.gripMoved.x,
+                    gun.gripMoved.y,
+                    gun.gripMoved.z,
+                    gun.gripRequested,
+                    gun.pull,
+                    gun.pullTarget);
             }
             gun.gripHeld = held;
+
+            const float step = gun.deltaSeconds / gun.action.stroke->seconds;
+            gun.pull = gun.pullTarget < gun.pull ? (std::max)(gun.pullTarget, gun.pull - step) :
+                                                   (std::min)(gun.pullTarget, gun.pull + step);
         }
 
         // The ends of the stroke: back throws out whatever the chamber holds, and
@@ -734,6 +731,7 @@ namespace paper::manual_bolt
                 gun.reloadKeepsRound = gun.chamber == Chamber::Live && loaded > 0;
                 gun.loadedAtReload = loaded;
                 gun.pull = 0.0f;
+                gun.pullTarget = 0.0f;
                 gun.atBack = false;
                 gun.gripHeld = false;
                 endDrive(rock, gun);
@@ -859,11 +857,9 @@ namespace paper::manual_bolt
         }
 
         const bool drawn = (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponDrawn)) != 0;
-        const bool settled = (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::TransitionActive)) == 0;
         const Hand firingHand = state.firingHand;
         const char* standDownReason = !ammoKnown ? "ammo unknown" :
             !drawn ? "weapon not drawn" :
-            !settled ? "weapon in transition" :
             !input.cycleAllowed ? "PAPER does not animate this weapon's cycle now" :
             input.physicalReloadActive ? "a physical reload owns the bolt" :
             firingHand != Hand::Left && firingHand != Hand::Right ? "no firing hand" :

@@ -76,17 +76,16 @@ namespace paper::bolt_stroke
 
     struct Key
     {
-        // 0 is the action closed and 1 the bolt fully back. A bolt that turns takes
-        // the first part of this for the turn and the rest for the slide.
+        // 0 is the action closed and 1 the bolt fully back, in the clip's own time.
         float progress{ 0.0f };
         Pose pose{};
     };
 
     /*
      * The first half of a bolt rifle's cycle clip, from the action's first movement
-     * to the bolt fully back, walked in either direction by the pull. It is what the
-     * animator made: the bolt's path, the parts that move with it, and the wrist and
-     * fingers of whichever hand rides the bolt.
+     * to the bolt fully back, played in either direction once the pull commits. It is
+     * what the animator made: the bolt's path and timing, the parts that move with it,
+     * and the wrist and fingers of whichever hand rides the bolt.
      */
     struct Stroke
     {
@@ -101,6 +100,8 @@ namespace paper::bolt_stroke
         RE::NiPoint3 backInWeapon{};
         float travelGameUnits{ 0.0f };
         float turnDegrees{ 0.0f };
+        // How long the clip takes from the first movement to fully back.
+        float seconds{ 0.0f };
         std::vector<Key> keys;
     };
 

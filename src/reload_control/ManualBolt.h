@@ -10,8 +10,8 @@ namespace paper::manual_bolt
     struct FrameInput
     {
         bool enabled{ false };
-        // Game units the hand moves to take the bolt from closed to fully back,
-        // the same on every rifle.
+        // Game units of a full pull, the same on every rifle. Crossing half of it
+        // commits the stroke.
         float pullDistance{ 7.0f };
         // The hand on the bolt is placed and posed as the cycle clip has it, rather
         // than where ROCK's grip seats it.
@@ -35,11 +35,12 @@ namespace paper::manual_bolt
      * on top of the full magazine, as far as the reserve allows. The chamber is
      * shown as a cartridge on ROCK's ammo counter, under a lease renewed here.
      *
-     * Bolt: closed, lifted, back, as the rifle's own cycle clip moves it
-     * (bolt_stroke). The hand the clip works the bolt with grips it at the point
-     * the clip holds it: when that is the firing hand, the other hand carries the
-     * gun first and ROCK frees the firing hand. Moving that hand back along the
-     * bolt's line walks the clip's stroke, and the bolt stays where it is let go.
+     * Bolt: two resting positions, closed and back, and the rifle's own cycle clip
+     * between them (bolt_stroke). The hand the clip works the bolt with grips it at
+     * the point the clip holds it: when that is the firing hand, the other hand
+     * carries the gun first and ROCK frees the firing hand. Moving that hand past
+     * half the pull distance along the bolt's line commits the stroke, which plays
+     * at the clip's speed. Letting go never moves the bolt, so it can be left open.
      * A rifle whose clip shows no hand on the bolt, or with no bolt collider, keeps
      * its native cycle, while its rounds and chamber are still tracked.
      *

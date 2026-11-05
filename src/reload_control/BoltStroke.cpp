@@ -30,9 +30,6 @@ namespace paper::bolt_stroke
         constexpr float kRideRangeGameUnits = 3.0f;
         constexpr float kRideMoveFraction = 0.5f;
         constexpr float kSlideBeginsFraction = 0.15f;
-        // How much of the pull lifts a bolt that turns, before it slides.
-        constexpr float kLiftFraction = 0.3f;
-        constexpr float kMinimumLiftDegrees = 10.0f;
         // A distal joint sits at the root of its fingertip; the pad is about half
         // that joint's length further along the finger.
         constexpr float kPadBeyondDistalJoint = 0.5f;
@@ -239,8 +236,7 @@ namespace paper::bolt_stroke
         }
         stroke->fingerMask = fingerMask;
 
-        // Which bones move, and which one turns the most.
-        std::size_t turningBone = kBolt;
+        // Which bones move.
         for (std::size_t bone = 0; bone < kActionBoneCount; ++bone) {
             float largestMove = 0.0f;
             float largestTurn = 0.0f;
@@ -252,25 +248,20 @@ namespace paper::bolt_stroke
             }
             stroke->moved[bone] = largestMove >= bolt_hold_policy::kPartMinimumMoveGameUnits ||
                 largestTurn >= bolt_hold_policy::kPartMinimumTurnDegrees;
-            if (largestTurn > stroke->turnDegrees) {
-                stroke->turnDegrees = largestTurn;
-                turningBone = bone;
-            }
+            stroke->turnDegrees = (std::max)(stroke->turnDegrees, largestTurn);
         }
-        const float lift = stroke->turnDegrees >= kMinimumLiftDegrees ? kLiftFraction : 0.0f;
+
+        stroke->seconds = frames[back].seconds - frames[start].seconds;
+        if (!(stroke->seconds > 0.0f)) {
+            return refuse("the stroke takes no time");
+        }
 
         const std::size_t span = back - start + 1;
         const std::size_t stride = (std::max<std::size_t>)(1, (span + kMaxKeys - 1) / kMaxKeys);
-        float progress = 0.0f;
         for (std::size_t index = start;; index = (std::min)(index + stride, back)) {
             const auto& frame = frames[index];
-            const float turned = lift > 0.0f ?
-                turnDegrees(rest.locals[turningBone], frame.locals[turningBone]) / stroke->turnDegrees :
-                0.0f;
-            // A clip's small shake never walks the bolt backwards.
-            progress = (std::max)(progress, lift * turned + (1.0f - lift) * (boltTravel(rest, frame) / travel));
             auto& key = stroke->keys.emplace_back();
-            key.progress = index == start ? 0.0f : progress;
+            key.progress = (frame.seconds - frames[start].seconds) / stroke->seconds;
             for (std::size_t bone = 0; bone < kActionBoneCount; ++bone) {
                 key.pose.bones[bone] = frame.locals[bone];
             }
@@ -308,12 +299,12 @@ namespace paper::bolt_stroke
 
         PAPER_LOG_INFO(
             Reload,
-            "MANUAL_BOLT stroke weapon={:08X} ready hand={} keys={} turn={:.1f}deg lift={:.2f} fingers={:#x} grasp=({:.2f},{:.2f},{:.2f}) thumbToIndex={:.2f}gu back=({:.2f},{:.2f},{:.2f})",
+            "MANUAL_BOLT stroke weapon={:08X} ready hand={} keys={} turn={:.1f}deg seconds={:.2f} fingers={:#x} grasp=({:.2f},{:.2f},{:.2f}) thumbToIndex={:.2f}gu back=({:.2f},{:.2f},{:.2f})",
             weaponForm,
             side == kLeftHand ? "left" : "right",
             stroke->keys.size(),
             stroke->turnDegrees,
-            lift,
+            stroke->seconds,
             stroke->fingerMask,
             stroke->graspInBolt.x,
             stroke->graspInBolt.y,
