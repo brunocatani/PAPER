@@ -110,6 +110,8 @@ namespace paper
                 "Reload", "bBoltHoldOpen", config.boltHoldOpen);
             config.boltHoldCloseSeconds = static_cast<float>(ini.GetDoubleValue(
                 "Reload", "fBoltHoldCloseSeconds", config.boltHoldCloseSeconds));
+            config.chamberRound = ini.GetBoolValue(
+                "Reload", "bChamberRound", config.chamberRound);
             config.manualBoltCycle = ini.GetBoolValue(
                 "Reload", "bManualBoltCycle", config.manualBoltCycle);
             config.boltPullDistance = static_cast<float>(ini.GetDoubleValue(
@@ -208,7 +210,7 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} manualBoltCycle={} boltPullDistance={:.1f} boltHandFromAnimation={} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} chamberRound={} manualBoltCycle={} boltPullDistance={:.1f} boltHandFromAnimation={} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
                 config.enabled,
@@ -216,6 +218,7 @@ namespace paper
                 config.handBlendSeconds,
                 config.boltHoldOpen,
                 config.boltHoldCloseSeconds,
+                config.chamberRound,
                 config.manualBoltCycle,
                 config.boltPullDistance,
                 config.boltHandFromAnimation,

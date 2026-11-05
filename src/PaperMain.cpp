@@ -1181,7 +1181,8 @@ namespace
             manual_bolt::update(
                 rockApiClient(),
                 manual_bolt::FrameInput{
-                    .enabled = operational && g_config.manualBoltCycle,
+                    .chamberEnabled = operational && g_config.chamberRound,
+                    .boltEnabled = operational && g_config.manualBoltCycle,
                     .pullDistance = g_config.boltPullDistance,
                     .handFromAnimation = g_config.boltHandFromAnimation,
                     .cycleAllowed = !climbingAnimationSuppressed &&

@@ -9,7 +9,11 @@ namespace paper::manual_bolt
 {
     struct FrameInput
     {
-        bool enabled{ false };
+        // Every gun that fires cartridges keeps a chamber and its rounds.
+        bool chamberEnabled{ false };
+        // A hand works the bolt of a bolt-action rifle, which keeps a chamber and its
+        // rounds for that whatever chamberEnabled says.
+        bool boltEnabled{ false };
         // Game units of a full pull, the same on every rifle. Crossing half of it
         // commits the stroke.
         float pullDistance{ 7.0f };
@@ -26,14 +30,25 @@ namespace paper::manual_bolt
     };
 
     /*
-     * Bolt-action rifles on weapon slot 0, with no authored data.
+     * The round in the chamber of every gun that fires cartridges, on both weapon
+     * slots, and the bolt of bolt-action rifles on slot 0, with no authored data.
      *
-     * Chamber: Empty, Live or Spent. A shot leaves it Spent; the trigger stays
+     * Which guns: the equipped ammo names a casing model, the game's own test for
+     * throwing a case out, and the weapon has the game's ballistic keyword. Both are
+     * read from the equipped weapon, because weapon mods swap ammo and keywords.
+     * Energy ammo and the Gauss rifle's have no casing; the launchers and soakers
+     * whose ammo has one lack the keyword. A gun is known from the moment it is drawn,
+     * so nothing here waits for its colliders, except that ROCK keys slot 1 by them.
+     *
+     * Chamber: Empty, Live or Spent. A gun that cycles itself is Live whenever it has
+     * rounds. On a rifle worked by hand a shot leaves it Spent; the trigger stays
      * held back until the bolt has gone all the way back, which throws the case
      * out, and home again, which feeds the next round. A native reload leaves it
      * Live, and when it started with a live round that round stays in the chamber
-     * on top of the full magazine, as far as the reserve allows. The chamber is
-     * shown as a cartridge on ROCK's ammo counter, under a lease renewed here.
+     * on top of the full magazine, as far as the reserve allows, except on a gun
+     * with nowhere to keep it (bolt_hold_policy::familyKeepsChamberedRound). The
+     * chamber is shown as a cartridge on ROCK's ammo counter, under a lease renewed
+     * here.
      *
      * Bolt: two resting positions, closed and back, and the rifle's own cycle clip
      * between them (bolt_stroke). The hand the clip works the bolt with takes it at
@@ -49,6 +64,8 @@ namespace paper::manual_bolt
      * chamber are still tracked.
      *
      * ROCK re-keys the weapon when its colliders arrive, which changes nothing here.
+     * While PAPER does not animate the rifle's cycle the hand stands down, the game
+     * cycles the rifle and its rounds go on being counted.
      *
      * Rounds: the loaded count and the chamber of each inventory item survive
      * unequipping and saving, by ExtraUniqueID, in the co-save. The native count
@@ -66,7 +83,7 @@ namespace paper::manual_bolt
     // on the bolt, when it is posed from the clip.
     void presentHand(RockApiClient& rock);
 
-    // Forgets the equipped weapon and releases what ROCK holds for it. Saved
+    // Forgets the equipped weapons and releases what ROCK holds for them. Saved
     // rounds stay until the co-save replaces them.
     void reset(RockApiClient& rock);
 

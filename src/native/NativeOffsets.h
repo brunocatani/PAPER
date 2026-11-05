@@ -12,6 +12,7 @@ namespace paper::offsets
     inline constexpr std::uintptr_t kFunc_PlaySoundDescriptor = 0x081FBF0;
     inline constexpr std::uintptr_t kFunc_AIProcess_SetLoadedRounds = 0x0EC4B90;
     inline constexpr std::uintptr_t kFunc_Actor_GetEquippedInstance = 0x0E50DA0;
+    inline constexpr std::uintptr_t kFunc_Actor_GetEquippedAmmo = 0x0E05BA0;
     inline constexpr std::uintptr_t kFunc_ExtraDataList_ReadUniqueId = 0x0098830;
     inline constexpr std::uintptr_t kFunc_ExtraDataList_WriteUniqueId = 0x0098880;
     inline constexpr std::uintptr_t kFunc_Reference_AllocateUniqueId = 0x03E3A10;

@@ -309,9 +309,9 @@ namespace paper
         outHeld=state.held!=0;
         return true;
     }
-    rock::api::Status RockApiClient::setChamberMarker(rock::api::weapon::ChamberMarker marker) const {
+    rock::api::Status RockApiClient::setChamberMarker(std::uint32_t slot,rock::api::weapon::ChamberMarker marker) const {
         if (!ready()) return rock::api::Status::NotReady;
-        return _weapon->setChamberMarker(_ownerToken,kRockWeaponSlot,marker,2);
+        return _weapon->setChamberMarker(_ownerToken,slot,marker,2);
     }
     std::uint32_t RockApiClient::copyWeaponEvidencePoints(std::uint32_t body,rock::api::Point3* output,std::uint32_t capacity) const {
         if (!reloadObservationEvidenceReady() || !output) return 0;

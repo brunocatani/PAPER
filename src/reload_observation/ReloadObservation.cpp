@@ -245,12 +245,17 @@ namespace paper::reload_observation
                 RE::WEAPON_FLAGS::kAutomatic);
             result.boltActionWeaponFlag = weaponData->flags.any(
                 RE::WEAPON_FLAGS::kBoltAction);
+            const auto namesRevolver = [](const RE::BGSKeywordForm* keywords) {
+                return hasKeywordContaining(keywords, "revolver", "anims44") ||
+                    hasKeywordContaining(keywords, "wasterev", "revshotgun");
+            };
             result.revolverAnimationKeyword =
-                hasKeywordContaining(weapon, "revolver", "anims44") ||
-                hasKeywordContaining(weaponData->keywords, "revolver", "anims44");
+                namesRevolver(weapon) || namesRevolver(weaponData->keywords);
+            // Only the animation keyword: the double-barrel's fire sound keyword is also
+            // on a pump shotgun and a revolving one.
             result.doubleBarrelAnimationKeyword =
-                hasKeywordContaining(weapon, "doublebarrel") ||
-                hasKeywordContaining(weaponData->keywords, "doublebarrel");
+                hasKeywordContaining(weapon, "animsdoublebarrel") ||
+                hasKeywordContaining(weaponData->keywords, "animsdoublebarrel");
             return result;
         }
 

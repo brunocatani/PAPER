@@ -134,7 +134,8 @@ namespace paper::bolt_hold_policy
 
     // A rifle worked by its bolt. The game flags lever guns, pumps and single-action
     // revolvers as bolt actions too. A part named like a cylinder is noise on a
-    // magazine rifle, and what rules a revolver out is that it has no magazine.
+    // magazine rifle, and what rules a revolver out is that it has no magazine. A
+    // shotgun with that flag is a pump, whatever its parts are called.
     [[nodiscard]] constexpr bool familyIsBoltAction(const std::uint64_t familyFlags) noexcept
     {
         const auto has = [familyFlags](const api::WeaponFamilyFlag flag) {
@@ -142,7 +143,21 @@ namespace paper::bolt_hold_policy
         };
         return has(api::WeaponFamilyFlag::BoltAction) && !has(api::WeaponFamilyFlag::LeverAction) &&
                !has(api::WeaponFamilyFlag::PumpAction) && !has(api::WeaponFamilyFlag::BreakAction) &&
+               !has(api::WeaponFamilyFlag::Shotgun) &&
                (!has(api::WeaponFamilyFlag::Revolver) || has(api::WeaponFamilyFlag::BoltActionWithMagazine));
+    }
+
+    // Whether a round can wait in the chamber on top of a full magazine. A revolver's
+    // rounds all sit in its cylinder, a double-barrel's in its breeches and a minigun's
+    // on its belt. Pass a family read with no part evidence: part names are noise here,
+    // and a gas cylinder would cost a semi-automatic its round.
+    [[nodiscard]] constexpr bool familyKeepsChamberedRound(const std::uint64_t familyFlags) noexcept
+    {
+        const auto has = [familyFlags](const api::WeaponFamilyFlag flag) {
+            return (familyFlags & static_cast<std::uint64_t>(flag)) != 0;
+        };
+        return !has(api::WeaponFamilyFlag::Revolver) && !has(api::WeaponFamilyFlag::BreakAction) &&
+               !has(api::WeaponFamilyFlag::Minigun);
     }
 
     // Opens at the bolt's own speed; closes over the configured blend, or at

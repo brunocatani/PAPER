@@ -106,7 +106,7 @@ namespace paper
             rock::api::Hand firingHand) const;
         void clearFireBlocked() const;
         [[nodiscard]] bool queryTriggerHeld(rock::api::Hand hand, bool& outHeld) const;
-        [[nodiscard]] rock::api::Status setChamberMarker(rock::api::weapon::ChamberMarker marker) const;
+        [[nodiscard]] rock::api::Status setChamberMarker(std::uint32_t slot, rock::api::weapon::ChamberMarker marker) const;
         [[nodiscard]] bool setHandVisualAuthority(
             const rock::api::animation::HandVisualAuthorityRequest& request) const;
         void clearHandVisualAuthority(rock::api::Hand hand) const;

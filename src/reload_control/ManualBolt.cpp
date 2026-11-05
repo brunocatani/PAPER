@@ -7,6 +7,7 @@
 #include "reload_control/BoltHold.h"
 #include "reload_control/BoltStroke.h"
 #include "reload_control/ManualReloadOnly.h"
+#include "reload_observation/ReloadObservation.h"
 #include "support/Fo4VrRuntime.h"
 #include "support/TransformMath.h"
 
@@ -94,10 +95,15 @@ namespace paper::manual_bolt
 
         struct Gun
         {
+            std::uint32_t slot{ 0 };
             std::uint64_t generation{ 0 };
             std::uint32_t form{ 0 };
             std::uint32_t savedGeneration{ 0 };
             bool tracked{ false };
+            // A bolt-action rifle a hand can work, only ever on slot 0. Every other gun
+            // here fires cartridges and cycles itself.
+            bool boltRifle{ false };
+            bool noChamberLogged{ false };
             SavedItem item{};
             Chamber chamber{ Chamber::Empty };
             std::uint32_t lastLoaded{ 0 };
@@ -166,7 +172,7 @@ namespace paper::manual_bolt
             bool markerRefusalLogged{ false };
         };
 
-        Gun s_gun{};
+        std::array<Gun, 2> s_guns{ Gun{ .slot = 0 }, Gun{ .slot = 1 } };
         std::vector<parts::EvidenceDetail> s_evidence;
 
         // Each checked once, byte for byte, before the first call. A weapon without
@@ -177,6 +183,7 @@ namespace paper::manual_bolt
             bool setLoaded{ false };
             bool identity{ false };
             bool casing{ false };
+            bool ammo{ false };
         };
         Natives s_natives{};
 
@@ -243,9 +250,17 @@ namespace paper::manual_bolt
                     offsets::kFunc_Reference_AllocateUniqueId,
                     std::to_array<std::uint8_t>({ 0x4C, 0x8B, 0xDC, 0x53, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x60, 0x33, 0xF6 }));
             s_natives.casing = instanceFetchReady() && casingCallReady();
+            s_natives.ammo = bytesMatch(
+                offsets::kFunc_Actor_GetEquippedAmmo,
+                std::to_array<std::uint8_t>({
+                    0x48, 0x83, 0xEC, 0x28,
+                    0x48, 0x8B, 0x89, 0x00, 0x03, 0x00, 0x00,
+                    0x48, 0x85, 0xC9, 0x74, 0x0A,
+                    0xE8, 0xBB, 0xEC, 0x0B, 0x00,
+                }));
         }
 
-        [[nodiscard]] RE::EquippedItem* equippedItem(const std::uint32_t form)
+        [[nodiscard]] RE::EquippedItem* equippedItem(const Gun& gun)
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             auto* process = player ? player->currentProcess : nullptr;
@@ -253,34 +268,82 @@ namespace paper::manual_bolt
             if (!data || data->equippedItems.empty() || data->equippedItems.size() > 8) {
                 return nullptr;
             }
-            auto& item = data->equippedItems[0];
-            if (!item.item.object || item.item.object->formID != form ||
-                item.item.object->formType != RE::ENUM_FORM_ID::kWEAP || !item.data) {
-                return nullptr;
+            for (auto& item : data->equippedItems) {
+                if (item.equipIndex.index == gun.slot && item.item.object && item.item.object->formID == gun.form &&
+                    item.item.object->formType == RE::ENUM_FORM_ID::kWEAP && item.data) {
+                    return &item;
+                }
             }
-            return &item;
+            return nullptr;
         }
 
         // Sets the native count, which the next frame's weapon state reports.
-        [[nodiscard]] bool setLoadedRounds(const std::uint32_t form, const std::uint32_t rounds)
+        [[nodiscard]] bool setLoadedRounds(const Gun& gun, const std::uint32_t rounds)
         {
-            if (!s_natives.setLoaded || !equippedItem(form)) {
+            if (!s_natives.setLoaded || !equippedItem(gun)) {
                 return false;
             }
             using Set = void (*)(RE::AIProcess*, std::uint32_t, std::uint32_t);
             reinterpret_cast<Set>(REL::Module::get().base() + offsets::kFunc_AIProcess_SetLoadedRounds)(
                 RE::PlayerCharacter::GetSingleton()->currentProcess,
-                0,
+                gun.slot,
                 rounds);
             return true;
         }
 
-        // The inventory item in slot 0, by weapon, owner and ExtraUniqueID, giving
+        // The game throws a case out only when the weapon's ammo names a casing model,
+        // and no energy ammo does. The ballistic keyword then leaves out the launchers and
+        // soakers whose ammo has one. Both come from the equipped weapon, not its record,
+        // because weapon mods swap ammo and keywords. Neither waits for colliders.
+        [[nodiscard]] bool firesCartridge(RockApiClient& rock, Gun& gun)
+        {
+            auto* player = RE::PlayerCharacter::GetSingleton();
+            if (!s_natives.ammo || !player) {
+                return false;
+            }
+            using GetAmmo = const RE::TESAmmo* (*)(RE::Actor*, std::uint32_t);
+            const auto* ammo =
+                reinterpret_cast<GetAmmo>(REL::Module::get().base() + offsets::kFunc_Actor_GetEquippedAmmo)(player, gun.slot);
+            if (!ammo) {
+                return false;
+            }
+            const bool casing = !ammo->shellCasing.model.empty();
+            rock::api::weapon::Classification classification{};
+            const bool keywordsKnown = casing && rock.queryWeaponClassification(gun.slot, classification) &&
+                classification.weaponFormId == gun.form && classification.keywordFlags != 0;
+            const bool ballistic = keywordsKnown &&
+                (classification.keywordFlags & static_cast<std::uint64_t>(rock::api::weapon::KeywordFlag::Ballistic)) != 0;
+            if (ballistic) {
+                return true;
+            }
+            if ((!casing || keywordsKnown) && !gun.noChamberLogged) {
+                gun.noChamberLogged = true;
+                PAPER_LOG_INFO(
+                    Reload,
+                    "CHAMBER slot={} weapon={:08X} has no chamber: ammo={:08X} casing={} ballistic={}",
+                    gun.slot,
+                    gun.form,
+                    ammo->formID,
+                    casing,
+                    ballistic);
+            }
+            return false;
+        }
+
+        [[nodiscard]] bool keepsChamberedRound(RockApiClient& rock, const Gun& gun)
+        {
+            rock::api::weapon::Classification classification{};
+            return rock.queryWeaponClassification(gun.slot, classification) &&
+                policy::familyKeepsChamberedRound(reload_observation::classifyWeaponFamilyFlags(gun.form, classification, {}));
+        }
+
+        // The inventory item in the gun's slot, by weapon, owner and ExtraUniqueID, giving
         // it an ID from the engine's allocator if it has none. A stack of more than
         // one, or an equipped item that cannot be told from another, has no identity.
-        [[nodiscard]] SavedItem equippedItemIdentity(const std::uint32_t form)
+        [[nodiscard]] SavedItem equippedItemIdentity(const Gun& gun)
         {
-            auto* item = equippedItem(form);
+            const auto form = gun.form;
+            auto* item = equippedItem(gun);
             auto* player = RE::PlayerCharacter::GetSingleton();
             if (!s_natives.identity || !item || !player->inventoryList ||
                 player->inventoryList->data.size() > 65535) {
@@ -322,7 +385,8 @@ namespace paper::manual_bolt
             if (exactMatches > 1 || !extra) {
                 PAPER_LOG_WARN(
                     Reload,
-                    "MANUAL_BOLT cannot tell the equipped item apart weapon={:08X} matches={} exact={} count={}; its rounds are not kept",
+                    "CHAMBER cannot tell the equipped item apart slot={} weapon={:08X} matches={} exact={} count={}; its rounds are not kept",
+                    gun.slot,
                     form,
                     matches,
                     exactMatches,
@@ -352,9 +416,9 @@ namespace paper::manual_bolt
             return SavedItem{ .weapon = form, .owner = owner, .unique = unique };
         }
 
-        void ejectCasing(const std::uint32_t form)
+        void ejectCasing(const Gun& gun)
         {
-            if (!s_natives.casing || !equippedItem(form)) {
+            if (!s_natives.casing || !equippedItem(gun)) {
                 return;
             }
             struct Instance
@@ -372,12 +436,12 @@ namespace paper::manual_bolt
             const auto base = REL::Module::get().base();
             auto* player = RE::PlayerCharacter::GetSingleton();
             using Get = Instance* (*)(RE::Actor*, Instance*, std::uint32_t);
-            reinterpret_cast<Get>(base + offsets::kFunc_Actor_GetEquippedInstance)(player, &instance, 0);
-            if (!instance.object || instance.object->formID != form) {
+            reinterpret_cast<Get>(base + offsets::kFunc_Actor_GetEquippedInstance)(player, &instance, gun.slot);
+            if (!instance.object || instance.object->formID != gun.form) {
                 return;
             }
             using Eject = void (*)(RE::TESObjectREFR*, const void*, std::uint32_t);
-            reinterpret_cast<Eject>(base + offsets::kFunc_EjectShellCasing)(player, &instance, 0);
+            reinterpret_cast<Eject>(base + offsets::kFunc_EjectShellCasing)(player, &instance, gun.slot);
         }
 
         [[nodiscard]] bool sameItem(const SavedItem& left, const SavedItem& right)
@@ -429,7 +493,7 @@ namespace paper::manual_bolt
             gun.tracked = true;
             gun.lastLoaded = state.loadedRounds;
             gun.chamber = state.loadedRounds > 0 ? Chamber::Live : Chamber::Empty;
-            gun.item = equippedItemIdentity(gun.form);
+            gun.item = equippedItemIdentity(gun);
             SavedItem saved{};
             const bool restored = gun.item.unique && findSaved(gun.item, saved);
             if (restored) {
@@ -446,9 +510,11 @@ namespace paper::manual_bolt
             }
             PAPER_LOG_INFO(
                 Reload,
-                "MANUAL_BOLT tracking weapon={:08X}/{:016X} unique={} restored={} savedLoaded={} chamber={} loaded={} reserve={}",
+                "CHAMBER tracking slot={} weapon={:08X}/{:016X} boltRifle={} unique={} restored={} savedLoaded={} chamber={} loaded={} reserve={}",
+                gun.slot,
                 gun.form,
                 gun.generation,
+                gun.boltRifle,
                 gun.item.unique,
                 restored,
                 saved.loaded,
@@ -599,10 +665,11 @@ namespace paper::manual_bolt
             }
         }
 
-        void forget(RockApiClient& rock)
+        void forget(RockApiClient& rock, Gun& gun)
         {
-            auto& gun = s_gun;
-            s_ownsCycle.store(false, std::memory_order_release);
+            if (gun.slot == 0) {
+                s_ownsCycle.store(false, std::memory_order_release);
+            }
             endDrive(rock, gun);
             endFireBlock(rock, gun);
             if (gun.handPublished) {
@@ -612,7 +679,7 @@ namespace paper::manual_bolt
                 rock.clearWeaponGrabPoints();
                 rock.clearWeaponPartTargets();
             }
-            gun = {};
+            gun = Gun{ .slot = gun.slot };
         }
 
         void driveBolt(RockApiClient& rock, Gun& gun)
@@ -747,13 +814,13 @@ namespace paper::manual_bolt
             if (gun.pull >= kBackAt && !gun.atBack) {
                 gun.atBack = true;
                 manual_reload_only::playSound(kSoundBoltOpen);
-                if (gun.chamber == Chamber::Live && loaded > 0 && setLoadedRounds(gun.form, loaded - 1)) {
+                if (gun.chamber == Chamber::Live && loaded > 0 && setLoadedRounds(gun, loaded - 1)) {
                     // Back to the reserve: loaded rounds are part of the inventory count.
                     --loaded;
                     gun.lastLoaded = loaded;
                 }
                 if (gun.chamber != Chamber::Empty) {
-                    ejectCasing(gun.form);
+                    ejectCasing(gun);
                 }
                 PAPER_LOG_INFO(
                     Reload,
@@ -786,10 +853,11 @@ namespace paper::manual_bolt
             // Only downwards after the first frame: a shot may already have been taken.
             const bool restoring = loaded > gun.restoreTarget || (gun.restoreFirstFrame && loaded != gun.restoreTarget);
             gun.restoreFirstFrame = false;
-            if (restoring && setLoadedRounds(gun.form, gun.restoreTarget)) {
+            if (restoring && setLoadedRounds(gun, gun.restoreTarget)) {
                 PAPER_LOG_INFO(
                     Reload,
-                    "MANUAL_BOLT restored weapon={:08X} loaded {} -> {}",
+                    "CHAMBER restored slot={} weapon={:08X} loaded {} -> {}",
+                    gun.slot,
                     gun.form,
                     loaded,
                     gun.restoreTarget);
@@ -817,10 +885,12 @@ namespace paper::manual_bolt
                 if (loaded > gun.loadedAtReload) {
                     gun.chamber = Chamber::Live;
                     gun.droppedWithoutShot = false;
-                    const bool topUp = gun.reloadKeepsRound && reserve > 0 && setLoadedRounds(gun.form, loaded + 1);
+                    const bool topUp = gun.reloadKeepsRound && reserve > 0 && keepsChamberedRound(rock, gun) &&
+                        setLoadedRounds(gun, loaded + 1);
                     PAPER_LOG_INFO(
                         Reload,
-                        "MANUAL_BOLT reloaded weapon={:08X} loaded {} -> {} keptChambered={} reserve={}",
+                        "CHAMBER reloaded slot={} weapon={:08X} loaded {} -> {} keptChambered={} reserve={}",
+                        gun.slot,
                         gun.form,
                         gun.loadedAtReload,
                         loaded + (topUp ? 1 : 0),
@@ -833,29 +903,30 @@ namespace paper::manual_bolt
             }
         }
 
-        void observeRounds(Gun& gun, const bool reloading, const std::uint32_t loaded)
+        // handWorks: the hand owns this gun's cycle now. nativeCycle: it never will, so what
+        // was saved says nothing about the chamber.
+        void observeRounds(Gun& gun, const bool reloading, const std::uint32_t loaded, const bool handWorks, const bool nativeCycle)
         {
             const bool fell = loaded < gun.lastLoaded;
             if (!reloading && fell) {
                 if (gun.triggerFrames > 0) {
                     gun.droppedWithoutShot = false;
-                    gun.chamber = gun.handCycle ? Chamber::Spent : (loaded > 0 ? Chamber::Live : Chamber::Empty);
-                    PAPER_LOG_INFO(
-                        Reload,
-                        "MANUAL_BOLT shot weapon={:08X} loaded={} chamber={}",
-                        gun.form,
-                        loaded,
-                        static_cast<std::uint32_t>(gun.chamber));
+                    gun.chamber = handWorks ? Chamber::Spent : (loaded > 0 ? Chamber::Live : Chamber::Empty);
+                    // An automatic fires too fast for a line per shot.
+                    if (handWorks) {
+                        PAPER_LOG_INFO(
+                            Reload,
+                            "MANUAL_BOLT shot weapon={:08X} loaded={} chamber={}",
+                            gun.form,
+                            loaded,
+                            static_cast<std::uint32_t>(gun.chamber));
+                    }
                 } else {
                     gun.droppedWithoutShot = true;
                 }
             }
             // A gun on its native cycle chambers its next round by itself.
-            if (!reloading && loaded > gun.lastLoaded && !gun.handCycle && gun.chamber == Chamber::Empty) {
-                gun.chamber = Chamber::Live;
-            }
-            // So does one that turned out to have no bolt to hold, whatever was saved.
-            if (gun.handCycleRefused && loaded > 0) {
+            if (loaded > 0 && (nativeCycle || (!reloading && loaded > gun.lastLoaded && !handWorks && gun.chamber == Chamber::Empty))) {
                 gun.chamber = Chamber::Live;
             }
             if (gun.chamber == Chamber::Live && loaded == 0) {
@@ -890,135 +961,172 @@ namespace paper::manual_bolt
 
         void standDown(RockApiClient& rock, Gun& gun)
         {
-            s_ownsCycle.store(false, std::memory_order_release);
+            if (gun.slot == 0) {
+                s_ownsCycle.store(false, std::memory_order_release);
+            }
             endFireBlock(rock, gun);
             endDrive(rock, gun);
             gun.gripHeld = false;
+        }
+
+        void updateGun(RockApiClient& rock, const FrameInput& input, Gun& gun)
+        {
+            rock::api::weapon::WeaponState state{};
+            const auto key = rock.queryWeaponInteractionKey(gun.slot);
+            const bool boltAllowed = gun.slot == 0 && input.boltEnabled && manual_reload_only::physicalCycleReady();
+            const bool present = (input.chamberEnabled || boltAllowed) && rock.queryWeaponState(gun.slot, state) &&
+                (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponEquipped)) != 0 && key != 0;
+            if (!present) {
+                if (gun.generation) {
+                    forget(rock, gun);
+                }
+                return;
+            }
+            checkNatives();
+            const auto savedGeneration = s_savedGeneration.load(std::memory_order_acquire);
+            const auto startOver = [&] {
+                forget(rock, gun);
+                gun.generation = key;
+                gun.form = state.weaponFormId;
+                gun.savedGeneration = savedGeneration;
+            };
+            if (key != gun.generation || state.weaponFormId != gun.form || savedGeneration != gun.savedGeneration) {
+                // The same gun under a new key: ROCK's colliders arrived or were rebuilt.
+                // The bolt, the chamber and a hand on the bolt all carry on. The game can fill
+                // the magazine for as long after that as it did before ROCK knew the gun. A
+                // rebuild can also come from a weapon mod that changed its ammo.
+                const bool sameGun = gun.tracked && state.weaponFormId == gun.form &&
+                    savedGeneration == gun.savedGeneration && equippedItemIdentity(gun).unique == gun.item.unique &&
+                    (gun.boltRifle || firesCartridge(rock, gun));
+                if (sameGun) {
+                    gun.generation = key;
+                    gun.boltColliderWaitFrames = 0;
+                    if (gun.restoreTarget) {
+                        gun.restoreFrames = kRestoreFrames;
+                    }
+                } else {
+                    startOver();
+                }
+            }
+
+            const auto family = gun.slot == 0 ? bolt_hold::slotZeroFamily(gun.generation) : bolt_hold::BoltFamily::NotBoltAction;
+            // Its parts, once the colliders show them, can still say it is no rifle after all.
+            if (gun.boltRifle && (!boltAllowed || family == bolt_hold::BoltFamily::NotBoltAction)) {
+                startOver();
+                return;
+            }
+            if (gun.tracked && !gun.boltRifle && !input.chamberEnabled) {
+                startOver();
+                return;
+            }
+
+            gun.handFromAnimation = input.handFromAnimation;
+            gun.handBlendSeconds = input.handBlendSeconds;
+            gun.deltaSeconds = input.deltaSeconds;
+
+            const bool ammoKnown = (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::AmmoKnown)) != 0;
+            // A cartridge gun is known at once. It can still turn out to be a rifle, which a
+            // hand then works from there on, with the rounds and chamber it already has.
+            gun.boltRifle = gun.boltRifle || (boltAllowed && family == bolt_hold::BoltFamily::BoltAction);
+            if (!gun.tracked) {
+                if (!ammoKnown || (!gun.boltRifle && !(input.chamberEnabled && firesCartridge(rock, gun)))) {
+                    return;
+                }
+                identify(gun, state);
+            }
+
+            const bool drawn = (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponDrawn)) != 0;
+            const Hand firingHand = state.firingHand;
+            // The rounds and the hand on the bolt both wait for these.
+            const char* roundsWaitFor = !ammoKnown ? "ammo unknown" :
+                !drawn ? "weapon not drawn" :
+                gun.slot == 0 && input.physicalReloadActive ? "a physical reload owns the weapon" :
+                firingHand != Hand::Left && firingHand != Hand::Right ? "no firing hand" :
+                nullptr;
+            // The hand also waits for this one, while the game cycles the gun.
+            const char* standDownReason = roundsWaitFor != nullptr ? roundsWaitFor :
+                gun.boltRifle && !input.cycleAllowed ? "PAPER does not animate this weapon's cycle now" :
+                nullptr;
+            if (standDownReason != nullptr) {
+                if (!gun.standingDown) {
+                    gun.standingDown = true;
+                    PAPER_LOG_INFO(Reload, "CHAMBER stands down slot={} weapon={:08X}: {}", gun.slot, gun.form, standDownReason);
+                }
+                standDown(rock, gun);
+            } else if (gun.standingDown) {
+                gun.standingDown = false;
+                PAPER_LOG_INFO(Reload, "CHAMBER resumes slot={} weapon={:08X}", gun.slot, gun.form);
+            }
+            if (roundsWaitFor != nullptr) {
+                return;
+            }
+
+            const bool handAvailable = gun.boltRifle && !gun.standingDown;
+            if (handAvailable) {
+                prepareHandCycle(rock, gun);
+            }
+            const bool handWorks = handAvailable && gun.handCycle;
+            if (gun.slot == 0) {
+                s_ownsCycle.store(handWorks, std::memory_order_release);
+            }
+
+            bool triggerHeld = false;
+            (void)rock.queryTriggerHeld(firingHand, triggerHeld);
+            const bool triggerPressed = triggerHeld && !gun.triggerHeld;
+            gun.triggerHeld = triggerHeld;
+            gun.triggerFrames = triggerHeld ? kShotTriggerFrames : (gun.triggerFrames > 0 ? gun.triggerFrames - 1 : 0);
+
+            auto loaded = state.loadedRounds;
+            const bool reloading = gun.slot == 0 ?
+                input.playerReloadActive :
+                (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::SecondaryReloadActive)) != 0;
+            const bool nativeCycle = !boltAllowed || family == bolt_hold::BoltFamily::NotBoltAction || gun.handCycleRefused;
+            applyRestore(gun, loaded);
+            applyReload(rock, gun, reloading, loaded, state.reserveRounds);
+            observeRounds(gun, reloading, loaded, handWorks, nativeCycle);
+
+            if (handWorks && !reloading) {
+                followHand(rock, gun, input.pullDistance);
+                bolt_stroke::sample(*gun.action.stroke, gun.pull, gun.pose);
+                applyStroke(gun, loaded);
+                if ((gun.pull > 0.0f || gun.gripHeld) && gun.publishedGeneration == gun.generation) {
+                    driveBolt(rock, gun);
+                } else {
+                    endDrive(rock, gun);
+                }
+            }
+            if (handAvailable) {
+                updateFireBlock(rock, gun, firingHand, loaded, triggerPressed);
+            }
+
+            const auto marker = rock.setChamberMarker(gun.slot, gun.chamber == Chamber::Live ? Marker::Chambered : Marker::Empty);
+            if (marker != rock::api::Status::Ok && !gun.markerRefusalLogged) {
+                gun.markerRefusalLogged = true;
+                PAPER_LOG_WARN(
+                    Reload,
+                    "CHAMBER ROCK refused the chamber marker slot={} weapon={:08X} status={}",
+                    gun.slot,
+                    gun.form,
+                    static_cast<std::uint32_t>(marker));
+            }
+
+            // The count falling with no shot is the weapon going away, not rounds spent.
+            if (!gun.droppedWithoutShot && !reloading) {
+                store(gun, loaded);
+            }
         }
     }
 
     void update(RockApiClient& rock, const FrameInput& input)
     {
-        auto& gun = s_gun;
-        rock::api::weapon::WeaponState state{};
-        const auto key = rock.queryWeaponInteractionKey(0);
-        const bool present = input.enabled && manual_reload_only::physicalCycleReady() && rock.queryWeaponState(0, state) &&
-            (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponEquipped)) != 0 && key != 0;
-        if (!present) {
-            if (gun.generation) {
-                forget(rock);
-            }
-            return;
-        }
-        checkNatives();
-        const auto savedGeneration = s_savedGeneration.load(std::memory_order_acquire);
-        const auto startOver = [&] {
-            forget(rock);
-            gun.generation = key;
-            gun.form = state.weaponFormId;
-            gun.savedGeneration = savedGeneration;
-        };
-        if (key != gun.generation || state.weaponFormId != gun.form || savedGeneration != gun.savedGeneration) {
-            // The same rifle under a new key: ROCK's colliders arrived or were rebuilt.
-            // The bolt, the chamber and a hand on the bolt all carry on. The game can fill
-            // the magazine for as long after that as it did before ROCK knew the rifle.
-            const bool sameRifle = gun.tracked && state.weaponFormId == gun.form &&
-                savedGeneration == gun.savedGeneration && equippedItemIdentity(gun.form).unique == gun.item.unique;
-            if (sameRifle) {
-                gun.generation = key;
-                gun.boltColliderWaitFrames = 0;
-                if (gun.restoreTarget) {
-                    gun.restoreFrames = kRestoreFrames;
-                }
-            } else {
-                startOver();
-            }
-        }
-        // Its parts, once the colliders show them, can still say it is no rifle after all.
-        if (gun.tracked && bolt_hold::slotZeroFamily(gun.generation) == bolt_hold::BoltFamily::NotBoltAction) {
-            startOver();
-            return;
-        }
-
-        gun.handFromAnimation = input.handFromAnimation;
-        gun.handBlendSeconds = input.handBlendSeconds;
-        gun.deltaSeconds = input.deltaSeconds;
-
-        const bool ammoKnown = (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::AmmoKnown)) != 0;
-        if (!gun.tracked) {
-            if (!ammoKnown || bolt_hold::slotZeroFamily(gun.generation) != bolt_hold::BoltFamily::BoltAction) {
-                return;
-            }
-            identify(gun, state);
-        }
-
-        const bool drawn = (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponDrawn)) != 0;
-        const Hand firingHand = state.firingHand;
-        const char* standDownReason = !ammoKnown ? "ammo unknown" :
-            !drawn ? "weapon not drawn" :
-            !input.cycleAllowed ? "PAPER does not animate this weapon's cycle now" :
-            input.physicalReloadActive ? "a physical reload owns the bolt" :
-            firingHand != Hand::Left && firingHand != Hand::Right ? "no firing hand" :
-            nullptr;
-        if (standDownReason != nullptr) {
-            if (!gun.standingDown) {
-                gun.standingDown = true;
-                PAPER_LOG_INFO(Reload, "MANUAL_BOLT stands down weapon={:08X}: {}", gun.form, standDownReason);
-            }
-            standDown(rock, gun);
-            return;
-        }
-        if (gun.standingDown) {
-            gun.standingDown = false;
-            PAPER_LOG_INFO(Reload, "MANUAL_BOLT resumes weapon={:08X}", gun.form);
-        }
-
-        prepareHandCycle(rock, gun);
-        s_ownsCycle.store(gun.handCycle, std::memory_order_release);
-
-        bool triggerHeld = false;
-        (void)rock.queryTriggerHeld(firingHand, triggerHeld);
-        const bool triggerPressed = triggerHeld && !gun.triggerHeld;
-        gun.triggerHeld = triggerHeld;
-        gun.triggerFrames = triggerHeld ? kShotTriggerFrames : (gun.triggerFrames > 0 ? gun.triggerFrames - 1 : 0);
-
-        auto loaded = state.loadedRounds;
-        const bool reloading = input.playerReloadActive;
-        applyRestore(gun, loaded);
-        applyReload(rock, gun, reloading, loaded, state.reserveRounds);
-        observeRounds(gun, reloading, loaded);
-
-        if (gun.handCycle && !reloading) {
-            followHand(rock, gun, input.pullDistance);
-            bolt_stroke::sample(*gun.action.stroke, gun.pull, gun.pose);
-            applyStroke(gun, loaded);
-            if ((gun.pull > 0.0f || gun.gripHeld) && gun.publishedGeneration == gun.generation) {
-                driveBolt(rock, gun);
-            } else {
-                endDrive(rock, gun);
-            }
-        }
-        updateFireBlock(rock, gun, firingHand, loaded, triggerPressed);
-
-        const auto marker = rock.setChamberMarker(gun.chamber == Chamber::Live ? Marker::Chambered : Marker::Empty);
-        if (marker != rock::api::Status::Ok && !gun.markerRefusalLogged) {
-            gun.markerRefusalLogged = true;
-            PAPER_LOG_WARN(
-                Reload,
-                "MANUAL_BOLT ROCK refused the chamber marker weapon={:08X} status={}",
-                gun.form,
-                static_cast<std::uint32_t>(marker));
-        }
-
-        // The count falling with no shot is the weapon going away, not rounds spent.
-        if (!gun.droppedWithoutShot && !reloading) {
-            store(gun, loaded);
+        for (auto& gun : s_guns) {
+            updateGun(rock, input, gun);
         }
     }
 
     void presentHand(RockApiClient& rock)
     {
-        auto& gun = s_gun;
+        auto& gun = s_guns[0];
         if (!gun.handCycle) {
             return;
         }
@@ -1097,7 +1205,9 @@ namespace paper::manual_bolt
 
     void reset(RockApiClient& rock)
     {
-        forget(rock);
+        for (auto& gun : s_guns) {
+            forget(rock, gun);
+        }
     }
 
     bool ownsCycle() noexcept
@@ -1128,7 +1238,7 @@ namespace paper::manual_bolt
                         kRecordVersion,
                         s_saved.data(),
                         static_cast<std::uint32_t>(s_saved.size() * sizeof(SavedItem)))) {
-                    PAPER_LOG_WARN(Reload, "MANUAL_BOLT kept rounds not written: the co-save refused the record");
+                    PAPER_LOG_WARN(Reload, "CHAMBER kept rounds not written: the co-save refused the record");
                 }
             });
         }
@@ -1153,12 +1263,12 @@ namespace paper::manual_bolt
                         continue;
                     }
                     if (version != kRecordVersion || length % sizeof(SavedItem) != 0) {
-                        PAPER_LOG_WARN(Reload, "MANUAL_BOLT kept rounds unreadable version={} length={}", version, length);
+                        PAPER_LOG_WARN(Reload, "CHAMBER kept rounds unreadable version={} length={}", version, length);
                         continue;
                     }
                     std::vector<SavedItem> items(length / sizeof(SavedItem));
                     if (serialization->ReadRecordData(items.data(), length) != length) {
-                        PAPER_LOG_WARN(Reload, "MANUAL_BOLT kept rounds cut short length={}", length);
+                        PAPER_LOG_WARN(Reload, "CHAMBER kept rounds cut short length={}", length);
                         continue;
                     }
                     std::scoped_lock lock(s_savedMutex);
@@ -1183,7 +1293,7 @@ namespace paper::manual_bolt
     {
         const auto* serialization = F4SE::GetSerializationInterface();
         if (!serialization) {
-            PAPER_LOG_WARN(Reload, "MANUAL_BOLT no co-save interface: kept rounds last only until the game closes");
+            PAPER_LOG_WARN(Reload, "CHAMBER no co-save interface: kept rounds last only until the game closes");
             return;
         }
         serialization->SetUniqueID(kSerializationId);

@@ -58,17 +58,25 @@ bBoltHoldOpen = {}
 ; 0 moves it instantly.
 fBoltHoldCloseSeconds = {:.2f}
 
+; true keeps a round in the chamber of every gun that fires cartridges, in either
+; hand: pistols, rifles, shotguns and machine guns. Energy weapons, the Gauss rifle,
+; launchers and other guns with no case to throw out are left alone, and so is a gun
+; a weapon mod has changed to such ammo. A round in the chamber when you reload stays
+; there on top of the full magazine, as far as your reserve goes, except on revolvers,
+; double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip
+; it and in your saves, unless it sits in a stack of identical guns. The ammo counter
+; shows a cartridge for the chamber: solid with a round in it, dim without.
+bChamberRound = {}
+
 ; true makes you work the bolt of a bolt-action rifle by hand after each shot. Use
 ; the hand the rifle's own cycle animation uses, usually the firing hand: hold the
 ; gun with your other hand, let go of the firing grip and grip the bolt where the
 ; small white marker shows. Pull it all the way back to throw out the case and push
 ; it home to chamber the next round. The trigger does nothing until you have, and
-; clicks if you pull it. The reload stays as it was. A round in the chamber when you
-; reload stays there on top of the full magazine, and the rounds and chamber of each
-; rifle are kept when you unequip it and in your saves. The ammo counter shows a
-; cartridge for the chamber: solid with a round in it, dim without. false leaves all
-; of this off. A rifle whose cycle animation shows no hand on the bolt keeps its usual
-; cycle. Lever guns, pumps and revolvers are not affected.
+; clicks if you pull it. The reload stays as it was. These rifles keep a chamber as
+; bChamberRound describes, whatever that key says. A rifle whose cycle animation shows
+; no hand on the bolt keeps its usual cycle. Lever guns, pumps and revolvers are not
+; affected.
 bManualBoltCycle = {}
 
 ; The length of a full pull, in game units, the same on every rifle. 7 is about 9 cm.
@@ -134,6 +142,7 @@ iMaximumEntries = {}
             defaults.handBlendSeconds,
             defaults.boltHoldOpen,
             defaults.boltHoldCloseSeconds,
+            defaults.chamberRound,
             defaults.manualBoltCycle,
             defaults.boltPullDistance,
             defaults.boltHandFromAnimation,
