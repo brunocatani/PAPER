@@ -2,6 +2,7 @@
 
 #include "api/RockTypes.h"
 #include <ROCK/Client.h>
+#include <ROCK/Input.h>
 
 #include <cstdint>
 #include <span>
@@ -87,6 +88,22 @@ namespace paper
         void clearWeaponDrives(std::uint32_t weaponSlot) const;
         // An empty second weapon dry-fires on its trigger instead of reloading.
         [[nodiscard]] bool setAutomaticReloadBlocked(bool blocked) const;
+        // ManualBolt on slot 0: the parts one hand may hold, where it reaches them,
+        // the firing hand's trigger, and what the counter shows of the chamber.
+        [[nodiscard]] rock::api::Status setWeaponPartTargets(
+            std::span<const rock::api::weaponparts::Target> targets) const;
+        void clearWeaponPartTargets() const;
+        [[nodiscard]] rock::api::Status setWeaponGrabPoints(
+            std::span<const rock::api::weaponparts::GrabPoint> points) const;
+        void clearWeaponGrabPoints() const;
+        // Holds the trigger back and leaves the reload button with the game.
+        [[nodiscard]] rock::api::Status setFireBlocked(
+            std::uint32_t weaponFormId,
+            std::uint64_t weaponGenerationKey,
+            rock::api::Hand firingHand) const;
+        void clearFireBlocked() const;
+        [[nodiscard]] bool queryTriggerHeld(rock::api::Hand hand, bool& outHeld) const;
+        [[nodiscard]] rock::api::Status setChamberMarker(rock::api::weapon::ChamberMarker marker) const;
         [[nodiscard]] bool setHandVisualAuthority(
             const rock::api::animation::HandVisualAuthorityRequest& request) const;
         void clearHandVisualAuthority(rock::api::Hand hand) const;
@@ -102,6 +119,7 @@ namespace paper
         const rock::api::weapon::Api* _weapon{};
         const rock::api::weaponparts::Api* _parts{};
         const rock::api::animation::Api* _animation{};
+        const rock::api::input::Api* _input{};
         rock::api::Sample _sample{};
         template<class T> void stamp(T& value) const {
             value.worldGeneration=_sample.worldGeneration;

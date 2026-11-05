@@ -127,6 +127,19 @@ namespace paper::bolt_hold_policy
         return (familyFlags & static_cast<std::uint64_t>(api::WeaponFamilyFlag::ManualCycle)) == 0;
     }
 
+    // A rifle worked by its bolt. The game flags lever guns, pumps and single-action
+    // revolvers as bolt actions too. A part named like a cylinder is noise on a
+    // magazine rifle, and what rules a revolver out is that it has no magazine.
+    [[nodiscard]] constexpr bool familyIsBoltAction(const std::uint64_t familyFlags) noexcept
+    {
+        const auto has = [familyFlags](const api::WeaponFamilyFlag flag) {
+            return (familyFlags & static_cast<std::uint64_t>(flag)) != 0;
+        };
+        return has(api::WeaponFamilyFlag::BoltAction) && !has(api::WeaponFamilyFlag::LeverAction) &&
+               !has(api::WeaponFamilyFlag::PumpAction) && !has(api::WeaponFamilyFlag::BreakAction) &&
+               (!has(api::WeaponFamilyFlag::Revolver) || has(api::WeaponFamilyFlag::BoltActionWithMagazine));
+    }
+
     // Opens at the bolt's own speed; closes over the configured blend, or at
     // once when that is 0.
     [[nodiscard]] constexpr float advanceHoldWeight(

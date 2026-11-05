@@ -17,7 +17,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 | --- | --- |
 | `src/PaperMain.cpp` | F4SE Query/Load, version guard, ROCK connection, frame and session lifecycle |
 | `src/animation/` | Native animation authority and the hand pose pipeline |
-| `src/reload_control/` | Manual-reload-only control, the empty-gun bolt hold and the physical-reload lease |
+| `src/reload_control/` | Manual-reload-only control, the empty-gun bolt hold, the hand-worked bolt and the physical-reload lease |
 | `src/reload_observation/`, `src/reload_stages/`, `src/animation_evidence/` | Reload observation and weapon classification, stage identification, clip telemetry and exact preharvest |
 | `src/weapon_motion/` | Weapon-part motion paths, learning and the motion cache |
 | `src/attachment_bindings/` | Weapon attachment node remapping |
@@ -51,12 +51,12 @@ Tests live in `build-fast` but outside the default build. Every test target name
 
 - Plugin: `Data/F4SE/Plugins/PAPER.dll`, registered with F4SE and with ROCK as `PAPER`. Log: `PAPER.log` in `Documents/My Games/Fallout4VR/F4SE/`.
 - Settings: `PAPER.ini` in `Documents/My Games/Fallout4VR/Mods_Config/PAPER/`, with the optional compiled motion cache in `MotionCache/v1/` beside it. Runtime code resolves the Documents known folder.
-- PAPER writes no co-save data.
+- Co-save: unique ID `PAPR`, record `BOLT` version 1, written by `src/reload_control/ManualBolt.cpp`: the loaded rounds and chamber of each bolt rifle, by weapon, owner and ExtraUniqueID. A layout change needs a new record version.
 
 ## What PAPER does not own
 
 - **Weapon placement, hands and grips** belong to ROCK. PAPER reads ROCK's presented hands and grip baselines and requests native-animation and hand-visual authority through ROCK's Animation interface; ROCK keeps the weapon following the controller.
-- **Ammunition, firing and the reload clock** belong to the game. PAPER coordinates the animation around them.
+- **Ammunition, firing and the reload clock** belong to the game. PAPER coordinates the animation around them; only `[Reload] bManualBoltCycle` sets a bolt rifle's loaded count, and always within what the inventory holds.
 - **Physical reloads** belong to the consumer holding a PhysicalReload lease: while the lease is live PAPER leaves that weapon's reload, and with `ManualCycle` its bolt cycle, to the consumer.
 - **World drawing** belongs to RPS UI Framework. PAPER's diagnostic drawing goes through its world drawing; PAPER has no renderer.
 
@@ -69,6 +69,7 @@ Tests live in `build-fast` but outside the default build. Every test target name
 - `[Reload] fHandBlendSeconds` blends the left hand between ROCK's pose and the animation in both directions; 0 moves it instantly.
 - `[Reload] bBoltHoldOpen` leaves an empty gun's action open on both weapon slots until a reload starts or rounds arrive. PAPER decides and ROCK applies it through WeaponParts drives under a two-frame lease, so the pose ends by itself if PAPER stops. The pose is the weapon's own, read off screen from its clips the first time a form is equipped in the process (`exact_clip_preharvest::stepPoses`). The idle clip gives the closed pose, never the live bones, which sit wherever they were left until the graph runs that weapon's subgraph. The reloads come next: the `WeaponBolt` bone and the `WeaponExtra` bones that keep still beside it while a clip parks it open. With no parked bolt, the pose is the farthest frame of any fire clip, or otherwise of a reload's stroke; other clips are read only when none of those moves the bolt. A dwell is what leaves magazine props out and takes a barrel's tilt or a bolt catch in, so never select parts by name or evidence. Only manual actions are excluded by family, because classification flags are noisy (a `Round` part marks any gun with a visible bullet as loose-round fed); a gun none of whose clips open its bolt simply has no pose. A part's name never makes an automatic gun a manual action.
 - `[Reload] bManualReloadOnly` hooks the game's automatic reload call sites and asks ROCK to dry-fire an empty second weapon, whose reload ROCK starts itself. The check of the action-dispatcher thunk stops at its jump's opcode, because another plugin may route that jump. In place of the reload an empty trigger pull would have started, both weapons play one `WPNRifleFireDry` click; a charging-reload gun never reaches that path and has no click.
+- `[Reload] bManualBoltCycle` lets the free hand work the bolt of a bolt-action rifle on slot 0 (`src/reload_control/ManualBolt.cpp`), for the rifles whose cycle PAPER already animates. Its only data is the bolt hold's clip read; a rifle with no readable pose or no bolt collider keeps its native cycle while its rounds and chamber are still tracked. Loaded rounds are counted in the inventory, so setting the native count creates no ammunition: a round chambered at a reload stays as one extra within the reserve, and a live round the bolt throws out returns to the reserve. ROCK's chamber marker is a lease PAPER renews, so it disappears with PAPER.
 - PAPER stands down while ROCK latches a hand to a fixed surface (climbing), and leaves reloads and cycles native for a weapon ROCK seats from a FRIK user weapon offset. Standing down gives up hand authority only: the reload compatibility features under `src/compat/` keep serving those native reloads.
 - A physical-reload lease and Provider animation authority exclude each other: the lease is refused while any consumer holds authority.
 - Native-pose and weapon-motion records are observations. They grant no pose, IK or scene-node control.
@@ -87,4 +88,4 @@ Tests live in `build-fast` but outside the default build. Every test target name
 
 - `src/PaperConfigDefaults.cpp` holds every option's compiled default. A missing `PAPER.ini` is created from those defaults; loading never rewrites an existing file, and keys it lacks use their defaults. The file reloads while the game runs; cache size limits apply at the next session.
 - `data/config/PAPER_example.ini` documents every option. It is a reference only: never read, embedded, packaged, deployed or used to create runtime files. INIs never ship in the mod package.
-- Development capture and the motion cache are off by default. `[DevelopmentCapture]` is a hard ceiling: an API request never exceeds it, API demand wakes nothing unless `bAllowApiActivation` is set, and passive telemetry never starts exact harvesting, motion-cache writes or background work. `ReadOnly` cache access never creates, touches, prunes or writes files. The bolt hold's own clip read is a gameplay feature gated by `bBoltHoldOpen`, not capture: it stores no tracks and yields the sampler to an exact harvest.
+- Development capture and the motion cache are off by default. `[DevelopmentCapture]` is a hard ceiling: an API request never exceeds it, API demand wakes nothing unless `bAllowApiActivation` is set, and passive telemetry never starts exact harvesting, motion-cache writes or background work. `ReadOnly` cache access never creates, touches, prunes or writes files. The bolt hold's own clip read is a gameplay feature gated by `bBoltHoldOpen` and `bManualBoltCycle`, not capture: it stores no tracks and yields the sampler to an exact harvest.

@@ -51,6 +51,8 @@ namespace paper::bolt_hold
             float travel{ 0.0f };
             std::array<bool, kBoneCount> posed{};
             std::array<RE::NiTransform, kBoneCount> open{};
+            // The idle clip's pose of each bone, set when the read completes.
+            std::array<RE::NiTransform, kBoneCount> closed{};
         };
 
         // A form with PoseSource::None has been read and has no pose.
@@ -73,6 +75,7 @@ namespace paper::bolt_hold
             std::uint32_t evidenceWaitFrames{ 0 };
             bool resolved{ false };
             bool eligible{ false };
+            bool boltAction{ false };
             std::array<Bone, kBoneCount> bones{};
             float weight{ 0.0f };
             bool holding{ false };
@@ -373,7 +376,7 @@ namespace paper::bolt_hold
             }
         }
 
-        void logRead(const PoseRead& read, const RE::NiTransform& liveBolt)
+        void logRead(const PoseRead& read, const Slot& slot)
         {
             std::array<char, 96> parts{};
             std::size_t used = 0;
@@ -392,9 +395,9 @@ namespace paper::bolt_hold
                 used = (std::min)(parts.size() - 1, used + static_cast<std::size_t>(written.size));
             }
             // How far the live bolt sits from the idle clip's: near zero says the clips
-            // and the running graph agree about this gun.
-            const float liveOffset = read.closedKnown ?
-                liveBolt.translate.GetDistance(read.closed[policy::kBoltBone].translate) :
+            // and the running graph agree about this gun. Only a holding gun tracks it.
+            const float liveOffset = read.closedKnown && slot.eligible ?
+                slot.bones[policy::kBoltBone].current.translate.GetDistance(read.closed[policy::kBoltBone].translate) :
                 0.0f;
             PAPER_LOG_INFO(
                 Reload,
@@ -425,11 +428,14 @@ namespace paper::bolt_hold
             }
         }
 
-        void startReadIfNeeded()
+        void startReadIfNeeded(const FrameInput& input)
         {
             for (std::uint32_t index = 0; index < s_slots.size(); ++index) {
                 const auto& slot = s_slots[index];
-                if (slot.eligible && !findLearned(slot.form) && slot.generation != s_readFailedGeneration) {
+                const bool wanted = (input.enabled && slot.eligible) ||
+                    (input.manualBoltEnabled && index == 0 && slot.boltAction &&
+                        slot.bones[policy::kBoltBone].key != 0);
+                if (wanted && !findLearned(slot.form) && slot.generation != s_readFailedGeneration) {
                     beginRead(index, slot);
                     return;
                 }
@@ -448,12 +454,12 @@ namespace paper::bolt_hold
 
         void updateRead(const FrameInput& input)
         {
-            if (!input.enabled || !input.clipSamplerAvailable) {
+            if ((!input.enabled && !input.manualBoltEnabled) || !input.clipSamplerAvailable) {
                 stopRead();
                 return;
             }
             if (!s_read.active) {
-                startReadIfNeeded();
+                startReadIfNeeded(input);
                 if (!s_read.active) {
                     return;
                 }
@@ -479,8 +485,9 @@ namespace paper::bolt_hold
 
             // Idle retries next frame: the actor's equipped items can trail ROCK's weapon.
             if (result.state == sampler::State::Completed) {
+                s_read.best.pose.closed = s_read.closed;
                 storeLearned(s_read.form, s_read.best.pose);
-                logRead(s_read, s_slots[s_read.slot].bones[policy::kBoltBone].current);
+                logRead(s_read, s_slots[s_read.slot]);
                 stopRead();
             } else if (result.state == sampler::State::Failed) {
                 failRead();
@@ -565,9 +572,10 @@ namespace paper::bolt_hold
                 classification,
                 std::span(s_evidence).first(evidenceCount));
             slot.eligible = slot.bones[policy::kBoltBone].key != 0 && policy::familyHoldsOpen(family);
+            slot.boltAction = policy::familyIsBoltAction(family);
             PAPER_LOG_INFO(
                 Reload,
-                "BOLT_HOLD weapon={:08X}/{:016X} slot={} boltMatches={} parts={} evidence={} family={:#x} eligible={}",
+                "BOLT_HOLD weapon={:08X}/{:016X} slot={} boltMatches={} parts={} evidence={} family={:#x} eligible={} boltAction={}",
                 slot.form,
                 slot.generation,
                 index,
@@ -575,7 +583,8 @@ namespace paper::bolt_hold
                 parts,
                 evidenceCount,
                 family,
-                slot.eligible);
+                slot.eligible,
+                slot.boltAction);
             return true;
         }
 
@@ -706,5 +715,34 @@ namespace paper::bolt_hold
         }
         stopRead();
         s_readFailedGeneration = 0;
+    }
+
+    BoltFamily slotZeroFamily(const std::uint64_t generation)
+    {
+        const auto& slot = s_slots[0];
+        if (slot.generation != generation || !slot.resolved) {
+            return BoltFamily::Pending;
+        }
+        return slot.boltAction ? BoltFamily::BoltAction : BoltFamily::NotBoltAction;
+    }
+
+    bool queryManualAction(const std::uint64_t generation, ManualAction& out)
+    {
+        const auto& slot = s_slots[0];
+        if (slot.generation != generation || !slot.resolved || !slot.boltAction ||
+            !slot.bones[policy::kBoltBone].key) {
+            return false;
+        }
+        const auto* learned = findLearned(slot.form);
+        if (!learned || learned->pose.source == PoseSource::None) {
+            return false;
+        }
+        for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
+            out.keys[bone] = slot.bones[bone].key;
+        }
+        out.posed = learned->pose.posed;
+        out.closed = learned->pose.closed;
+        out.open = learned->pose.open;
+        return true;
     }
 }

@@ -18,6 +18,7 @@
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_control/BoltHold.h"
+#include "reload_control/ManualBolt.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
 #include "reload_stages/ReloadStages.h"
@@ -1172,9 +1173,20 @@ namespace
                     .deltaSeconds = context->deltaSeconds,
                     .closeSeconds = g_config.boltHoldCloseSeconds,
                     .enabled = operational && g_config.boltHoldOpen,
+                    .manualBoltEnabled = operational && g_config.manualBoltCycle,
                     .playerReloadActive = native_animation_authority::playerReloadActive(),
                     .physicalReloadActive = provider::physicalReloadActive(),
                     .clipSamplerAvailable = !enrichmentDemand.exactAnimationEvidence,
+                });
+            manual_bolt::update(
+                rockApiClient(),
+                manual_bolt::FrameInput{
+                    .enabled = operational && g_config.manualBoltCycle,
+                    .pullDistance = g_config.boltPullDistance,
+                    .cycleAllowed = !climbingAnimationSuppressed &&
+                        native_animation_authority_policy::canApplyManualCycleHandAnimation(weaponObservation),
+                    .playerReloadActive = native_animation_authority::playerReloadActive(),
+                    .physicalReloadActive = provider::physicalReloadActive(),
                 });
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
@@ -1398,6 +1410,7 @@ namespace
         merged_reload_compatibility::setRuntimeEnabled(false);
         reload_selection_trace::setRuntimeEnabled(false);
         debug_visualization::clear();
+        manual_bolt::reset(rockApiClient());
         bolt_hold::reset(rockApiClient());
         (void)rockApiClient().setAutomaticReloadBlocked(false);
         s_automaticReloadBlockSent = false;
@@ -1521,6 +1534,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(
     F4SE::Init(f4se, false);
     F4SE::AllocTrampoline(80); // four reload relays plus opt-in physical bolt control
     paper::provider::initialize();
+    paper::manual_bolt::installSerialization();
 
     s_messaging = F4SE::GetMessagingInterface();
     if (!s_messaging || !s_messaging->RegisterListener(onF4SEMessage)) {

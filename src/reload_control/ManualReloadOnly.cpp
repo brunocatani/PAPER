@@ -1,4 +1,5 @@
 #include "reload_control/ManualReloadOnly.h"
+#include "reload_control/ManualBolt.h"
 #include "animation/NativeAnimationAuthority.h"
 #include "api/PAPERProvider.h"
 #include "support/Fo4VrRuntime.h"
@@ -37,8 +38,9 @@ namespace paper::manual_reload_only
         bool onAutomaticBoltAction(void* actor,void* action,void* target) noexcept
         {
             // This one call follows native ammo consumption, not weaponFire.
-            // The V2 lease validates the live equipped instance and owner thread.
-            if(actor==f4vr::getPlayer()&&provider::physicalManualCycleActive()) {
+            // The V2 lease validates the live equipped instance and owner thread;
+            // ManualBolt owns it for a bolt rifle the free hand cycles.
+            if(actor==f4vr::getPlayer()&&(provider::physicalManualCycleActive()||manual_bolt::ownsCycle())) {
                 ++s_blockedBoltActions;
                 if(s_blockedBoltActions<=4||(s_blockedBoltActions%64)==0)
                     PAPER_LOG_INFO(Reload,"Physical manual-cycle owner suppressed native post-shot bolt action; count={}",s_blockedBoltActions);
@@ -248,19 +250,6 @@ namespace paper::manual_reload_only
             }
         }
 
-        // One click on every weapon in place of the reload the trigger would have
-        // started. Fallout4.esm WPNRifleFireDry, played as native FC0D7E plays a
-        // weapon's own attack-fail sound when no ammo is left at all. ROCK plays the
-        // same form for slot 1, whose trigger never reaches this call site.
-        void playDryFire()
-        {
-            const auto play = s_playSound.load(std::memory_order_acquire);
-            auto* sound = RE::TESForm::GetFormByID<RE::BGSSoundDescriptorForm>(0x1DACD);
-            if (play && sound) {
-                play(sound, 0, nullptr, nullptr);
-            }
-        }
-
         bool onAutomaticReloadRequest(
             void* dispatcher,
             const std::int32_t actionId,
@@ -455,6 +444,24 @@ namespace paper::manual_reload_only
                 "Installed reload action execution observation hook at 0x{:X}",
                 callsiteAddress);
         }
+    }
+
+    void playSound(const std::uint32_t soundForm)
+    {
+        const auto play = s_playSound.load(std::memory_order_acquire);
+        auto* sound = RE::TESForm::GetFormByID<RE::BGSSoundDescriptorForm>(soundForm);
+        if (play && sound) {
+            play(sound, 0, nullptr, nullptr);
+        }
+    }
+
+    // One click on every weapon in place of the reload the trigger would have
+    // started. Fallout4.esm WPNRifleFireDry, played as native FC0D7E plays a
+    // weapon's own attack-fail sound when no ammo is left at all. ROCK plays the
+    // same form for slot 1, whose trigger never reaches this call site.
+    void playDryFire()
+    {
+        playSound(0x1DACD);
     }
 
     bool installHook()

@@ -58,6 +58,21 @@ bBoltHoldOpen = {}
 ; 0 moves it instantly.
 fBoltHoldCloseSeconds = {:.2f}
 
+; true makes you work the bolt of a bolt-action rifle by hand after each shot:
+; grip the bolt with your free hand, pull it all the way back to throw out the
+; case, push it home to chamber the next round. The trigger does nothing until
+; you have, and clicks if you pull it. The reload stays as it was. A round in the
+; chamber when you reload stays there on top of the full magazine, and the rounds
+; and chamber of each rifle are kept when you unequip it and in your saves. The
+; ammo counter shows a cartridge for the chamber: solid with a round in it, dim
+; without. false leaves all of this off. A rifle whose bolt cannot be read or held
+; keeps its usual cycle. Lever guns, pumps and revolvers are not affected.
+bManualBoltCycle = {}
+
+; How far your hand moves, in game units, to take the bolt from closed to fully
+; back, the same on every rifle. 7 is about 9 cm.
+fBoltPullDistance = {:.1f}
+
 [Debug]
 ; Draws Paper's native weapon frame, native hand targets, ROCK live grip
 ; targets, applied FRIK hands, and their target-error lines through RPS UI
@@ -109,6 +124,8 @@ iMaximumEntries = {}
             defaults.handBlendSeconds,
             defaults.boltHoldOpen,
             defaults.boltHoldCloseSeconds,
+            defaults.manualBoltCycle,
+            defaults.boltPullDistance,
             defaults.debugDrawNativeAnimation,
             defaults.debugDrawNativeAnimationText,
             defaults.debugNativeAnimationAxisLength,

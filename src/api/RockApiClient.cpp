@@ -53,6 +53,7 @@ namespace paper
         else if ((status=_client.acquire(permissions(api::weaponparts::Permission::Read,api::weaponparts::Permission::Write),_parts))!=api::Status::Ok) missing="WeaponParts";
         else if ((status=_client.acquire(permissions(api::animation::Permission::Read,api::animation::Permission::Write,
                      api::animation::Permission::Callbacks),_animation))!=api::Status::Ok) missing="Animation";
+        else if ((status=_client.acquire(permissions(api::input::Permission::Read,api::input::Permission::Write),_input))!=api::Status::Ok) missing="Input";
         if (missing) {
             PAPER_LOG_ERROR(Api,"ROCK {} interface unavailable for PAPER: {}",missing,static_cast<std::uint32_t>(status));
             required_updates::noteRockRefusal(status,missing);
@@ -70,7 +71,7 @@ namespace paper
             PAPER_LOG_ERROR(Api,"ROCK owner teardown failed: {}",static_cast<std::uint32_t>(status)); return;
         }
         _ownerToken=0; _phaseCallbackToken=0; _publishedAuthorityFlags=0;
-        _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr;
+        _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr; _input=nullptr;
         _reloadObservationEvidenceReady=false; _sample={};
     }
     bool RockApiClient::ready() const { return _ownerToken && _client.owner()==_ownerToken; }
@@ -265,6 +266,48 @@ namespace paper
     }
     bool RockApiClient::setAutomaticReloadBlocked(bool blocked) const {
         return ready() && _weapon->setAutomaticReloadBlocked(_ownerToken,blocked?1u:0u)==rock::api::Status::Ok;
+    }
+    rock::api::Status RockApiClient::setWeaponPartTargets(std::span<const rock::api::weaponparts::Target> targets) const {
+        if (!ready()) return rock::api::Status::NotReady;
+        return _parts->setPartTargets(_ownerToken,kRockWeaponSlot,targets.data(),static_cast<std::uint32_t>(targets.size()));
+    }
+    void RockApiClient::clearWeaponPartTargets() const {
+        if (ready()) (void)_parts->clearPartTargets(_ownerToken,kRockWeaponSlot);
+    }
+    rock::api::Status RockApiClient::setWeaponGrabPoints(std::span<const rock::api::weaponparts::GrabPoint> points) const {
+        if (!ready()) return rock::api::Status::NotReady;
+        return _parts->setGrabPoints(_ownerToken,kRockWeaponSlot,points.data(),static_cast<std::uint32_t>(points.size()));
+    }
+    void RockApiClient::clearWeaponGrabPoints() const {
+        if (ready()) (void)_parts->clearGrabPoints(_ownerToken,kRockWeaponSlot);
+    }
+    rock::api::Status RockApiClient::setFireBlocked(std::uint32_t weaponFormId,std::uint64_t weaponGenerationKey,rock::api::Hand firingHand) const {
+        if (!ready()) return rock::api::Status::NotReady;
+        using Flag=rock::api::input::ReloadGestureFlag;
+        rock::api::input::ReloadGestureRequest request{};
+        request.weaponSlot=kRockWeaponSlot;
+        request.weaponFormId=weaponFormId;
+        request.weaponGenerationKey=weaponGenerationKey;
+        request.hand=firingHand;
+        request.leaseFrames=2;
+        request.flags=static_cast<std::uint32_t>(Flag::BlockFire)|static_cast<std::uint32_t>(Flag::KeepAcceptNative);
+        if (const auto status=_input->getSample(_ownerToken,&request.sample);status!=rock::api::Status::Ok) return status;
+        return _input->setReloadGesture(_ownerToken,&request);
+    }
+    void RockApiClient::clearFireBlocked() const {
+        if (ready()) (void)_input->clearReloadGesture(_ownerToken);
+    }
+    bool RockApiClient::queryTriggerHeld(rock::api::Hand hand,bool& outHeld) const {
+        outHeld=false;
+        constexpr std::uint32_t kOpenVrTriggerButton=33;
+        rock::api::input::RawWandButtonState state{};
+        if (!ready() || _input->getRawWandButtonState(_ownerToken,hand,kOpenVrTriggerButton,&state)!=rock::api::Status::Ok || !state.available) return false;
+        outHeld=state.held!=0;
+        return true;
+    }
+    rock::api::Status RockApiClient::setChamberMarker(rock::api::weapon::ChamberMarker marker) const {
+        if (!ready()) return rock::api::Status::NotReady;
+        return _weapon->setChamberMarker(_ownerToken,kRockWeaponSlot,marker,2);
     }
     std::uint32_t RockApiClient::copyWeaponEvidencePoints(std::uint32_t body,rock::api::Point3* output,std::uint32_t capacity) const {
         if (!reloadObservationEvidenceReady() || !output) return 0;
