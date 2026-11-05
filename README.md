@@ -30,6 +30,8 @@ What it provides:
 - **Controller-directed handling** - the weapon stays in your hand while the hands animate around it.
 - **Optional manual reloads** - turn off automatic reloads when the magazine runs empty.
 - **Bolt hold-open** - an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
+- **Round in the chamber** - optional: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
+- **Hand-worked bolts** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want.
 - **Live settings** - INI settings that reload while the game runs, with in-game pages in RobCo PALM.
 - **Provider API** - 2 interfaces: reload, animation, pose and weapon-motion data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
@@ -76,8 +78,12 @@ PAPER creates the file from its compiled defaults only when it is missing and ne
 | `[Main] iLogLevel` | `2` | Log level; 2 is normal information logging. |
 | `[Reload] bManualReloadOnly` | `false` | `true` stops automatic reloads when ammunition runs out. Manual reload input still works. |
 | `[Reload] fHandBlendSeconds` | `0.15` | Seconds the left hand takes to move onto a reload, pump stroke or cycle animation, and back when it ends. `0` moves it instantly. |
-| `[Reload] bBoltHoldOpen` | `true` | `true` leaves an empty gun's bolt or slide open, in either hand, until a reload starts or rounds arrive. It needs a bolt on the game's `WeaponBolt` bone, and a gun none of whose animations open its bolt never holds. Bolt, lever and pump guns and revolvers never hold. |
+| `[Reload] bBoltHoldOpen` | `true` | `true` leaves an empty gun's bolt or slide open, in either hand, until a reload starts or rounds arrive. It needs a bolt on the game's `WeaponBolt` bone, and a gun none of whose animations open its bolt never holds. Bolt, lever, pump and double-barrel guns and revolvers never hold. |
 | `[Reload] fBoltHoldCloseSeconds` | `0.15` | Seconds the open bolt takes to return to the animation when a reload starts. `0` moves it instantly. |
+| `[Reload] bChamberRound` | `false` | `true` keeps a round in the chamber of every gun that fires cartridges, in either hand. A round in the chamber when you reload stays on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber. Energy weapons, the Gauss rifle and launchers are left alone. |
+| `[Reload] bManualBoltCycle` | `false` | `true` makes you work the bolt of a bolt-action rifle by hand after each shot, with its own chamber whatever `bChamberRound` says. Lever guns, pumps and revolvers are not affected. |
+| `[Reload] fBoltPullDistance` | `7.0` | Game units of a full bolt pull, the same on every rifle. Moving your hand past half of it takes the bolt all the way. |
+| `[Reload] bBoltHandFromAnimation` | `true` | `true` lets the hand the rifle's cycle animation uses take the bolt the moment the rifle is drawn. `false` makes both hands wait for the weapon's collision. |
 | `[Debug] bDebugDrawNativeAnimation` | `false` | Draws PAPER's animation targets for diagnosis (needs RPS UI Framework). |
 
 [PAPER_example.ini](data/config/PAPER_example.ini) documents every option. It is a reference only, never a file to install.
