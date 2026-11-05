@@ -824,15 +824,21 @@ namespace
 
     void configureRuntime(const bool operational)
     {
-        tactical_reload_bridge::setRuntimeEnabled(operational);
-        merged_reload_compatibility::setRuntimeEnabled(operational);
-        reload_selection_trace::setRuntimeEnabled(operational);
         native_animation_authority::setRuntimeEnabled(operational);
         native_animation_authority::setLocalManualCycleTestEnabled(
             operational);
         native_animation_authority::setLocalReloadTestEnabled(
             operational);
         s_runtimeOperational = operational;
+    }
+
+    // Separate from hand authority: a left firing hand, akimbo or a climbing latch
+    // leaves a reload native, and a native reload still needs its keyword and clip.
+    void configureReloadCompatibility(const bool enabled)
+    {
+        tactical_reload_bridge::setRuntimeEnabled(enabled);
+        merged_reload_compatibility::setRuntimeEnabled(enabled);
+        reload_selection_trace::setRuntimeEnabled(enabled);
     }
 
     void observeAnimationCompatibility(
@@ -1203,6 +1209,8 @@ namespace
                 !climbingAnimationSuppressed &&
                 preLifecycleCompatibility.compatible();
             configureRuntime(runtimeOperational);
+            configureReloadCompatibility(
+                operational && native_animation_authority::isHookInstalled());
             applyManualCycleEligibility(weaponObservation);
             publishRockAuthorityFlags(runtimeOperational ?
                 provider::currentConsumerAuthorityFlags() :
@@ -1254,6 +1262,9 @@ namespace
                 s_runtimeOperational) {
                 configureRuntime(false);
                 publishRockAuthorityFlags(0);
+            }
+            if (!operational) {
+                configureReloadCompatibility(false);
             }
             if (climbingAnimationSuppressed) {
                 publishRockAuthorityFlags(0);
