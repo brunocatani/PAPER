@@ -9,6 +9,9 @@ namespace paper::manual_reload_only
     // A sound descriptor form, heard at the player. Silent when the native call
     // failed its check or the form is absent.
     void playSound(std::uint32_t soundForm);
+    // The sound descriptor form the game plays for a clip's "SoundPlay.<name>"; 0 when
+    // it has none or the native call failed its check.
+    [[nodiscard]] std::uint32_t findSoundForm(const char* name);
     [[nodiscard]] bool installHook();
     [[nodiscard]] bool physicalControlReady() noexcept;
     [[nodiscard]] bool installPhysicalCycleHook() noexcept;

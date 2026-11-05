@@ -71,8 +71,6 @@ namespace paper::manual_bolt
         constexpr std::size_t kMaxSavedItems = 1024;
 
         // Fallout4.esm, the hunting rifle's own bolt: WPNRifleHuntingAReloadBoltOpen, -BoltClose.
-        constexpr std::uint32_t kSoundBoltOpen = 0x5A29B;
-        constexpr std::uint32_t kSoundBoltClose = 0x5A29D;
 
         // Version 1 layout; a change needs a new version.
         struct SavedItem
@@ -149,9 +147,6 @@ namespace paper::manual_bolt
             float pull{ 0.0f };
             float pullTarget{ 0.0f };
             bool atBack{ false };
-            // Each way sounds once, as the stroke starts.
-            bool openSounded{ false };
-            bool closeSounded{ false };
             // What the bolt reached the back with, thrown out once ROCK has placed the gun.
             Chamber ejecting{ Chamber::Empty };
             bool driving{ false };
@@ -814,21 +809,15 @@ namespace paper::manual_bolt
                                                    (std::min)(gun.pullTarget, gun.pull + step);
         }
 
-        // As the game's own clips do and as long before the hand gets there: a bolt
-        // sounds when it starts to move, once each way, not when it arrives.
-        void soundStroke(Gun& gun, const float pullBefore)
+        // The rifle's own sounds, each as the bolt passes its point in its direction.
+        void soundStroke(const Gun& gun, const float pullBefore)
         {
-            if (gun.pull > pullBefore && !gun.atBack && !gun.openSounded) {
-                gun.openSounded = true;
-                manual_reload_only::playSound(kSoundBoltOpen);
-            } else if (gun.pull < pullBefore && gun.atBack && !gun.closeSounded) {
-                gun.closeSounded = true;
-                manual_reload_only::playSound(kSoundBoltClose);
-            }
-            if (gun.pull <= 0.0f) {
-                gun.openSounded = false;
-            } else if (gun.pull >= 1.0f) {
-                gun.closeSounded = false;
+            for (const auto& cue : gun.action.stroke->sounds) {
+                const bool passed = cue.closing ? gun.pull <= cue.pull && pullBefore > cue.pull :
+                                                  gun.pull >= cue.pull && pullBefore < cue.pull;
+                if (passed) {
+                    manual_reload_only::playSound(cue.form);
+                }
             }
         }
 
@@ -838,7 +827,6 @@ namespace paper::manual_bolt
         {
             if (gun.pull >= kBackAt && !gun.atBack) {
                 gun.atBack = true;
-                gun.closeSounded = false;
                 gun.ejecting = gun.chamber;
                 if (gun.chamber == Chamber::Live) {
                     if (loaded > 0 && setLoadedRounds(gun, loaded - 1)) {
@@ -859,7 +847,6 @@ namespace paper::manual_bolt
                 gun.chamber = Chamber::Empty;
             } else if (gun.pull <= kClosedAt && gun.atBack) {
                 gun.atBack = false;
-                gun.openSounded = false;
                 if (gun.chamber == Chamber::Empty && loaded > 0) {
                     gun.chamber = Chamber::Live;
                 }
@@ -905,7 +892,6 @@ namespace paper::manual_bolt
                 gun.pull = 0.0f;
                 gun.pullTarget = 0.0f;
                 gun.atBack = false;
-                gun.openSounded = false;
                 gun.gripHeld = false;
                 endDrive(rock, gun);
                 endFireBlock(rock, gun);

@@ -31,6 +31,8 @@ namespace paper::manual_reload_only
         using NativeActorActionFn = bool (*)(void* actor,void* action,void* target);
         using NativePlaySoundFn = void (*)(RE::BGSSoundDescriptorForm*, std::uint32_t, const RE::NiPoint3*, RE::NiAVObject*);
         std::atomic<NativePlaySoundFn> s_playSound{};
+        using NativeFindSoundFn = RE::BGSSoundDescriptorForm* (*)(const char*);
+        std::atomic<NativeFindSoundFn> s_findSound{};
         std::atomic<NativeActorActionFn> s_originalBoltAction{};
         std::atomic<bool> s_boltActionReady{},s_boltActionFailed{};
         std::uint64_t s_blockedBoltActions{}; // PAPER owner thread only.
@@ -455,6 +457,13 @@ namespace paper::manual_reload_only
         }
     }
 
+    std::uint32_t findSoundForm(const char* name)
+    {
+        const auto find = s_findSound.load(std::memory_order_acquire);
+        const auto* sound = find && name ? find(name) : nullptr;
+        return sound ? sound->GetFormID() : 0;
+    }
+
     // One click on every weapon in place of the reload the trigger would have
     // started. Fallout4.esm WPNRifleFireDry, played as native FC0D7E plays a
     // weapon's own attack-fail sound when no ammo is left at all. ROCK plays the
@@ -512,7 +521,7 @@ namespace paper::manual_reload_only
         auto& trampoline = F4SE::GetTrampoline();
         // Three suppression wrappers plus the existing action observer each
         // use 14-byte CommonLib relays; the physical bolt hook has its own
-        // remaining 14-byte check within PAPER's 80-byte allocation.
+        // remaining 14-byte check within PAPER's allocation.
         constexpr std::size_t kRequiredTrampolineBytes = 4 * 14;
         if (trampoline.free_size() < kRequiredTrampolineBytes) {
             s_hookInstallFailed.store(true, std::memory_order_release);
@@ -583,6 +592,18 @@ namespace paper::manual_reload_only
                 std::memory_order_release);
         } else {
             PAPER_LOG_ERROR(Reload, "Dry-fire click disabled: the native sound call differs");
+        }
+        // The lookup the game's SoundPlay animation event runs on its name.
+        constexpr std::array<std::uint8_t, 24> kFindSoundSignature{
+            0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0xE8, 0x25, 0x01, 0x00, 0x00, 0x48,
+            0x8B, 0xD8, 0x33, 0xC0, 0x48, 0x85, 0xDB, 0x74, 0x2D, 0x0F, 0xB6, 0x4B,
+        };
+        if (matchesAutomaticReloadProducerSignature(moduleBase + offsets::kFunc_FindSoundByName, kFindSoundSignature)) {
+            s_findSound.store(
+                reinterpret_cast<NativeFindSoundFn>(moduleBase + offsets::kFunc_FindSoundByName),
+                std::memory_order_release);
+        } else {
+            PAPER_LOG_ERROR(Reload, "A bolt rifle's own sounds are disabled: the native sound lookup differs");
         }
 
         PAPER_LOG_INFO(

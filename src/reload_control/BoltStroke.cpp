@@ -1,10 +1,12 @@
 #include "reload_control/BoltStroke.h"
 
 #include "PaperLog.h"
+#include "reload_control/ManualReloadOnly.h"
 #include "support/TransformMath.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <numbers>
 
 namespace paper::bolt_stroke
@@ -33,6 +35,12 @@ namespace paper::bolt_stroke
         // A distal joint sits at the root of its fingertip; the pad is about half
         // that joint's length further along the finger.
         constexpr float kPadBeyondDistalJoint = 0.5f;
+        // Fallout4.esm, for a clip that marks no sounds.
+        constexpr std::uint32_t kSoundBoltOpen = 0x5A29B;
+        constexpr std::uint32_t kSoundBoltClose = 0x5A29D;
+        // A cue plays as the pull passes its point, so one at the very end of a way
+        // needs to sit just inside it to be passed.
+        constexpr float kCueInset = 0.001f;
 
         [[nodiscard]] float turnDegrees(const RE::NiTransform& from, const RE::NiTransform& to)
         {
@@ -152,7 +160,8 @@ namespace paper::bolt_stroke
     std::shared_ptr<const Stroke> analyse(
         const std::uint32_t weaponForm,
         const char* clipPath,
-        const std::vector<ClipFrame>& frames)
+        const std::vector<ClipFrame>& frames,
+        const std::span<const exact_clip_preharvest::PoseMarker> markers)
     {
         const auto refuse = [&](const char* reason) {
             PAPER_LOG_INFO(
@@ -296,6 +305,52 @@ namespace paper::bolt_stroke
             return refuse("the bolt's slide has no direction");
         }
         stroke->backInWeapon = { slide.x / length, slide.y / length, slide.z / length };
+
+        // The return's own length in the clip: the first frame after the back position
+        // with the bolt home again, else the clip's end.
+        std::size_t home = frames.size() - 1;
+        for (std::size_t frame = back + 1; frame < frames.size(); ++frame) {
+            if (boltTravel(rest, frames[frame]) <= kRestGameUnits) {
+                home = frame;
+                break;
+            }
+        }
+        const float startSeconds = frames[start].seconds;
+        const float backSeconds = frames[back].seconds;
+        const float returnSeconds = frames[home].seconds - backSeconds;
+        for (const auto& marker : markers) {
+            constexpr char kPrefix[] = "SoundPlay.";
+            constexpr std::size_t kPrefixLength = sizeof(kPrefix) - 1;
+            if (_strnicmp(marker.text, kPrefix, kPrefixLength) != 0) {
+                continue;
+            }
+            const char* name = marker.text + kPrefixLength;
+            const auto form = manual_reload_only::findSoundForm(name);
+            const bool closing = marker.timeSeconds > backSeconds;
+            const float pull = closing ?
+                1.0f - (returnSeconds > 0.0f ? std::clamp((marker.timeSeconds - backSeconds) / returnSeconds, 0.0f, 1.0f) : 0.0f) :
+                std::clamp((marker.timeSeconds - startSeconds) / stroke->seconds, 0.0f, 1.0f);
+            PAPER_LOG_INFO(
+                Reload,
+                "MANUAL_BOLT stroke weapon={:08X} sound '{}' form={:08X} clip={:.3f}s {} pull={:.2f}",
+                weaponForm,
+                name,
+                form,
+                marker.timeSeconds,
+                closing ? "closing" : "opening",
+                pull);
+            if (form != 0) {
+                stroke->sounds.push_back(SoundCue{
+                    .form = form,
+                    .pull = closing ? (std::min)(pull, 1.0f - kCueInset) : (std::max)(pull, kCueInset),
+                    .closing = closing,
+                });
+            }
+        }
+        if (stroke->sounds.empty()) {
+            stroke->sounds.push_back(SoundCue{ .form = kSoundBoltOpen, .pull = kCueInset, .closing = false });
+            stroke->sounds.push_back(SoundCue{ .form = kSoundBoltClose, .pull = 1.0f - kCueInset, .closing = true });
+        }
 
         PAPER_LOG_INFO(
             Reload,

@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <vector>
 
 namespace paper::bolt_stroke
@@ -81,11 +82,22 @@ namespace paper::bolt_stroke
         Pose pose{};
     };
 
+    // One sound of the stroke, played as the bolt passes this point of the pull.
+    struct SoundCue
+    {
+        std::uint32_t form{ 0 };
+        float pull{ 0.0f };
+        // On the way home, rather than on the way back.
+        bool closing{ false };
+    };
+
     /*
      * The first half of a bolt rifle's cycle clip, from the action's first movement
      * to the bolt fully back, played in either direction once the pull commits. It is
      * what the animator made: the bolt's path and timing, the parts that move with it,
-     * and the wrist and fingers of whichever hand rides the bolt.
+     * the wrist and fingers of whichever hand rides the bolt, and the sounds the clip
+     * marks for the whole cycle. A clip that marks none has the game's bolt sounds at
+     * the start of each way.
      */
     struct Stroke
     {
@@ -103,6 +115,7 @@ namespace paper::bolt_stroke
         // How long the clip takes from the first movement to fully back.
         float seconds{ 0.0f };
         std::vector<Key> keys;
+        std::vector<SoundCue> sounds;
     };
 
     // Null, with the reason logged, unless the clip shows one hand riding the bolt
@@ -110,7 +123,8 @@ namespace paper::bolt_stroke
     [[nodiscard]] std::shared_ptr<const Stroke> analyse(
         std::uint32_t weaponForm,
         const char* clipPath,
-        const std::vector<ClipFrame>& frames);
+        const std::vector<ClipFrame>& frames,
+        std::span<const exact_clip_preharvest::PoseMarker> markers);
 
     // `pull` is clamped to 0..1.
     void sample(const Stroke& stroke, float pull, Pose& out);

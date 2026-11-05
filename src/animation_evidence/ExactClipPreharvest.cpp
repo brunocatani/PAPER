@@ -94,6 +94,18 @@ namespace paper::exact_clip_preharvest
         constexpr std::ptrdiff_t kAnimationResourceDataOffset = 0x20;
         constexpr std::ptrdiff_t kRootContainerFromAnimationDataOffset = 0x08;
         constexpr std::size_t kSampleTracksVtableSlot = 5;
+        // hkaAnimation's annotations; ClipTelemetry.cpp records how this layout was verified.
+        constexpr std::ptrdiff_t kAnimationAnnotationTracksOffset = 0x28;
+        constexpr std::ptrdiff_t kAnimationAnnotationTrackCountOffset = 0x30;
+        constexpr std::size_t kAnnotationTrackStride = 0x18;
+        constexpr std::ptrdiff_t kTrackAnnotationsOffset = 0x08;
+        constexpr std::ptrdiff_t kTrackAnnotationCountOffset = 0x10;
+        constexpr std::size_t kAnnotationStride = 0x10;
+        constexpr std::ptrdiff_t kAnnotationTextOffset = 0x08;
+        constexpr std::int32_t kMaxAnnotationTracks = 512;
+        constexpr std::int32_t kMaxAnnotationsPerTrack = 256;
+        constexpr std::size_t kMaxPoseMarkers = 32;
+        constexpr std::size_t kPoseMarkerTextCapacity = 96;
 
         // ROCK's independently established loaded-subgraph binding-table
         // layout. Some weapon projects load a complete exact subgraph but do
@@ -330,6 +342,8 @@ namespace paper::exact_clip_preharvest
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
             std::array<RE::NiTransform, kMaxBonesAndTracks> sampledLocals{};
             std::array<PoseBone, animation_evidence::kMaxExactTracksPerClip + kMaxArmTargets> poseBones{};
+            std::array<PoseMarker, kMaxPoseMarkers> poseMarkers{};
+            std::array<std::array<char, kPoseMarkerTextCapacity>, kMaxPoseMarkers> poseMarkerTexts{};
             const char* prepareFailure{ "" };
             std::atomic<DWORD> ownerThreadId{ 0 };
             // F4SE session messages can request teardown off the ROCK frame
@@ -1515,13 +1529,71 @@ namespace paper::exact_clip_preharvest
             return result;
         }
 
+        // The clip's annotations, copied so the reader borrows nothing of the clip. An
+        // unreadable annotation is left out; a clip has every marker it could read.
+        [[nodiscard]] std::uint32_t readPoseMarkers(Runtime& state, const void* animation)
+        {
+            std::int32_t trackCount = 0;
+            const std::byte* tracks = nullptr;
+            if (!native_memory::tryReadField(animation, kAnimationAnnotationTrackCountOffset, trackCount) ||
+                !native_memory::tryReadField(animation, kAnimationAnnotationTracksOffset, tracks) ||
+                trackCount <= 0 || trackCount > kMaxAnnotationTracks || !tracks) {
+                return 0;
+            }
+            std::uint32_t count = 0;
+            for (std::int32_t track = 0; track < trackCount; ++track) {
+                const auto* entry = tracks + static_cast<std::size_t>(track) * kAnnotationTrackStride;
+                std::int32_t annotationCount = 0;
+                const std::byte* annotations = nullptr;
+                if (!native_memory::tryReadField(entry, kTrackAnnotationCountOffset, annotationCount) ||
+                    !native_memory::tryReadField(entry, kTrackAnnotationsOffset, annotations) ||
+                    annotationCount <= 0 || annotationCount > kMaxAnnotationsPerTrack || !annotations) {
+                    continue;
+                }
+                for (std::int32_t index = 0; index < annotationCount; ++index) {
+                    if (count == state.poseMarkers.size()) {
+                        return count;
+                    }
+                    const auto* annotation = annotations + static_cast<std::size_t>(index) * kAnnotationStride;
+                    float time = 0.0f;
+                    std::uintptr_t textField = 0;
+                    if (!native_memory::tryReadField(annotation, 0, time) || !std::isfinite(time) ||
+                        !native_memory::tryReadField(annotation, kAnnotationTextOffset, textField)) {
+                        continue;
+                    }
+                    // An hkStringPtr keeps an ownership flag in its lowest bit.
+                    const auto* source = reinterpret_cast<const char*>(textField & ~static_cast<std::uintptr_t>(1));
+                    auto& text = state.poseMarkerTexts[count];
+                    std::size_t length = 0;
+                    if (source) {
+                        for (; length + 1 < text.size(); ++length) {
+                            char character = '\0';
+                            if (!native_memory::tryReadValue(source + length, character) || character == '\0') {
+                                break;
+                            }
+                            text[length] = character;
+                        }
+                    }
+                    if (length == 0) {
+                        continue;
+                    }
+                    text[length] = '\0';
+                    state.poseMarkers[count++] = PoseMarker{ .timeSeconds = time, .text = text.data() };
+                }
+            }
+            return count;
+        }
+
         [[nodiscard]] bool publishPose(
             Runtime& state,
             const PoseReader& reader,
+            const void* animation,
             const float timeSeconds,
             const bool armsValid)
         {
             const auto& clip = state.clip;
+            const std::uint32_t markerCount =
+                clip.nextSample + 1 == clip.sampleCount ? readPoseMarkers(state, animation) : 0;
             std::uint32_t boneCount = 0;
             for (std::uint32_t index = 0; index < clip.targetCount; ++index) {
                 const auto& target = clip.targets[index];
@@ -1554,6 +1626,8 @@ namespace paper::exact_clip_preharvest
                     .timeSeconds = timeSeconds,
                     .bones = state.poseBones.data(),
                     .boneCount = boneCount,
+                    .markers = markerCount != 0 ? state.poseMarkers.data() : nullptr,
+                    .markerCount = markerCount,
                 },
                 reader.userData);
         }
@@ -1635,7 +1709,7 @@ namespace paper::exact_clip_preharvest
                 }
 
                 if (reader) {
-                    const bool wantsMore = publishPose(state, *reader, timeSeconds, armsValid);
+                    const bool wantsMore = publishPose(state, *reader, animation, timeSeconds, armsValid);
                     clip.nextSample = wantsMore ? clip.nextSample + 1 : clip.sampleCount;
                     ++samplesCompletedThisFrame;
                     continue;

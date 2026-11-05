@@ -320,7 +320,8 @@ namespace paper::bolt_hold
                 s_strokeRecorder.add(frame);
                 if (frame.sampleIndex + 1 == frame.sampleCount) {
                     try {
-                        if (auto stroke = bolt_stroke::analyse(read.form, frame.animationPath, s_strokeRecorder.frames())) {
+                        const std::span markers{ frame.markers, frame.markerCount };
+                        if (auto stroke = bolt_stroke::analyse(read.form, frame.animationPath, s_strokeRecorder.frames(), markers)) {
                             read.strokeFound = true;
                             auto& entry = s_strokes[s_strokeNext];
                             s_strokeNext = (s_strokeNext + 1) % s_strokes.size();

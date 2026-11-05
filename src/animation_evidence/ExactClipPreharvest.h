@@ -61,9 +61,17 @@ namespace paper::exact_clip_preharvest
         RE::NiTransform inWeapon{};
     };
 
+    // What the animator marked at one time of a clip, such as "SoundPlay.WPNBoltOpen".
+    struct PoseMarker
+    {
+        float timeSeconds{ 0.0f };
+        const char* text{ nullptr };
+    };
+
     // One sampled pose. Only the bones this clip has a track for are present: an
     // untracked bone would show the shared skeleton's bind pose, which is no
-    // position of this weapon.
+    // position of this weapon. The clip's markers come with its last pose, borrowed
+    // for the call.
     struct PoseFrame
     {
         const char* animationPath{ nullptr };
@@ -72,6 +80,8 @@ namespace paper::exact_clip_preharvest
         float timeSeconds{ 0.0f };
         const PoseBone* bones{ nullptr };
         std::uint32_t boneCount{ 0 };
+        const PoseMarker* markers{ nullptr };
+        std::uint32_t markerCount{ 0 };
     };
 
     using ClipOrderFn = std::uint32_t (*)(std::string_view animationPath) noexcept;
