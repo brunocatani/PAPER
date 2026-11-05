@@ -50,6 +50,9 @@ namespace paper::manual_bolt
      * chamber is shown as a cartridge on ROCK's ammo counter, under a lease renewed
      * here.
      *
+     * What the bolt throws out at the back of the stroke goes in chamber_ejection, in
+     * presentHand, because the casing's place is read from the placed weapon.
+     *
      * Bolt: two resting positions, closed and back, and the rifle's own cycle clip
      * between them (bolt_stroke). The hand the clip works the bolt with takes it at
      * the point the clip holds it, in the clip's pose, from the moment the rifle is
@@ -70,8 +73,8 @@ namespace paper::manual_bolt
      * Rounds: the loaded count and the chamber of each inventory item survive
      * unequipping and saving, by ExtraUniqueID, in the co-save. The native count
      * is set after equip and never above what the inventory holds: loaded rounds
-     * are counted in the inventory, so nothing is created. For the same reason a
-     * live round thrown out by the bolt just returns to the reserve.
+     * are counted in the inventory, so nothing is created. A live round the bolt
+     * throws out becomes a real round in the world and leaves the inventory.
      *
      * Runs once a frame in ROCK's BeforeRock phase on its frame thread, which owns
      * everything here except the saved table, which also has F4SE's save and load
@@ -79,8 +82,8 @@ namespace paper::manual_bolt
      */
     void update(RockApiClient& rock, const FrameInput& input);
 
-    // In ROCK's AfterRock phase, once the weapon is placed for this frame: the hand
-    // on the bolt, when it is posed from the clip.
+    // In ROCK's AfterRock phase, once the weapon is placed for this frame: what the bolt
+    // throws out, and the hand on the bolt, when it is posed from the clip.
     void presentHand(RockApiClient& rock);
 
     // Forgets the equipped weapons and releases what ROCK holds for them. Saved

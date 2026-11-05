@@ -18,6 +18,7 @@
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_control/BoltHold.h"
+#include "reload_control/ChamberEjection.h"
 #include "reload_control/ManualBolt.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
@@ -1291,6 +1292,7 @@ namespace
                     native_animation_authority::ApplyPhase::AfterRock);
             }
             manual_bolt::presentHand(rockApiClient());
+            chamber_ejection::update(rockApiClient(), *context);
             if (enrichmentDemand.reloadObservation && s_gripStateValid) {
                 const auto observationStarted = PerformanceClock::now();
                 reload_observation::capturePhase(
@@ -1416,6 +1418,7 @@ namespace
         reload_selection_trace::setRuntimeEnabled(false);
         debug_visualization::clear();
         manual_bolt::reset(rockApiClient());
+        chamber_ejection::reset();
         bolt_hold::reset(rockApiClient());
         (void)rockApiClient().setAutomaticReloadBlocked(false);
         s_automaticReloadBlockSent = false;
@@ -1537,7 +1540,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(
     const F4SE::LoadInterface* f4se)
 {
     F4SE::Init(f4se, false);
-    F4SE::AllocTrampoline(80); // four reload relays plus opt-in physical bolt control
+    F4SE::AllocTrampoline(112); // four reload relays, opt-in physical bolt control, two for live rounds
     paper::provider::initialize();
     paper::manual_bolt::installSerialization();
 

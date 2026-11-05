@@ -6,6 +6,7 @@
 #include "native/NativeOffsets.h"
 #include "reload_control/BoltHold.h"
 #include "reload_control/BoltStroke.h"
+#include "reload_control/ChamberEjection.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "reload_observation/ReloadObservation.h"
 #include "support/Fo4VrRuntime.h"
@@ -148,6 +149,11 @@ namespace paper::manual_bolt
             float pull{ 0.0f };
             float pullTarget{ 0.0f };
             bool atBack{ false };
+            // Each way sounds once, as the stroke starts.
+            bool openSounded{ false };
+            bool closeSounded{ false };
+            // What the bolt reached the back with, thrown out once ROCK has placed the gun.
+            Chamber ejecting{ Chamber::Empty };
             bool driving{ false };
             bool gripHeld{ false };
             std::uint64_t gripSequence{ 0 };
@@ -258,6 +264,7 @@ namespace paper::manual_bolt
                     0x48, 0x85, 0xC9, 0x74, 0x0A,
                     0xE8, 0xBB, 0xEC, 0x0B, 0x00,
                 }));
+            (void)chamber_ejection::install();
         }
 
         [[nodiscard]] RE::EquippedItem* equippedItem(const Gun& gun)
@@ -416,7 +423,7 @@ namespace paper::manual_bolt
             return SavedItem{ .weapon = form, .owner = owner, .unique = unique };
         }
 
-        void ejectCasing(const Gun& gun)
+        void throwOut(const Gun& gun, const Chamber what)
         {
             if (!s_natives.casing || !equippedItem(gun)) {
                 return;
@@ -440,8 +447,8 @@ namespace paper::manual_bolt
             if (!instance.object || instance.object->formID != gun.form) {
                 return;
             }
-            using Eject = void (*)(RE::TESObjectREFR*, const void*, std::uint32_t);
-            reinterpret_cast<Eject>(base + offsets::kFunc_EjectShellCasing)(player, &instance, gun.slot);
+            const auto kind = what == Chamber::Live ? chamber_ejection::Kind::LiveRound : chamber_ejection::Kind::SpentCase;
+            (void)chamber_ejection::eject(player, &instance, kind);
         }
 
         [[nodiscard]] bool sameItem(const SavedItem& left, const SavedItem& right)
@@ -807,20 +814,41 @@ namespace paper::manual_bolt
                                                    (std::min)(gun.pullTarget, gun.pull + step);
         }
 
+        // As the game's own clips do and as long before the hand gets there: a bolt
+        // sounds when it starts to move, once each way, not when it arrives.
+        void soundStroke(Gun& gun, const float pullBefore)
+        {
+            if (gun.pull > pullBefore && !gun.atBack && !gun.openSounded) {
+                gun.openSounded = true;
+                manual_reload_only::playSound(kSoundBoltOpen);
+            } else if (gun.pull < pullBefore && gun.atBack && !gun.closeSounded) {
+                gun.closeSounded = true;
+                manual_reload_only::playSound(kSoundBoltClose);
+            }
+            if (gun.pull <= 0.0f) {
+                gun.openSounded = false;
+            } else if (gun.pull >= 1.0f) {
+                gun.closeSounded = false;
+            }
+        }
+
         // The ends of the stroke: back throws out whatever the chamber holds, and
         // home feeds the next round. A bolt that stops short does neither.
         void applyStroke(Gun& gun, std::uint32_t& loaded)
         {
             if (gun.pull >= kBackAt && !gun.atBack) {
                 gun.atBack = true;
-                manual_reload_only::playSound(kSoundBoltOpen);
-                if (gun.chamber == Chamber::Live && loaded > 0 && setLoadedRounds(gun, loaded - 1)) {
-                    // Back to the reserve: loaded rounds are part of the inventory count.
-                    --loaded;
-                    gun.lastLoaded = loaded;
-                }
-                if (gun.chamber != Chamber::Empty) {
-                    ejectCasing(gun);
+                gun.closeSounded = false;
+                gun.ejecting = gun.chamber;
+                if (gun.chamber == Chamber::Live) {
+                    if (loaded > 0 && setLoadedRounds(gun, loaded - 1)) {
+                        // Loaded rounds are part of the inventory count, so this round is
+                        // in the reserve now, until the throw takes it out as a real round.
+                        --loaded;
+                        gun.lastLoaded = loaded;
+                    } else {
+                        gun.ejecting = Chamber::Empty;
+                    }
                 }
                 PAPER_LOG_INFO(
                     Reload,
@@ -831,7 +859,7 @@ namespace paper::manual_bolt
                 gun.chamber = Chamber::Empty;
             } else if (gun.pull <= kClosedAt && gun.atBack) {
                 gun.atBack = false;
-                manual_reload_only::playSound(kSoundBoltClose);
+                gun.openSounded = false;
                 if (gun.chamber == Chamber::Empty && loaded > 0) {
                     gun.chamber = Chamber::Live;
                 }
@@ -877,6 +905,7 @@ namespace paper::manual_bolt
                 gun.pull = 0.0f;
                 gun.pullTarget = 0.0f;
                 gun.atBack = false;
+                gun.openSounded = false;
                 gun.gripHeld = false;
                 endDrive(rock, gun);
                 endFireBlock(rock, gun);
@@ -1086,7 +1115,9 @@ namespace paper::manual_bolt
             observeRounds(gun, reloading, loaded, handWorks, nativeCycle);
 
             if (handWorks && !reloading) {
+                const float pullBefore = gun.pull;
                 followHand(rock, gun, input.pullDistance);
+                soundStroke(gun, pullBefore);
                 bolt_stroke::sample(*gun.action.stroke, gun.pull, gun.pose);
                 applyStroke(gun, loaded);
                 if ((gun.pull > 0.0f || gun.gripHeld) && gun.publishedGeneration == gun.generation) {
@@ -1127,6 +1158,10 @@ namespace paper::manual_bolt
     void presentHand(RockApiClient& rock)
     {
         auto& gun = s_guns[0];
+        if (gun.ejecting != Chamber::Empty) {
+            throwOut(gun, gun.ejecting);
+            gun.ejecting = Chamber::Empty;
+        }
         if (!gun.handCycle) {
             return;
         }

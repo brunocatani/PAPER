@@ -18,6 +18,32 @@ namespace paper::offsets
     inline constexpr std::uintptr_t kFunc_Reference_AllocateUniqueId = 0x03E3A10;
     inline constexpr std::uintptr_t kFunc_EjectShellCasing = 0x0330C80;
     inline constexpr std::uintptr_t kCallsite_EjectShellCasingHandler = 0x0FF41D9;
+    // Inside the eject function: its search for the casing point, its debris storage
+    // and its debris construction.
+    inline constexpr std::uintptr_t kCallsite_EjectFindCasingPoint = 0x0330DFF;
+    inline constexpr std::uintptr_t kFunc_FindCasingPoint = 0x033E130;
+    inline constexpr std::uintptr_t kCallsite_EjectAllocateDebris = 0x0331057;
+    inline constexpr std::uintptr_t kCallsite_EjectConstructDebris = 0x0331110;
+    inline constexpr std::uintptr_t kSignature_EjectDebrisResult = 0x0331115;
+    inline constexpr std::uintptr_t kFunc_AllocateDebrisStorage = 0x00030D0;
+    inline constexpr std::uintptr_t kFunc_ConstructDebris = 0x071D520;
+    inline constexpr std::uintptr_t kSignature_CreateReference = 0x011BD80;
+    inline constexpr std::uintptr_t kSignature_CreateReferenceForcePersist = 0x011C1F5;
+    inline constexpr std::uintptr_t kFunc_Cell_GetBhkWorld = 0x039B070;
+    inline constexpr std::uintptr_t kFunc_SetLinearVelocity = 0x1E15630;
+    inline constexpr std::uintptr_t kFunc_SetAngularVelocity = 0x1E156D0;
+    inline constexpr std::uintptr_t kFunc_WorldLockWrite = 0x1DF5FB0;
+    inline constexpr std::uintptr_t kFunc_WorldUnlockWrite = 0x1DF5FD0;
+    inline constexpr std::uintptr_t kFunc_System_GetWorld = 0x1E0C530;
+    inline constexpr std::uintptr_t kFunc_CollisionObject_GetBodyId = 0x1E07EE0;
+    inline constexpr std::uintptr_t kFunc_CollisionObject_GetBody = 0x1E07D80;
+    inline constexpr std::uintptr_t kFunc_World_SetMotionProperties = 0x153B2F0;
+    inline constexpr std::uintptr_t kFunc_SetMotionType = 0x1DF95B0;
+    inline constexpr std::uintptr_t kSignature_CollisionObjectGetSystemCall = 0x1E1B474;
+    inline constexpr std::uintptr_t kGlobal_ThreadStateTlsIndex = 0x689CACC;
+    // RemoveItem's HUD aggregation of what left the inventory.
+    inline constexpr std::uintptr_t kCallsite_RemoveItemHudMessage = 0x03E1D74;
+    inline constexpr std::uintptr_t kFunc_InventoryCount = 0x03E3750;
     inline constexpr std::uintptr_t kFunc_TESActionData_Process = 0x0F9BEF0;
     inline constexpr std::uintptr_t kSignature_PlayerCharacter_ImmediateAutomaticReload = 0x0F7A4A5;
     inline constexpr std::uintptr_t kCallsite_PlayerCharacter_ImmediateAutomaticReload = 0x0F7A579;
