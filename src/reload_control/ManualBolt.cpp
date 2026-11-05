@@ -45,9 +45,10 @@ namespace paper::manual_bolt
         constexpr std::size_t kBoneCount = policy::kActionBoneNames.size();
         constexpr std::uint32_t kGroupId = 1;
         constexpr std::uint32_t kDriveLeaseFrames = 2;
-        // The bolt counts as home or back within this much of its stroke.
-        constexpr float kClosedAt = 0.03f;
-        constexpr float kBackAt = 0.97f;
+        // The bolt counts as back or home this far short of the end of its stroke, where
+        // it plainly is by eye: a quick hand can turn it around before the very end.
+        constexpr float kClosedAt = 0.25f;
+        constexpr float kBackAt = 0.75f;
         // A manual bolt has two resting positions. Crossing this much of the pull commits
         // the whole stroke, and letting go never moves it.
         constexpr float kCommitAt = 0.5f;
@@ -798,7 +799,7 @@ namespace paper::manual_bolt
         {
             // An empty gun stays the game's: its click or automatic reload.
             const bool block = gun.handCycle && !gun.reloading && loaded > 0 &&
-                (gun.chamber != Chamber::Live || gun.pull > kClosedAt);
+                (gun.chamber != Chamber::Live || gun.pull > 0.0f);
             if (!block) {
                 endFireBlock(rock, gun);
                 return;
