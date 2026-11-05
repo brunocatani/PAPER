@@ -1621,28 +1621,16 @@ namespace paper::native_animation_authority
                     handRebase.liveBaselineHandInWeapon =
                         rockBaselineHandInWeapon;
                 } else {
+                    // A left hand with no authored grip follows the native weapon
+                    // frame, which never reads this baseline, so a presented grip
+                    // that has not arrived yet is no reason to hold the hand back.
                     const auto& presented = s_presentedGripBaselines;
-                    const bool isLeft = hand == frik_visual_authority::Hand::Left;
-                    if (presented.weaponGenerationKey == 0 ||
-                        presented.weaponGenerationKey != s_manualCycleRockGripBaselines.weaponGenerationKey ||
-                        presented.weaponNode != s_manualCycleRockGripBaselines.weaponNode ||
-                        !(isLeft ? presented.authoredLeftActive : presented.rightValid)) {
-                        if (!handRebase.baselineUnavailableLogged) {
-                            PAPER_LOG_WARN(Animation,
-                                "Native weapon-fixed hand baseline unavailable hand={} weapon={:016X}; waiting for a valid presented grip",
-                                hand == frik_visual_authority::Hand::Left ? "left" : "right",
-                                s_manualCycleRockGripBaselines.weaponGenerationKey);
-                            handRebase.baselineUnavailableLogged = true;
-                        }
-                        // A new lease's first frame has no baseline yet. The
-                        // caller continues a running return meanwhile.
-                        if (isLeft && supportHandReturnRunning()) {
-                            return ManualCycleHandVisualResult::Suppressed;
-                        }
-                        (void)clearManualCycleVisualForHand(hand);
-                        return ManualCycleHandVisualResult::Failed;
-                    }
-                    handRebase.liveBaselineHandInWeapon = isLeft ? presented.leftHandInWeapon : presented.rightHandInWeapon;
+                    const bool presentedMatches = presented.weaponGenerationKey != 0 &&
+                        presented.weaponGenerationKey == s_manualCycleRockGripBaselines.weaponGenerationKey &&
+                        presented.weaponNode == s_manualCycleRockGripBaselines.weaponNode &&
+                        presented.authoredLeftActive;
+                    handRebase.liveBaselineHandInWeapon =
+                        presentedMatches ? presented.leftHandInWeapon : handInWeapon;
                 }
 
                 handRebase.nativeBaselineHandInWeapon = handInWeapon;
