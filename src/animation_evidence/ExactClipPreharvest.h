@@ -57,6 +57,8 @@ namespace paper::exact_clip_preharvest
         std::uint32_t nameIndex{ 0 };
         // In the bone's skeleton parent: the space the graph writes to its node.
         RE::NiTransform local{};
+        // In the frame of the skeleton's Weapon bone.
+        RE::NiTransform inWeapon{};
     };
 
     // One sampled pose. Only the bones this clip has a track for are present: an
@@ -86,6 +88,11 @@ namespace paper::exact_clip_preharvest
         // False skips the rest of this clip.
         PoseFn pose{ nullptr };
         void* userData{ nullptr };
+        // Bones outside the weapon, such as the hands. Their nameIndex continues
+        // after the node names. A clip's frame leaves them out when a bone between
+        // them and the weapon has a transform NiTransform cannot hold.
+        const char* const* armNodeNames{ nullptr };
+        std::uint32_t armNodeNameCount{ 0 };
     };
 
     /*

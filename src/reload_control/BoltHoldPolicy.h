@@ -67,12 +67,14 @@ namespace paper::bolt_hold_policy
                moveGameUnits <= boltTravelGameUnits && turnDegrees <= kPartMaximumTurnDegrees;
     }
 
-    // The read order. Idle shows the action closed, a reload may park the bolt and
-    // a shot shows its stroke. Any other clip is read only when none of these moves
-    // the bolt, because a gun's roughly 90 clips take about 8 s at the sampling budget.
+    // The read order. Idle shows the action closed, a bolt rifle's cycle shows the
+    // hand working the bolt, a reload may park the bolt and a shot shows its stroke.
+    // Any other clip is read only when none of these moves the bolt, because a gun's
+    // roughly 90 clips take about 8 s at the sampling budget.
     enum class ClipKind : std::uint32_t
     {
         Idle,
+        Cycle,
         Reload,
         Fire,
         Other,
@@ -116,6 +118,9 @@ namespace paper::bolt_hold_policy
             if (matchesAt(stem, "reload", start)) {
                 return ClipKind::Reload;
             }
+        }
+        if (matchesAt(stem, "wpnboltchargeready", 0)) {
+            return ClipKind::Cycle;
         }
         return matchesAt(stem, "wpnfire", 0) ? ClipKind::Fire : ClipKind::Other;
     }

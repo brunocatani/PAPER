@@ -13,12 +13,16 @@ namespace paper::manual_bolt
         // Game units the hand moves to take the bolt from closed to fully back,
         // the same on every rifle.
         float pullDistance{ 7.0f };
-        // PAPER allows this weapon's cycle animation: the rifles this feature
-        // serves are exactly those.
+        // The hand on the bolt is placed and posed as the cycle clip has it, rather
+        // than where ROCK's grip seats it.
+        bool handFromAnimation{ true };
+        // The rifles PAPER animates the cycle of are the rifles this feature serves.
         bool cycleAllowed{ false };
         bool playerReloadActive{ false };
         // A PhysicalReload consumer owns the bolt.
         bool physicalReloadActive{ false };
+        float handBlendSeconds{ 0.15f };
+        float deltaSeconds{ 0.0f };
     };
 
     /*
@@ -31,12 +35,13 @@ namespace paper::manual_bolt
      * on top of the full magazine, as far as the reserve allows. The chamber is
      * shown as a cartridge on ROCK's ammo counter, under a lease renewed here.
      *
-     * Bolt: closed, lifted, back. The player grips it with the free hand and
-     * moves that hand back along the bolt's own line: the first part of the pull
-     * lifts it where the rifle's clips turn it, the rest slides it. It stays where
-     * it is let go. Both end poses are read from the weapon's clips (bolt_hold),
-     * and a rifle with no pose or no bolt collider keeps its native cycle, while
-     * its rounds and chamber are still tracked.
+     * Bolt: closed, lifted, back, as the rifle's own cycle clip moves it
+     * (bolt_stroke). The hand the clip works the bolt with grips it at the point
+     * the clip holds it: when that is the firing hand, the other hand carries the
+     * gun first and ROCK frees the firing hand. Moving that hand back along the
+     * bolt's line walks the clip's stroke, and the bolt stays where it is let go.
+     * A rifle whose clip shows no hand on the bolt, or with no bolt collider, keeps
+     * its native cycle, while its rounds and chamber are still tracked.
      *
      * Rounds: the loaded count and the chamber of each inventory item survive
      * unequipping and saving, by ExtraUniqueID, in the co-save. The native count
@@ -49,6 +54,10 @@ namespace paper::manual_bolt
      * callbacks and takes a mutex.
      */
     void update(RockApiClient& rock, const FrameInput& input);
+
+    // In ROCK's AfterRock phase, once the weapon is placed for this frame: the hand
+    // on the bolt, when it is posed from the clip.
+    void presentHand(RockApiClient& rock);
 
     // Forgets the equipped weapon and releases what ROCK holds for it. Saved
     // rounds stay until the co-save replaces them.

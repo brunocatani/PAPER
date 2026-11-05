@@ -16,6 +16,7 @@ namespace paper
         float boltHoldCloseSeconds{ 0.15f };
         bool manualBoltCycle{ false };
         float boltPullDistance{ 7.0f };
+        bool boltHandFromAnimation{ true };
         bool debugDrawNativeAnimation{ false };
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };

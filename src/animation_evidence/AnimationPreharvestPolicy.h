@@ -203,6 +203,44 @@ namespace paper::animation_preharvest_policy
      * the result yields the target transform in the ancestor's coordinate
      * frame. Cycles, excessive depth, and unrelated bones fail closed.
      */
+    // The deepest bone both chains pass through, or -1 when they share none.
+    [[nodiscard]] constexpr std::int16_t commonAncestorBone(
+        std::int16_t first,
+        std::int16_t second,
+        const std::span<const std::int16_t> parents) noexcept
+    {
+        const auto depthOf = [&parents](std::int16_t bone) -> std::int32_t {
+            std::int32_t depth = 0;
+            while (bone >= 0) {
+                if (static_cast<std::size_t>(bone) >= parents.size() ||
+                    static_cast<std::size_t>(depth) > parents.size()) {
+                    return -1;
+                }
+                bone = parents[static_cast<std::size_t>(bone)];
+                ++depth;
+            }
+            return depth;
+        };
+        auto firstDepth = depthOf(first);
+        auto secondDepth = depthOf(second);
+        if (firstDepth <= 0 || secondDepth <= 0) {
+            return -1;
+        }
+        while (first != second) {
+            if (first < 0 || second < 0) {
+                return -1;
+            }
+            if (firstDepth >= secondDepth) {
+                first = parents[static_cast<std::size_t>(first)];
+                --firstDepth;
+            } else {
+                second = parents[static_cast<std::size_t>(second)];
+                --secondDepth;
+            }
+        }
+        return first;
+    }
+
     [[nodiscard]] constexpr std::uint32_t buildBoneChainBelowAncestor(
         const std::int16_t targetBone,
         const std::int16_t ancestorBone,

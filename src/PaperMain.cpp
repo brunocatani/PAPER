@@ -1183,10 +1183,13 @@ namespace
                 manual_bolt::FrameInput{
                     .enabled = operational && g_config.manualBoltCycle,
                     .pullDistance = g_config.boltPullDistance,
+                    .handFromAnimation = g_config.boltHandFromAnimation,
                     .cycleAllowed = !climbingAnimationSuppressed &&
-                        native_animation_authority_policy::canApplyManualCycleHandAnimation(weaponObservation),
+                        native_animation_authority_policy::canWorkBoltByHand(weaponObservation),
                     .playerReloadActive = native_animation_authority::playerReloadActive(),
                     .physicalReloadActive = provider::physicalReloadActive(),
+                    .handBlendSeconds = g_config.handBlendSeconds,
+                    .deltaSeconds = context->deltaSeconds,
                 });
             if (enrichmentDemand.reloadObservation) {
                 const auto observationStarted = PerformanceClock::now();
@@ -1286,6 +1289,7 @@ namespace
                 (void)native_animation_authority::applyCapturedPose(
                     native_animation_authority::ApplyPhase::AfterRock);
             }
+            manual_bolt::presentHand(rockApiClient());
             if (enrichmentDemand.reloadObservation && s_gripStateValid) {
                 const auto observationStarted = PerformanceClock::now();
                 reload_observation::capturePhase(

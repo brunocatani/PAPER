@@ -119,6 +119,7 @@ namespace paper::exact_clip_preharvest
         constexpr std::size_t kMaxBonesAndTracks = 768;
         constexpr std::size_t kMaxSkeletonPartitions = 256;
         constexpr std::size_t kMaxBoneChainDepth = 96;
+        constexpr std::size_t kMaxArmTargets = 40;
         constexpr std::size_t kMaxAnimationFiles = 512;
         constexpr std::size_t kAnimationPathCapacity = 260;
         constexpr std::size_t kMaxLoadedSubgraphs = 128;
@@ -283,6 +284,13 @@ namespace paper::exact_clip_preharvest
                 animation_evidence::ExactSkeletonBone,
                 animation_evidence::kMaxSkeletonBones>
                 skeletonBones{};
+            // A pose reader's bones outside Weapon. Their chains and Weapon's start
+            // below one common ancestor, and what lies above it cancels out.
+            std::array<BoneTarget, kMaxArmTargets> armTargets{};
+            std::uint32_t armTargetCount{ 0 };
+            std::array<std::int16_t, kMaxBoneChainDepth> armWeaponChain{};
+            std::uint16_t armWeaponChainCount{ 0 };
+            std::array<std::uint8_t, kMaxBonesAndTracks> armBones{};
         };
 
         struct Job
@@ -321,7 +329,7 @@ namespace paper::exact_clip_preharvest
             RuntimeDiagnostics diagnostics{};
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
             std::array<RE::NiTransform, kMaxBonesAndTracks> sampledLocals{};
-            std::array<PoseBone, animation_evidence::kMaxExactTracksPerClip> poseBones{};
+            std::array<PoseBone, animation_evidence::kMaxExactTracksPerClip + kMaxArmTargets> poseBones{};
             const char* prepareFailure{ "" };
             std::atomic<DWORD> ownerThreadId{ 0 };
             // F4SE session messages can request teardown off the ROCK frame
@@ -1135,11 +1143,85 @@ namespace paper::exact_clip_preharvest
                 std::span<std::int16_t>{ outTrackToBone.data(), transformTrackCount });
         }
 
+        // A bone here that NiTransform cannot hold costs the arms only, never the clip.
+        void prepareArmTargets(
+            Runtime& state,
+            const void* bones,
+            const std::span<const HkQsTransform> referencePose,
+            const std::uint32_t firstNameIndex,
+            const PoseReader& reader)
+        {
+            auto& prepared = state.clip;
+            const std::span<const std::int16_t> parents{
+                prepared.parentIndices.data(),
+                static_cast<std::size_t>(prepared.boneCount),
+            };
+            std::int16_t common = prepared.weaponBoneIndex;
+            std::uint32_t count = 0;
+            for (std::int32_t bone = 0; bone < prepared.boneCount && count < prepared.armTargets.size(); ++bone) {
+                std::array<char, animation_evidence::kBoneNameCapacity> name{};
+                std::uint32_t nameIndex = 0;
+                if (!skeletonBoneName(bones, bone, name) ||
+                    !findAllowedName(std::string_view{ name.data() }, reader.armNodeNames, reader.armNodeNameCount, nameIndex)) {
+                    continue;
+                }
+                auto& target = prepared.armTargets[count++];
+                target.name = name;
+                target.nameIndex = firstNameIndex + nameIndex;
+                target.boneIndex = static_cast<std::int16_t>(bone);
+                target.tracked = prepared.skeletonBones[static_cast<std::size_t>(bone)].transformTrackIndex >= 0;
+                common = animation_preharvest_policy::commonAncestorBone(common, target.boneIndex, parents);
+            }
+            if (count == 0 || common < 0) {
+                return;
+            }
+            const auto weaponChain = animation_preharvest_policy::buildBoneChainBelowAncestor(
+                prepared.weaponBoneIndex,
+                common,
+                parents,
+                prepared.armWeaponChain);
+            if (weaponChain == 0) {
+                return;
+            }
+            prepared.armWeaponChainCount = static_cast<std::uint16_t>(weaponChain);
+            const auto require = [&](const std::int16_t bone) {
+                prepared.armBones[static_cast<std::size_t>(bone)] = 1;
+                return convertHavokLocalTransform(
+                    referencePose[static_cast<std::size_t>(bone)],
+                    prepared.referenceLocals[static_cast<std::size_t>(bone)]);
+            };
+            bool usable = true;
+            for (std::uint32_t index = 0; index < weaponChain; ++index) {
+                usable = require(prepared.armWeaponChain[index]) && usable;
+            }
+            for (std::uint32_t index = 0; index < count; ++index) {
+                auto& target = prepared.armTargets[index];
+                const auto chain = animation_preharvest_policy::buildBoneChainBelowAncestor(
+                    target.boneIndex,
+                    common,
+                    parents,
+                    target.chain);
+                target.chainCount = static_cast<std::uint16_t>(chain);
+                for (std::uint32_t link = 0; link < chain; ++link) {
+                    usable = require(target.chain[link]) && usable;
+                }
+            }
+            if (!usable) {
+                std::memset(prepared.armBones.data(), 0, prepared.armBones.size());
+                PAPER_LOG_INFO(Animation,
+                    "Clip '{}': a bone between the arms and Weapon has a transform NiTransform cannot hold; the arms are not read",
+                    state.job.currentClipPath.data());
+                return;
+            }
+            prepared.armTargetCount = count;
+        }
+
         [[nodiscard]] bool prepareClipWork(
             Runtime& state,
             const char* const* allowedNodeNames,
             const std::uint32_t allowedNodeNameCount,
-            const float samplesPerSecond)
+            const float samplesPerSecond,
+            const PoseReader* reader)
         {
             RE::BShkbAnimationGraph* graph = nullptr;
             void* skeleton = nullptr;
@@ -1383,6 +1465,14 @@ namespace paper::exact_clip_preharvest
                 };
             }
 
+            if (reader && reader->armNodeNameCount != 0) {
+                prepareArmTargets(
+                    state,
+                    bones,
+                    std::span<const HkQsTransform>{ referenceBuffer.data(), static_cast<std::size_t>(prepared.boneCount) },
+                    allowedNodeNameCount,
+                    *reader);
+            }
             return true;
         }
 
@@ -1411,7 +1501,25 @@ namespace paper::exact_clip_preharvest
             return false;
         }
 
-        [[nodiscard]] bool publishPose(Runtime& state, const PoseReader& reader, const float timeSeconds)
+        [[nodiscard]] RE::NiTransform composeSampledChain(
+            const Runtime& state,
+            const std::int16_t* chain,
+            const std::uint16_t count)
+        {
+            auto result = transform_math::identityTransform<RE::NiTransform>();
+            for (std::uint16_t index = 0; index < count; ++index) {
+                result = transform_math::composeTransforms(
+                    result,
+                    state.sampledLocals[static_cast<std::size_t>(chain[index])]);
+            }
+            return result;
+        }
+
+        [[nodiscard]] bool publishPose(
+            Runtime& state,
+            const PoseReader& reader,
+            const float timeSeconds,
+            const bool armsValid)
         {
             const auto& clip = state.clip;
             std::uint32_t boneCount = 0;
@@ -1421,6 +1529,21 @@ namespace paper::exact_clip_preharvest
                     auto& bone = state.poseBones[boneCount++];
                     bone.nameIndex = target.nameIndex;
                     bone.local = state.sampledLocals[static_cast<std::size_t>(target.boneIndex)];
+                    bone.inWeapon = composeSampledChain(state, target.chain.data(), target.chainCount);
+                }
+            }
+            if (armsValid) {
+                const auto weapon = composeSampledChain(state, clip.armWeaponChain.data(), clip.armWeaponChainCount);
+                for (std::uint32_t index = 0; index < clip.armTargetCount; ++index) {
+                    const auto& target = clip.armTargets[index];
+                    if (target.tracked && target.chainCount != 0) {
+                        auto& bone = state.poseBones[boneCount++];
+                        bone.nameIndex = target.nameIndex;
+                        bone.local = state.sampledLocals[static_cast<std::size_t>(target.boneIndex)];
+                        bone.inWeapon = transform_math::relativeTransform(
+                            weapon,
+                            composeSampledChain(state, target.chain.data(), target.chainCount));
+                    }
                 }
             }
             return reader.pose(
@@ -1485,28 +1608,34 @@ namespace paper::exact_clip_preharvest
                 }
 
                 for (std::int32_t bone = 0; bone < clip.boneCount; ++bone) {
-                    if (clip.requiredBones[static_cast<std::size_t>(bone)] != 0) {
+                    if (clip.requiredBones[static_cast<std::size_t>(bone)] != 0 ||
+                        clip.armBones[static_cast<std::size_t>(bone)] != 0) {
                         state.sampledLocals[static_cast<std::size_t>(bone)] =
                             clip.referenceLocals[static_cast<std::size_t>(bone)];
                     }
                 }
+                bool armsValid = clip.armTargetCount != 0;
                 for (std::int32_t track = 0; track < clip.transformTrackCount; ++track) {
                     const auto bone = clip.trackToBone[static_cast<std::size_t>(track)];
                     if (bone < 0 || bone >= clip.boneCount) {
                         return false;
                     }
-                    if (clip.requiredBones[static_cast<std::size_t>(bone)] == 0) {
+                    const bool required = clip.requiredBones[static_cast<std::size_t>(bone)] != 0;
+                    if (!required && clip.armBones[static_cast<std::size_t>(bone)] == 0) {
                         continue;
                     }
                     if (!convertHavokLocalTransform(
                             state.sampledTracks[static_cast<std::size_t>(track)],
                             state.sampledLocals[static_cast<std::size_t>(bone)])) {
-                        return false;
+                        if (required) {
+                            return false;
+                        }
+                        armsValid = false;
                     }
                 }
 
                 if (reader) {
-                    const bool wantsMore = publishPose(state, *reader, timeSeconds);
+                    const bool wantsMore = publishPose(state, *reader, timeSeconds, armsValid);
                     clip.nextSample = wantsMore ? clip.nextSample + 1 : clip.sampleCount;
                     ++samplesCompletedThisFrame;
                     continue;
@@ -2249,7 +2378,8 @@ namespace paper::exact_clip_preharvest
                         allowedNodeNameCount,
                         consumer.reader
                             ? consumer.reader->samplesPerSecond
-                            : animation_preharvest_policy::kSamplesPerSecond)) {
+                            : animation_preharvest_policy::kSamplesPerSecond,
+                        consumer.reader)) {
                     rejectCurrentClip(state, state.prepareFailure);
                     return StepResult{ .state = job.phase };
                 }

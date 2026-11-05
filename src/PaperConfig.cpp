@@ -114,6 +114,8 @@ namespace paper
                 "Reload", "bManualBoltCycle", config.manualBoltCycle);
             config.boltPullDistance = static_cast<float>(ini.GetDoubleValue(
                 "Reload", "fBoltPullDistance", config.boltPullDistance));
+            config.boltHandFromAnimation = ini.GetBoolValue(
+                "Reload", "bBoltHandFromAnimation", config.boltHandFromAnimation);
             config.debugDrawNativeAnimation = ini.GetBoolValue(
                 "Debug",
                 "bDebugDrawNativeAnimation",
@@ -206,7 +208,7 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} manualBoltCycle={} boltPullDistance={:.1f} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} manualBoltCycle={} boltPullDistance={:.1f} boltHandFromAnimation={} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
                 config.enabled,
@@ -216,6 +218,7 @@ namespace paper
                 config.boltHoldCloseSeconds,
                 config.manualBoltCycle,
                 config.boltPullDistance,
+                config.boltHandFromAnimation,
                 static_cast<std::uint32_t>(config.developmentCaptureMode),
                 config.developmentCaptureAutoStart,
                 config.developmentCaptureAllowApiActivation,

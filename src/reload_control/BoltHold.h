@@ -1,11 +1,11 @@
 #pragma once
 
 #include "reload_control/BoltHoldPolicy.h"
-
-#include <RE/NetImmerse/NiTransform.h>
+#include "reload_control/BoltStroke.h"
 
 #include <array>
 #include <cstdint>
+#include <memory>
 
 namespace paper
 {
@@ -19,7 +19,7 @@ namespace paper::bolt_hold
         float deltaSeconds{ 0.0f };
         float closeSeconds{ 0.15f };
         bool enabled{ false };
-        // Slot 0's bolt rifles need their action's pose read too, for ManualBolt.
+        // Slot 0's bolt rifles need their cycle clip read too, for ManualBolt.
         bool manualBoltEnabled{ false };
         // The player's graph is in a reload, which is slot 0's reload.
         bool playerReloadActive{ false };
@@ -60,15 +60,20 @@ namespace paper::bolt_hold
     };
     [[nodiscard]] BoltFamily slotZeroFamily(std::uint64_t generation);
 
-    // The action of slot 0's bolt rifle: each bone's key, and its closed and open
-    // poses read from the weapon's clips, in the order of kActionBoneNames.
+    // The action of slot 0's bolt rifle: each bone's key, in the order of
+    // kActionBoneNames, and the stroke read from its cycle clip.
     struct ManualAction
     {
         std::array<std::uint64_t, bolt_hold_policy::kActionBoneNames.size()> keys{};
-        std::array<bool, bolt_hold_policy::kActionBoneNames.size()> posed{};
-        std::array<RE::NiTransform, bolt_hold_policy::kActionBoneNames.size()> closed{};
-        std::array<RE::NiTransform, bolt_hold_policy::kActionBoneNames.size()> open{};
+        std::shared_ptr<const bolt_stroke::Stroke> stroke{};
     };
-    // False while the clips are being read and for a gun none of whose clips move its bolt.
-    [[nodiscard]] bool queryManualAction(std::uint64_t generation, ManualAction& out);
+    enum class ManualActionState : std::uint8_t
+    {
+        // The clips are being read.
+        Pending,
+        // The rifle's cycle clip shows no hand working its bolt, or it has none.
+        None,
+        Ready,
+    };
+    [[nodiscard]] ManualActionState queryManualAction(std::uint64_t generation, ManualAction& out);
 }

@@ -5,6 +5,7 @@
 #include "api/ApiTransform.h"
 #include "api/RockApiClient.h"
 #include "reload_control/BoltHoldPolicy.h"
+#include "reload_control/BoltStroke.h"
 #include "reload_observation/ReloadObservation.h"
 #include "support/TransformMath.h"
 
@@ -51,8 +52,6 @@ namespace paper::bolt_hold
             float travel{ 0.0f };
             std::array<bool, kBoneCount> posed{};
             std::array<RE::NiTransform, kBoneCount> open{};
-            // The idle clip's pose of each bone, set when the read completes.
-            std::array<RE::NiTransform, kBoneCount> closed{};
         };
 
         // A form with PoseSource::None has been read and has no pose.
@@ -60,6 +59,7 @@ namespace paper::bolt_hold
         {
             std::uint32_t form{ 0 };
             OpenPose pose{};
+            bool strokeRead{ false };
         };
 
         struct Bone
@@ -132,6 +132,9 @@ namespace paper::bolt_hold
             std::uint32_t clipsRead{ 0 };
             Clock::time_point started{};
             std::int64_t longestStepMicroseconds{ 0 };
+            // A bolt rifle's cycle clip is read for the hand that works the bolt.
+            bool wantsStroke{ false };
+            bool strokeFound{ false };
         };
 
         // Frame thread only. A fixed table: the oldest pose gives way.
@@ -139,6 +142,15 @@ namespace paper::bolt_hold
         std::size_t s_learnedNext{ 0 };
         std::array<Slot, rock::api::kMaxWeaponSlots> s_slots{};
         PoseRead s_read{};
+        bolt_stroke::Recorder s_strokeRecorder{};
+        // Shared so a weapon in use keeps its stroke if the oldest gives way.
+        struct LearnedStroke
+        {
+            std::uint32_t form{ 0 };
+            std::shared_ptr<const bolt_stroke::Stroke> stroke{};
+        };
+        std::array<LearnedStroke, 16> s_strokes{};
+        std::size_t s_strokeNext{ 0 };
         std::uint64_t s_readFailedGeneration{ 0 };
         // Kept between frames: a weapon retries while ROCK builds its parts.
         std::vector<rock::api::weaponparts::Source> s_sources;
@@ -188,7 +200,7 @@ namespace paper::bolt_hold
             return nullptr;
         }
 
-        void storeLearned(const std::uint32_t form, const OpenPose& pose)
+        void storeLearned(const std::uint32_t form, const OpenPose& pose, const bool strokeRead)
         {
             auto* entry = findLearned(form);
             if (!entry) {
@@ -197,6 +209,7 @@ namespace paper::bolt_hold
             }
             entry->form = form;
             entry->pose = pose;
+            entry->strokeRead = strokeRead;
         }
 
         [[nodiscard]] bool outranks(const PoseSource source, const float travel, const OpenPose& pose)
@@ -298,6 +311,26 @@ namespace paper::bolt_hold
                 read.clipShowsClosed = false;
                 read.clipBest = {};
                 ++read.clipsRead;
+                if (read.clipKind == policy::ClipKind::Cycle && read.wantsStroke) {
+                    s_strokeRecorder.begin(frame.sampleCount);
+                }
+            }
+            if (read.clipKind == policy::ClipKind::Cycle && read.wantsStroke) {
+                s_strokeRecorder.add(frame);
+                if (frame.sampleIndex + 1 == frame.sampleCount) {
+                    try {
+                        if (auto stroke = bolt_stroke::analyse(read.form, frame.animationPath, s_strokeRecorder.frames())) {
+                            read.strokeFound = true;
+                            auto& entry = s_strokes[s_strokeNext];
+                            s_strokeNext = (s_strokeNext + 1) % s_strokes.size();
+                            entry.form = read.form;
+                            entry.stroke = std::move(stroke);
+                        }
+                    } catch (...) {
+                        PAPER_LOG_ERROR(Reload, "MANUAL_BOLT could not read the cycle clip of weapon={:08X}", read.form);
+                    }
+                    s_strokeRecorder.clear();
+                }
             }
             ClipPose pose{};
             for (std::uint32_t index = 0; index < frame.boneCount; ++index) {
@@ -354,6 +387,8 @@ namespace paper::bolt_hold
             switch (policy::classifyClip(animationPath)) {
             case policy::ClipKind::Idle:
                 return true;
+            case policy::ClipKind::Cycle:
+                return read.closedKnown && ((read.wantsStroke && !read.strokeFound) || source == PoseSource::None);
             case policy::ClipKind::Reload:
                 return read.closedKnown;
             case policy::ClipKind::Fire:
@@ -415,10 +450,11 @@ namespace paper::bolt_hold
                 parts.data());
         }
 
-        void beginRead(const std::uint32_t index, const Slot& slot)
+        void beginRead(const std::uint32_t index, const Slot& slot, const bool wantsStroke)
         {
             s_read = {};
             s_read.active = true;
+            s_read.wantsStroke = wantsStroke;
             s_read.slot = index;
             s_read.form = slot.form;
             s_read.generation = slot.generation;
@@ -432,11 +468,13 @@ namespace paper::bolt_hold
         {
             for (std::uint32_t index = 0; index < s_slots.size(); ++index) {
                 const auto& slot = s_slots[index];
-                const bool wanted = (input.enabled && slot.eligible) ||
-                    (input.manualBoltEnabled && index == 0 && slot.boltAction &&
-                        slot.bones[policy::kBoltBone].key != 0);
-                if (wanted && !findLearned(slot.form) && slot.generation != s_readFailedGeneration) {
-                    beginRead(index, slot);
+                const bool wantsStroke = input.manualBoltEnabled && index == 0 && slot.boltAction &&
+                    slot.bones[policy::kBoltBone].key != 0;
+                const bool wanted = (input.enabled && slot.eligible) || wantsStroke;
+                const auto* learned = findLearned(slot.form);
+                if (wanted && (!learned || (wantsStroke && !learned->strokeRead)) &&
+                    slot.generation != s_readFailedGeneration) {
+                    beginRead(index, slot, wantsStroke);
                     return;
                 }
             }
@@ -471,6 +509,8 @@ namespace paper::bolt_hold
                 .readsClip = &readsClip,
                 .pose = &readClipPose,
                 .userData = &s_read,
+                .armNodeNames = s_read.wantsStroke ? bolt_stroke::kArmBoneNames.data() : nullptr,
+                .armNodeNameCount = s_read.wantsStroke ? static_cast<std::uint32_t>(bolt_stroke::kArmBoneNames.size()) : 0u,
             };
             const auto stepStarted = Clock::now();
             const auto result = sampler::stepPoses(
@@ -485,8 +525,7 @@ namespace paper::bolt_hold
 
             // Idle retries next frame: the actor's equipped items can trail ROCK's weapon.
             if (result.state == sampler::State::Completed) {
-                s_read.best.pose.closed = s_read.closed;
-                storeLearned(s_read.form, s_read.best.pose);
+                storeLearned(s_read.form, s_read.best.pose, s_read.wantsStroke);
                 logRead(s_read, s_slots[s_read.slot]);
                 stopRead();
             } else if (result.state == sampler::State::Failed) {
@@ -726,23 +765,29 @@ namespace paper::bolt_hold
         return slot.boltAction ? BoltFamily::BoltAction : BoltFamily::NotBoltAction;
     }
 
-    bool queryManualAction(const std::uint64_t generation, ManualAction& out)
+    ManualActionState queryManualAction(const std::uint64_t generation, ManualAction& out)
     {
         const auto& slot = s_slots[0];
-        if (slot.generation != generation || !slot.resolved || !slot.boltAction ||
-            !slot.bones[policy::kBoltBone].key) {
-            return false;
+        if (slot.generation != generation || !slot.resolved) {
+            return ManualActionState::Pending;
+        }
+        if (!slot.boltAction || !slot.bones[policy::kBoltBone].key) {
+            return ManualActionState::None;
         }
         const auto* learned = findLearned(slot.form);
-        if (!learned || learned->pose.source == PoseSource::None) {
-            return false;
+        if (!learned || !learned->strokeRead) {
+            return ManualActionState::Pending;
+        }
+        const auto found = std::find_if(s_strokes.begin(), s_strokes.end(), [&](const LearnedStroke& entry) {
+            return entry.form == slot.form;
+        });
+        if (found == s_strokes.end()) {
+            return ManualActionState::None;
         }
         for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
             out.keys[bone] = slot.bones[bone].key;
         }
-        out.posed = learned->pose.posed;
-        out.closed = learned->pose.closed;
-        out.open = learned->pose.open;
-        return true;
+        out.stroke = found->stroke;
+        return ManualActionState::Ready;
     }
 }

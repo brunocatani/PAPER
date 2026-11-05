@@ -359,7 +359,9 @@ namespace paper::native_animation_authority_policy
         return { state, NativeAnimationCompatibilityReason::None };
     }
 
-    [[nodiscard]] inline constexpr bool canApplyManualCycleHandAnimation(
+    // The hand-worked bolt serves the rifles the cycle animation serves. Only a part
+    // carry differs: the other hand carrying the gun is how the firing hand gets free.
+    [[nodiscard]] inline constexpr bool canWorkBoltByHand(
         const NativeAnimationCompatibilityObservation& observation)
     {
         return observation.handlingStateValid &&
@@ -369,9 +371,14 @@ namespace paper::native_animation_authority_policy
                observation.weaponFormId != 0 &&
                (observation.weaponGenerationKey != 0 || observation.weaponNode != 0) &&
                !observation.firingHandIsLeft &&
-               !observation.partCarryActive &&
                !observation.akimboActive &&
                !observation.userWeaponOffset;
+    }
+
+    [[nodiscard]] inline constexpr bool canApplyManualCycleHandAnimation(
+        const NativeAnimationCompatibilityObservation& observation)
+    {
+        return canWorkBoltByHand(observation) && !observation.partCarryActive;
     }
 
     struct ManualCycleAuthoredSupportGripLatchState
