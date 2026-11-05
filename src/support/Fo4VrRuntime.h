@@ -47,6 +47,10 @@ namespace paper::fo4vr
     [[nodiscard]] BSFlattenedBoneTree* getFirstPersonBoneTree() noexcept;
     [[nodiscard]] RE::EquippedItem* getEquippedItem() noexcept;
     [[nodiscard]] RE::NiNode* getFirstPersonWeaponNode() noexcept;
+    // The tracked controller of that physical hand. No hand, weapon or animation
+    // authority moves it, so it still shows the player's hand when the visible one
+    // is locked to something.
+    [[nodiscard]] const RE::NiAVObject* getControllerNode(bool isLeft) noexcept;
     void updateTransforms(RE::NiAVObject* node) noexcept;
     void updateTransformsDown(RE::NiAVObject* node, bool updateSelf) noexcept;
 }

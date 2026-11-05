@@ -38,7 +38,8 @@ namespace paper::manual_bolt
      * Bolt: two resting positions, closed and back, and the rifle's own cycle clip
      * between them (bolt_stroke). The hand the clip works the bolt with grips it at
      * the point the clip holds it: when that is the firing hand, the other hand
-     * carries the gun first and ROCK frees the firing hand. Moving that hand past
+     * carries the gun first and ROCK frees the firing hand. The hand is then locked
+     * to the bolt, so the pull is read from that hand's controller: moving it past
      * half the pull distance along the bolt's line commits the stroke, which plays
      * at the clip's speed. Letting go never moves the bolt, so it can be left open.
      * A rifle whose clip shows no hand on the bolt, or with no bolt collider, keeps

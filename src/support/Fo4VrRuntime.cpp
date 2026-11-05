@@ -46,6 +46,32 @@ namespace paper::fo4vr
         return find(find,root,0);
     }
 
+    const RE::NiAVObject* getControllerNode(const bool isLeft) noexcept
+    {
+        // PlayerCharacter's VR node block in Fallout4VR.exe 1.2.72.
+        constexpr std::uintptr_t kPrimaryWandNode = 0x6F0;
+        constexpr std::uintptr_t kSecondaryWandNode = 0x768;
+
+        // The setting object lives as long as the game; only its value changes.
+        static RE::Setting* leftHandedMode = nullptr;
+        if (!leftHandedMode) {
+            constexpr const char* kName = "bLeftHandedMode:VR";
+            auto* preferences = RE::INIPrefSettingCollection::GetSingleton();
+            leftHandedMode = preferences ? preferences->GetSetting(kName) : nullptr;
+            if (!leftHandedMode) {
+                auto* settings = RE::INISettingCollection::GetSingleton();
+                leftHandedMode = settings ? settings->GetSetting(kName) : nullptr;
+            }
+        }
+        auto* player = getPlayer();
+        if (!player || !leftHandedMode) {
+            return nullptr;
+        }
+        const bool offhand = leftHandedMode->GetBinary() != isLeft;
+        return *reinterpret_cast<RE::NiNode* const*>(
+            reinterpret_cast<std::uintptr_t>(player) + (offhand ? kSecondaryWandNode : kPrimaryWandNode));
+    }
+
     RE::EquippedItem* getEquippedItem() noexcept
     {
         auto* player = getPlayer();

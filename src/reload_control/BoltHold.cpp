@@ -774,15 +774,14 @@ namespace paper::bolt_hold
         if (!slot.boltAction || !slot.bones[policy::kBoltBone].key) {
             return ManualActionState::None;
         }
-        const auto* learned = findLearned(slot.form);
-        if (!learned || !learned->strokeRead) {
-            return ManualActionState::Pending;
-        }
+        // The stroke is ready as soon as its clip is read, while the rest of the read
+        // goes on for the hold pose. Only the end of the read can say there is none.
         const auto found = std::find_if(s_strokes.begin(), s_strokes.end(), [&](const LearnedStroke& entry) {
             return entry.form == slot.form;
         });
         if (found == s_strokes.end()) {
-            return ManualActionState::None;
+            const auto* learned = findLearned(slot.form);
+            return learned && learned->strokeRead ? ManualActionState::None : ManualActionState::Pending;
         }
         for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
             out.keys[bone] = slot.bones[bone].key;
