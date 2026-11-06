@@ -47,6 +47,9 @@ namespace paper::chamber_ejection
             float age{ 0.0f };
             float launchAge{ 0.0f };
             bool launched{ false };
+            // ROCK has the request to let the round out past the weapon and hands.
+            bool cleared{ false };
+            rock::api::Status clearance{ rock::api::Status::NotReady };
         };
         constexpr float kLaunchTimeoutSeconds = 1.5f;
         // After the launch, how long the body's motion is left to settle before the last check.
@@ -238,7 +241,6 @@ namespace paper::chamber_ejection
         // TRACE: temporary, measures where the casing and the live round really go.
         RE::NiPointer<RE::NiAVObject> s_traceNode{};
         int s_traceFrames{ 0 };
-        unsigned s_traceCount{ 0 };
         std::uint32_t s_traceRound{ 0 };
         int s_traceRoundFrames{ 0 };
 
@@ -351,13 +353,13 @@ namespace paper::chamber_ejection
                     return nullptr;
                 }
             }
-            // TRACE: every second spent case is built as ordinary world debris.
-            const bool flag = (s_traceCount++ % 2) == 0 ? firstPerson : false;
-            auto* debris = s_debris(storage, cell, lifetime, model, actor, position, rotation, velocity, spin, scale, reserved, shell, flag);
+            // Always ordinary world debris: first-person debris stays out of the world
+            // scene for its first half second, so the case would not be seen leaving the port.
+            auto* debris = s_debris(storage, cell, lifetime, model, actor, position, rotation, velocity, spin, scale, reserved, shell, false);
             if (debris) {
                 s_traceNode.reset(*reinterpret_cast<RE::NiAVObject**>(static_cast<std::byte*>(debris) + 0x30));
                 s_traceFrames = 150;
-                PAPER_LOG_INFO(Reload, "TRACE casing built firstPerson={} model={} velocity=({:.1f},{:.1f},{:.1f})", flag, model ? model : "", velocity->x, velocity->y, velocity->z);
+                PAPER_LOG_INFO(Reload, "TRACE casing built firstPerson=false model={} velocity=({:.1f},{:.1f},{:.1f})", model ? model : "", velocity->x, velocity->y, velocity->z);
             }
             return debris;
         }
@@ -697,6 +699,10 @@ namespace paper::chamber_ejection
             targeted[hand == rock::api::Hand::Left ? 1 : 0] = state.targetFormId;
         }
         const float dt = std::isfinite(context.deltaSeconds) ? std::clamp(context.deltaSeconds, 0.0f, 0.1f) : 0.0f;
+        // A round starts inside the receiver beside the bolt hand, and ROCK's casing grace
+        // covers only the game's casings, so a round asks ROCK for the same way out.
+        rock::api::weapon::WeaponState weapon{};
+        const bool weaponKnown = rock.queryWeaponState(0, weapon) && weapon.weaponGenerationKey != 0;
         for (auto& entry : s_launches) {
             if (!entry.reference) {
                 continue;
@@ -708,6 +714,10 @@ namespace paper::chamber_ejection
             auto* cell = reference ? reference->GetParentCell() : nullptr;
             bool done = !reference || !object || object->formID != entry.ammo || reference->IsDeleted() || reference->IsDisabled() ||
                 !cell || cell->formID != entry.cell || targeted[0] == entry.reference || targeted[1] == entry.reference;
+            if (!done && !entry.cleared && weaponKnown) {
+                entry.clearance = rock.requestEjectionClearance(entry.reference, entry.ammo, weapon.weaponFormId, weapon.weaponGenerationKey);
+                entry.cleared = entry.clearance == rock::api::Status::Ok || entry.clearance == rock::api::Status::RequestQueued;
+            }
             if (!done && entry.launched) {
                 done = entry.age - entry.launchAge >= kAfterLaunchSeconds && applyRoundPhysics(reference, entry);
             } else if (!done && handsReady && applyRoundPhysics(reference, entry)) {
@@ -718,6 +728,9 @@ namespace paper::chamber_ejection
                 PAPER_LOG_WARN(Reload, "CHAMBER live round ref={:08X} did not launch; it stays where it is", entry.reference);
             }
             if (done || expired) {
+                if (!entry.cleared) {
+                    PAPER_LOG_WARN(Reload, "CHAMBER live round ref={:08X} still collided with the weapon: ROCK answered {}", entry.reference, static_cast<std::uint32_t>(entry.clearance));
+                }
                 entry = {};
             }
         }

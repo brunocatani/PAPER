@@ -54,6 +54,7 @@ namespace paper
         else if ((status=_client.acquire(permissions(api::animation::Permission::Read,api::animation::Permission::Write,
                      api::animation::Permission::Callbacks),_animation))!=api::Status::Ok) missing="Animation";
         else if ((status=_client.acquire(permissions(api::input::Permission::Read,api::input::Permission::Write),_input))!=api::Status::Ok) missing="Input";
+        else if ((status=_client.acquire(permissions(api::collision::Permission::Write),_collision))!=api::Status::Ok) missing="Collision";
         if (missing) {
             PAPER_LOG_ERROR(Api,"ROCK {} interface unavailable for PAPER: {}",missing,static_cast<std::uint32_t>(status));
             required_updates::noteRockRefusal(status,missing);
@@ -71,7 +72,7 @@ namespace paper
             PAPER_LOG_ERROR(Api,"ROCK owner teardown failed: {}",static_cast<std::uint32_t>(status)); return;
         }
         _ownerToken=0; _phaseCallbackToken=0; _publishedAuthorityFlags=0;
-        _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr; _input=nullptr;
+        _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr; _input=nullptr; _collision=nullptr;
         _reloadObservationEvidenceReady=false; _sample={};
     }
     bool RockApiClient::ready() const { return _ownerToken && _client.owner()==_ownerToken; }
@@ -247,6 +248,18 @@ namespace paper
     std::uint64_t RockApiClient::queryWeaponInteractionKey(std::uint32_t slot) const {
         std::uint64_t key=0;
         return ready() && _weapon->getInteractionKey(_ownerToken,slot,&key)==rock::api::Status::Ok ? key : 0;
+    }
+    rock::api::Status RockApiClient::requestEjectionClearance(std::uint32_t reference,std::uint32_t base,std::uint32_t weapon,std::uint64_t key) const {
+        if (!ready()) return rock::api::Status::NotReady;
+        rock::api::collision::EjectionClearanceRequest request{};
+        request.reference.referenceFormId=reference;
+        stamp(request.reference);
+        request.expectedBase=base;
+        request.weaponGenerationKey=key;
+        request.weaponSlot=0;
+        request.weaponFormId=weapon;
+        request.flags=static_cast<std::uint32_t>(rock::api::collision::EjectionClearanceFlag::IncludeHands);
+        return _collision->requestEjectionClearance(_ownerToken,&request);
     }
     bool RockApiClient::queryWeaponClassification(std::uint32_t slot,rock::api::weapon::Classification& outClassification) const {
         outClassification={};

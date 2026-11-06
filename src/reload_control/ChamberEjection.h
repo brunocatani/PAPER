@@ -36,10 +36,12 @@ namespace paper::chamber_ejection
      * It leaves from the weapon's own P-Casing point on the visible first-person weapon,
      * found by the game's own search, with the game's throw turned to match.
      *
-     * A spent case is the game's casing. A live round is a real one-round ammo reference
-     * at the same place with the same motion, which ROCK can grab and the game can pick
-     * up, and which then leaves the inventory so no round is created. False leaves the
-     * inventory alone: the round has gone back to the reserve instead.
+     * A spent case is the game's casing, built as ordinary world debris so it is seen
+     * leaving the port. A live round is a real one-round ammo reference at the same place
+     * with the same motion, which ROCK can grab and the game can pick up, and which then
+     * leaves the inventory so no round is created. ROCK lets it out past the weapon and
+     * the hands, as its casing grace does for a case. False leaves the inventory alone:
+     * the round has gone back to the reserve instead.
      *
      * Call it in ROCK's AfterRock phase, once the weapon is placed for the frame.
      * `instance` is the slot's raw equipped instance, borrowed for the call.

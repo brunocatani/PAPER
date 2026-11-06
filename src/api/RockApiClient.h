@@ -2,6 +2,7 @@
 
 #include "api/RockTypes.h"
 #include <ROCK/Client.h>
+#include <ROCK/Collision.h>
 #include <ROCK/Input.h>
 
 #include <cstdint>
@@ -113,6 +114,12 @@ namespace paper
         [[nodiscard]] bool publishNativeAnimationRuntime(
             const rock::api::animation::NativeAnimationRuntimePublication& publication) const;
         void clearNativeAnimationRuntime() const;
+        // For a moment, a reference thrown out of slot 0's weapon ignores it and both hands.
+        [[nodiscard]] rock::api::Status requestEjectionClearance(
+            std::uint32_t referenceFormId,
+            std::uint32_t expectedBase,
+            std::uint32_t weaponFormId,
+            std::uint64_t weaponGenerationKey) const;
 
     private:
         rock::api::Client _client;
@@ -123,6 +130,7 @@ namespace paper
         const rock::api::weaponparts::Api* _parts{};
         const rock::api::animation::Api* _animation{};
         const rock::api::input::Api* _input{};
+        const rock::api::collision::Api* _collision{};
         rock::api::Sample _sample{};
         template<class T> void stamp(T& value) const {
             value.worldGeneration=_sample.worldGeneration;
