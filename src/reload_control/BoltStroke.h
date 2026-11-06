@@ -21,7 +21,7 @@ namespace paper::bolt_stroke
     inline constexpr std::size_t kRightHand = 1;
 
     // Thumb, index, middle, ring, pinky; three joints each. Left, then right.
-    inline constexpr std::array<const char*, 32> kArmBoneNames{
+    inline constexpr std::array<const char*, 34> kArmBoneNames{
         "LArm_Hand",
         "LArm_Finger11", "LArm_Finger12", "LArm_Finger13",
         "LArm_Finger21", "LArm_Finger22", "LArm_Finger23",
@@ -34,6 +34,8 @@ namespace paper::bolt_stroke
         "RArm_Finger31", "RArm_Finger32", "RArm_Finger33",
         "RArm_Finger41", "RArm_Finger42", "RArm_Finger43",
         "RArm_Finger51", "RArm_Finger52", "RArm_Finger53",
+        // TRACE: temporary, what a cycle clip does with the rounds some models carry.
+        "WeaponOptics1", "WeaponOptics2",
     };
 
     struct ClipHand
