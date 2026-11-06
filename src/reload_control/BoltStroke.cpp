@@ -143,24 +143,6 @@ namespace paper::bolt_stroke
             if (arm >= kArmBoneNames.size()) {
                 continue;
             }
-            // TRACE: temporary, the two names after the hands.
-            if (arm >= 32) {
-                if (_frames.size() % 6 == 1) {
-                    PAPER_LOG_INFO(
-                        Reload,
-                        "TRACE clip bone={} t={:.3f} local=({:.2f},{:.2f},{:.2f}) inWeapon=({:.2f},{:.2f},{:.2f}) scale={:.3f}",
-                        kArmBoneNames[arm],
-                        source.timeSeconds,
-                        bone.local.translate.x,
-                        bone.local.translate.y,
-                        bone.local.translate.z,
-                        bone.inWeapon.translate.x,
-                        bone.inWeapon.translate.y,
-                        bone.inWeapon.translate.z,
-                        bone.local.scale);
-                }
-                continue;
-            }
             auto& hand = frame.hands[arm / kHandNameCount];
             const std::size_t slot = arm % kHandNameCount;
             if (slot == 0) {
