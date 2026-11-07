@@ -239,7 +239,8 @@ namespace paper::chamber_ejection
         }
 
         // TRACE: temporary, measures where the casing and the live round really go.
-        RE::NiPointer<RE::NiAVObject> s_traceNode{};
+        // Never destroyed: an engine object released in DLL detach raises R6025 during ExitProcess.
+        RE::NiPointer<RE::NiAVObject>& s_traceNode = *new RE::NiPointer<RE::NiAVObject>;
         int s_traceFrames{ 0 };
         std::uint32_t s_traceRound{ 0 };
         int s_traceRoundFrames{ 0 };
