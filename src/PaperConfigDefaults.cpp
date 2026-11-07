@@ -77,7 +77,7 @@ bChamberRound = {}
 ; bChamberRound describes, whatever that key says. A rifle whose cycle animation shows
 ; no hand on the bolt keeps its usual cycle. Lever guns, pumps and revolvers are not
 ; affected.
-bManualBoltCycle = {}
+bBoltAppreciation = {}
 
 ; The length of a full pull, in game units, the same on every rifle. 7 is about 9 cm.
 ; Moving your hand past half of it takes the bolt all the way, at the speed of the
@@ -143,7 +143,7 @@ iMaximumEntries = {}
             defaults.boltHoldOpen,
             defaults.boltHoldCloseSeconds,
             defaults.chamberRound,
-            defaults.manualBoltCycle,
+            defaults.boltAppreciation,
             defaults.boltPullDistance,
             defaults.boltHandFromAnimation,
             defaults.debugDrawNativeAnimation,

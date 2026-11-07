@@ -1174,7 +1174,7 @@ namespace
                     .deltaSeconds = context->deltaSeconds,
                     .closeSeconds = g_config.boltHoldCloseSeconds,
                     .enabled = operational && g_config.boltHoldOpen,
-                    .manualBoltEnabled = operational && g_config.manualBoltCycle,
+                    .manualBoltEnabled = operational && g_config.boltAppreciation,
                     .playerReloadActive = native_animation_authority::playerReloadActive(),
                     .physicalReloadActive = provider::physicalReloadActive(),
                     .clipSamplerAvailable = !enrichmentDemand.exactAnimationEvidence,
@@ -1183,7 +1183,7 @@ namespace
                 rockApiClient(),
                 manual_bolt::FrameInput{
                     .chamberEnabled = operational && g_config.chamberRound,
-                    .boltEnabled = operational && g_config.manualBoltCycle,
+                    .boltEnabled = operational && g_config.boltAppreciation,
                     .pullDistance = g_config.boltPullDistance,
                     .handFromAnimation = g_config.boltHandFromAnimation,
                     .cycleAllowed = !climbingAnimationSuppressed &&
