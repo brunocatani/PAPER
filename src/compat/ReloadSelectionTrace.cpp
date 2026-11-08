@@ -8,6 +8,7 @@
 #include "support/NativeMemory.h"
 
 #include <Windows.h>
+#include <RPS/Runtime/HookChain.h>
 #include <atomic>
 #include <cmath>
 #include <utility>
@@ -176,6 +177,14 @@ namespace paper::reload_selection_trace
             return native_memory::guardedCopyFromMemory(
                 reinterpret_cast<const void*>(REL::Module::get().base() + offset), actual.data(), N) && actual == bytes;
         }
+
+        // A function PAPER calls: its prologue, or another plugin's detour at the entry.
+        template <std::size_t N>
+        bool callable(std::uintptr_t offset, const std::array<std::uint8_t, N>& bytes)
+        {
+            return static_cast<bool>(
+                RPS::Runtime::HookChain::resolveEntry(REL::Module::get().base() + offset, bytes));
+        }
     }
 
     bool installHook()
@@ -189,14 +198,18 @@ namespace paper::reload_selection_trace
         // SCRIPT records (indices 756/560/682/448) identify these condition
         // handlers; their raw code agrees on RCX->subject, RDX parameter,
         // R9 float output. Use native equipped-instance keyword/ammo semantics.
-        const bool signatures =
-            matches(kProcessCall - 4, std::array<std::uint8_t, 11>{ 0x48,0x8D,0x4D,0x80,0xE8,0x70,0xB3,0xFD,0xFF,0x84,0xC0 }) &&
+        // The call reaches Process or another plugin's detour; the trace calls through it.
+        const auto callee = RPS::Runtime::HookChain::resolveCall(
+            REL::Module::get().base() + kProcessCall, REL::Module::get().base() + kProcessAction);
+        const bool signatures = static_cast<bool>(callee) &&
+            matches(kProcessCall - 4, std::array<std::uint8_t, 4>{ 0x48,0x8D,0x4D,0x80 }) &&
+            matches(kProcessCall + 5, std::array<std::uint8_t, 2>{ 0x84,0xC0 }) &&
             // The thunk's jump target is left out: another plugin may route it.
-            matches(kProcessAction, std::array<std::uint8_t, 11>{ 0x48,0x8B,0xD1,0x48,0x8B,0x0D,0x76,0x88,0xB6,0x04,0xE9 }) &&
-            matches(kLoadedAmmo, std::array<std::uint8_t, 18>{ 0x48,0x89,0x5C,0x24,0x10,0x57,0x48,0x83,0xEC,0x30,0x33,0xDB,0x49,0x8B,0xF9,0x41,0x89,0x19 }) &&
-            matches(kHasKeyword, std::array<std::uint8_t, 16>{ 0x40,0x53,0x48,0x83,0xEC,0x20,0x41,0xC7,0x01,0,0,0,0,0x48,0x8B,0x09 }) &&
-            matches(kWornHasKeyword, std::array<std::uint8_t, 16>{ 0x40,0x53,0x48,0x83,0xEC,0x30,0x41,0xC7,0x01,0,0,0,0,0x4C,0x8B,0x01 }) &&
-            matches(kHasPerk, std::array<std::uint8_t, 17>{ 0x40,0x57,0x48,0x83,0xEC,0x20,0x33,0xC0,0x49,0x8B,0xF9,0x41,0x89,0x01,0x4C,0x8B,0x01 });
+            callable(kProcessAction, std::array<std::uint8_t, 11>{ 0x48,0x8B,0xD1,0x48,0x8B,0x0D,0x76,0x88,0xB6,0x04,0xE9 }) &&
+            callable(kLoadedAmmo, std::array<std::uint8_t, 18>{ 0x48,0x89,0x5C,0x24,0x10,0x57,0x48,0x83,0xEC,0x30,0x33,0xDB,0x49,0x8B,0xF9,0x41,0x89,0x19 }) &&
+            callable(kHasKeyword, std::array<std::uint8_t, 16>{ 0x40,0x53,0x48,0x83,0xEC,0x20,0x41,0xC7,0x01,0,0,0,0,0x48,0x8B,0x09 }) &&
+            callable(kWornHasKeyword, std::array<std::uint8_t, 16>{ 0x40,0x53,0x48,0x83,0xEC,0x30,0x41,0xC7,0x01,0,0,0,0,0x4C,0x8B,0x01 }) &&
+            callable(kHasPerk, std::array<std::uint8_t, 17>{ 0x40,0x57,0x48,0x83,0xEC,0x20,0x33,0xC0,0x49,0x8B,0xF9,0x41,0x89,0x01,0x4C,0x8B,0x01 });
         if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
             !signatures || !merged_reload_compatibility::diagnosticLogger()) {
             PAPER_LOG_ERROR(Compatibility, "TR_SELECT hook rejected: native signature or asynchronous logger unavailable");
@@ -204,7 +217,7 @@ namespace paper::reload_selection_trace
         }
         s_trampoline.create(16);
         s_owner = GetCurrentThreadId();
-        s_original.store(reinterpret_cast<ProcessAction>(REL::Module::get().base() + kProcessAction), std::memory_order_release);
+        s_original.store(reinterpret_cast<ProcessAction>(callee.callee), std::memory_order_release);
         s_trampoline.write_call<5>(REL::Module::get().base() + kProcessCall, &onProcessAction);
         PAPER_LOG_INFO(Compatibility, "TR_SELECT pre-selection trace installed: debug only, first 64 requests then every 128; condition -1=unavailable; phases 0=idle 1=press-armed 2=awaiting-start 3=reload-active");
         return true;

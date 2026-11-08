@@ -7,6 +7,7 @@
 #include "support/TransformMath.h"
 
 #include <Windows.h>
+#include <RPS/Runtime/HookChain.h>
 #include <fmt/format.h>
 
 #include <array>
@@ -2267,24 +2268,25 @@ namespace paper::clip_telemetry
         const auto activateSlot = vtableBase + kClipGeneratorActivateSlotOffset;
         const auto updateSlot = vtableBase + kClipGeneratorUpdateSlotOffset;
         const auto deactivateSlot = vtableBase + kClipGeneratorDeactivateSlotOffset;
-        std::uintptr_t activateFunction = 0;
-        std::uintptr_t updateFunction = 0;
-        std::uintptr_t deactivateFunction = 0;
-        if (!native_memory::tryReadValue(
-                reinterpret_cast<const std::uintptr_t*>(activateSlot),
-                activateFunction) ||
-            !native_memory::tryReadValue(
-                reinterpret_cast<const std::uintptr_t*>(updateSlot),
-                updateFunction) ||
-            !native_memory::tryReadValue(
-                reinterpret_cast<const std::uintptr_t*>(deactivateSlot),
-                deactivateFunction) ||
-            activateFunction != REL::Module::get().base() +
-                kClipGeneratorActivateFunctionOffset ||
-            updateFunction != REL::Module::get().base() +
-                kClipGeneratorUpdateFunctionOffset ||
-            deactivateFunction != REL::Module::get().base() +
-                kClipGeneratorDeactivateFunctionOffset) {
+        // Each slot holds the native function or another plugin's; the shims call
+        // through whichever is there.
+        const auto base = REL::Module::get().base();
+        const auto activateResolved =
+            RPS::Runtime::HookChain::resolveSlot(activateSlot, base + kClipGeneratorActivateFunctionOffset);
+        const auto updateResolved =
+            RPS::Runtime::HookChain::resolveSlot(updateSlot, base + kClipGeneratorUpdateFunctionOffset);
+        const auto deactivateResolved =
+            RPS::Runtime::HookChain::resolveSlot(deactivateSlot, base + kClipGeneratorDeactivateFunctionOffset);
+        for (const auto* resolved : { &activateResolved, &updateResolved, &deactivateResolved }) {
+            if (resolved->foreign()) {
+                PAPER_LOG_INFO(Init, "Passive clip telemetry: a clip generator slot is already replaced by {}; PAPER calls through it",
+                    resolved->owner);
+            }
+        }
+        const std::uintptr_t activateFunction = activateResolved.callee;
+        const std::uintptr_t updateFunction = updateResolved.callee;
+        const std::uintptr_t deactivateFunction = deactivateResolved.callee;
+        if (!activateResolved || !updateResolved || !deactivateResolved) {
             PAPER_LOG_ERROR(
                 Init,
                 "Passive clip telemetry hook validation failed; lifecycle vtable entries do not match Fallout4VR.exe 1.2.72");

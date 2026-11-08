@@ -7,6 +7,7 @@
 #include "support/NativeMemory.h"
 
 #include <Windows.h>
+#include <RPS/Runtime/HookChain.h>
 #include <atomic>
 #include <memory>
 #include <spdlog/async_logger.h>
@@ -194,13 +195,12 @@ namespace paper::merged_reload_compatibility
             }
         }
 
+        // A function PAPER calls: its prologue, or another plugin's detour at the entry.
         template <std::size_t N>
-        bool matches(const std::uintptr_t offset, const std::array<std::uint8_t, N>& expected)
+        bool callable(const std::uintptr_t offset, const std::array<std::uint8_t, N>& expected)
         {
-            std::array<std::uint8_t, N> actual{};
-            return native_memory::guardedCopyFromMemory(
-                       reinterpret_cast<const void*>(REL::Module::get().base() + offset),
-                       actual.data(), actual.size()) && actual == expected;
+            return static_cast<bool>(
+                RPS::Runtime::HookChain::resolveEntry(REL::Module::get().base() + offset, expected));
         }
     }
 
@@ -217,11 +217,12 @@ namespace paper::merged_reload_compatibility
             0x48, 0x8b, 0xc4, 0x53, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x48, 0x81, 0xec, 0x78, 0x02, 0x00, 0x00 };
         const auto base = REL::Module::get().base();
         auto* slot = reinterpret_cast<std::uintptr_t*>(base + kResolverSlot);
-        std::uintptr_t original = 0;
-        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 ||
-            !native_memory::tryReadValue(slot, original) || original != base + kResolverFunction ||
-            !matches(kResolverFunction, resolverBytes) || !matches(kContextGraphFunction, contextBytes) ||
-            !matches(kLookupFunction, lookupBytes)) {
+        // The slot holds the native resolver or another plugin's; the hook calls through it.
+        const auto resolved = RPS::Runtime::HookChain::resolveSlot(base + kResolverSlot, base + kResolverFunction);
+        const std::uintptr_t original = resolved.callee;
+        if (!REL::Module::IsVR() || REL::Module::get().version() != F4SE::RUNTIME_VR_1_2_72 || !resolved ||
+            !callable(kResolverFunction, resolverBytes) || !callable(kContextGraphFunction, contextBytes) ||
+            !callable(kLookupFunction, lookupBytes)) {
             PAPER_LOG_ERROR(Compatibility, "Merged reload binding hook rejected: native resolver/layout validation failed");
             return false;
         }

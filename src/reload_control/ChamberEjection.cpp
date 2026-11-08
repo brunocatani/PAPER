@@ -10,6 +10,7 @@
 
 #include <Windows.h>
 #include <intrin.h>
+#include <RPS/Runtime/HookChain.h>
 
 #include <algorithm>
 #include <array>
@@ -551,13 +552,12 @@ namespace paper::chamber_ejection
             return true;
         }
 
+        // A call to `target`, or one another plugin redirected: the hooks call
+        // through whatever the call reached (write_call returns it).
         [[nodiscard]] bool callTargets(const std::uintptr_t site, const std::uintptr_t target) noexcept
         {
             const auto base = moduleBase();
-            const auto* code = reinterpret_cast<const std::uint8_t*>(base + site);
-            std::int32_t relative = 0;
-            std::memcpy(&relative, code + 1, sizeof(relative));
-            const bool match = code[0] == 0xE8 && base + site + 5 + relative == base + target;
+            const bool match = static_cast<bool>(RPS::Runtime::HookChain::resolveCall(base + site, base + target));
             if (!match) {
                 PAPER_LOG_ERROR(Reload, "CHAMBER native call at RVA {:X} does not reach RVA {:X}", site, target);
             }
@@ -567,7 +567,8 @@ namespace paper::chamber_ejection
         template <std::size_t N>
         [[nodiscard]] bool bytesMatch(const std::uintptr_t rva, const std::array<std::uint8_t, N>& expected) noexcept
         {
-            const bool match = std::memcmp(reinterpret_cast<const void*>(moduleBase() + rva), expected.data(), N) == 0;
+            // The native bytes, or another plugin's detour there: PAPER only calls or reads these.
+            const bool match = static_cast<bool>(RPS::Runtime::HookChain::resolveEntry(moduleBase() + rva, expected));
             if (!match) {
                 PAPER_LOG_ERROR(Reload, "CHAMBER native code differs at RVA {:X}", rva);
             }
@@ -601,7 +602,8 @@ namespace paper::chamber_ejection
                 bytesMatch(offsets::kFunc_SetMotionType, to_array<std::uint8_t>({ 0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x60 })),
                 bytesMatch(offsets::kSignature_CollisionObjectGetSystemCall, to_array<std::uint8_t>({ 0x41, 0xFF, 0x90, 0xD8, 0x00, 0x00, 0x00 })),
                 bytesMatch(offsets::kFunc_InventoryCount, to_array<std::uint8_t>({ 0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xDA })),
-                bytesMatch(offsets::kCallsite_RemoveItemHudMessage - 13, to_array<std::uint8_t>({ 0x44, 0x8B, 0x44, 0x24, 0x64, 0x49, 0x8B, 0x14, 0x24, 0x48, 0x8D, 0x4D, 0xF0, 0xE8, 0xA7, 0x95, 0x71, 0x00 })),
+                bytesMatch(offsets::kCallsite_RemoveItemHudMessage - 13, to_array<std::uint8_t>({ 0x44, 0x8B, 0x44, 0x24, 0x64, 0x49, 0x8B, 0x14, 0x24, 0x48, 0x8D, 0x4D, 0xF0 })),
+                callTargets(offsets::kCallsite_RemoveItemHudMessage, offsets::kCallsite_RemoveItemHudMessage + 5 + 0x007195A7),
             };
             return std::all_of(checks.begin(), checks.end(), [](const bool match) { return match; });
         }

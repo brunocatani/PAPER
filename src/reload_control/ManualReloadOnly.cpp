@@ -8,6 +8,7 @@
 #include "PaperLog.h"
 
 #include <Windows.h>
+#include <RPS/Runtime/HookChain.h>
 
 #include <array>
 #include <atomic>
@@ -174,8 +175,10 @@ namespace paper::manual_reload_only
             std::atomic<std::uint64_t> atLastReloadStart{ 0 };
         };
 
+        // What each producer's call reached: the native dispatcher or another
+        // plugin's detour, which the wrapper calls through.
         std::atomic<NativeActionDispatcherFn> s_originalDispatcher{ nullptr };
-        std::atomic<NativeActionDataDispatcherFn> s_originalActionDataDispatcher{ nullptr };
+        std::array<std::atomic<NativeActionDataDispatcherFn>, kAutomaticReloadSourceCount> s_originalActionDataDispatchers{};
         std::atomic<NativeActionExecutorFn> s_originalActionExecutor{ nullptr };
         std::atomic<bool> s_hookInstalled{ false };
         std::atomic<bool> s_hookInstallFailed{ false };
@@ -229,6 +232,30 @@ namespace paper::manual_reload_only
             return true;
         }
 
+        // A producer's code around the call PAPER patches: the signature with the
+        // call's own five bytes left out, and what that call reaches (the native
+        // target or another plugin's detour). Zero when either differs.
+        [[nodiscard]] std::uintptr_t producerCallee(const std::uintptr_t signatureAddress,
+            const std::span<const std::uint8_t> signature, const std::uintptr_t callsite, const std::uintptr_t target)
+        {
+            const auto* bytes = reinterpret_cast<const std::uint8_t*>(signatureAddress);
+            for (std::size_t index = 0; index < signature.size(); ++index) {
+                const auto address = signatureAddress + index;
+                if (address >= callsite && address < callsite + 5) {
+                    continue;
+                }
+                if (bytes[index] != signature[index]) {
+                    return 0;
+                }
+            }
+            const auto resolved = RPS::Runtime::HookChain::resolveCall(callsite, target);
+            if (resolved.foreign()) {
+                PAPER_LOG_INFO(Reload, "The call at 0x{:X} is already hooked by {}; PAPER calls through it",
+                    callsite - REL::Module::get().base(), resolved.owner);
+            }
+            return resolved ? resolved.callee : 0;
+        }
+
         void recordSuppressedRequest(const AutomaticReloadSource source)
         {
             const auto index = static_cast<std::size_t>(source);
@@ -276,7 +303,7 @@ namespace paper::manual_reload_only
                 return false;
             }
             const auto original =
-                s_originalActionDataDispatcher.load(std::memory_order_acquire);
+                s_originalActionDataDispatchers[static_cast<std::size_t>(source)].load(std::memory_order_acquire);
             return original ? original(actionData) : false;
         }
 
@@ -382,7 +409,8 @@ namespace paper::manual_reload_only
             const auto callsiteAddress = callsite.address();
             const auto decodedTarget =
                 decodeRelativeCallTarget(callsiteAddress);
-            if (decodedTarget != expectedExecutor.address()) {
+            const auto observed = RPS::Runtime::HookChain::resolveCall(callsiteAddress, expectedExecutor.address());
+            if (!observed) {
                 s_actionObservationHookInstallFailed.store(
                     true,
                     std::memory_order_release);
@@ -396,8 +424,7 @@ namespace paper::manual_reload_only
             }
 
             s_originalActionExecutor.store(
-                reinterpret_cast<NativeActionExecutorFn>(
-                    expectedExecutor.address()),
+                reinterpret_cast<NativeActionExecutorFn>(observed.callee),
                 std::memory_order_release);
             std::uintptr_t original = 0;
             try {
@@ -423,7 +450,7 @@ namespace paper::manual_reload_only
                 return;
             }
 
-            if (original != expectedExecutor.address()) {
+            if (original != observed.callee) {
                 s_actionObservationHookInstallFailed.store(
                     true,
                     std::memory_order_release);
@@ -491,7 +518,7 @@ namespace paper::manual_reload_only
         }
 
         const auto moduleBase = REL::Module::get().base();
-        if (!matchesAutomaticReloadProducerSignature(
+        if (!RPS::Runtime::HookChain::resolveEntry(
                 moduleBase + offsets::kFunc_TESActionData_Process,
                 kActionDataDispatcherSignature)) {
             PAPER_LOG_ERROR(
@@ -503,12 +530,14 @@ namespace paper::manual_reload_only
 
         // Validate all producer branches and their CALL targets before patching
         // any of them. The two direct paths never enter PlayerControls::DoAction.
-        for (const auto& producer : kAutomaticReloadProducers) {
+        std::array<std::uintptr_t, kAutomaticReloadSourceCount> callees{};
+        for (std::size_t index = 0; index < kAutomaticReloadSourceCount; ++index) {
+            const auto& producer = kAutomaticReloadProducers[index];
             const auto callsiteAddress = moduleBase + producer.callsiteOffset;
             const auto decodedTarget = decodeRelativeCallTarget(callsiteAddress);
-            if (!matchesAutomaticReloadProducerSignature(
-                    moduleBase + producer.signatureOffset, producer.signature) ||
-                decodedTarget != moduleBase + producer.targetOffset) {
+            callees[index] = producerCallee(moduleBase + producer.signatureOffset, producer.signature, callsiteAddress,
+                moduleBase + producer.targetOffset);
+            if (!callees[index]) {
                 PAPER_LOG_ERROR(Reload,
                     "Manual-reload-only hook validation failed source={} callsite=0x{:X} target=0x{:X} expected=0x{:X}",
                     producer.name, callsiteAddress, decodedTarget,
@@ -531,10 +560,12 @@ namespace paper::manual_reload_only
             return false;
         }
 
-        s_originalDispatcher.store(reinterpret_cast<NativeActionDispatcherFn>(
-            moduleBase + offsets::kFunc_PlayerControls_DoAction), std::memory_order_release);
-        s_originalActionDataDispatcher.store(reinterpret_cast<NativeActionDataDispatcherFn>(
-            moduleBase + offsets::kFunc_TESActionData_Process), std::memory_order_release);
+        static_assert(kAutomaticReloadSourceCount == 3);
+        s_originalDispatcher.store(reinterpret_cast<NativeActionDispatcherFn>(callees[0]), std::memory_order_release);
+        for (std::size_t index = 1; index < kAutomaticReloadSourceCount; ++index) {
+            s_originalActionDataDispatchers[index].store(
+                reinterpret_cast<NativeActionDataDispatcherFn>(callees[index]), std::memory_order_release);
+        }
         const std::array<std::uintptr_t, kAutomaticReloadSourceCount> wrappers{
             reinterpret_cast<std::uintptr_t>(&onAutomaticReloadRequest),
             reinterpret_cast<std::uintptr_t>(&onImmediateAutomaticReloadRequest),
@@ -549,7 +580,7 @@ namespace paper::manual_reload_only
                 const auto original = trampoline.write_call<5>(
                     callsiteAddress, wrappers[index]);
                 const auto installedTarget = decodeRelativeCallTarget(callsiteAddress);
-                if (original != moduleBase + producer.targetOffset || installedTarget == 0) {
+                if (original != callees[index] || installedTarget == 0) {
                     // Suppression stays disabled if installation is incomplete.
                     // Any installed wrapper forwards to its validated original
                     // for the remainder of this process; never patch it twice.
@@ -638,15 +669,16 @@ namespace paper::manual_reload_only
             0xE1,0x01,0x84,0xC9,0x74,0x17,0xE8,0x10,0xD3,0x21,0xFF,0x45,0x33,0xC0,0x48,
             0x8B,0xCF,0x48,0x8B,0x90,0x88,0x03,0x00,0x00,0xE8,0xBE,0x74,0x00,0x00};
         const auto base=REL::Module::get().base(),site=base+0xE4EBCD,target=base+0xE56090;
-        if(!matchesAutomaticReloadProducerSignature(base+0xE4EB97,signature)||decodeRelativeCallTarget(site)!=target) {
+        const auto boltCallee=producerCallee(base+0xE4EB97,signature,site,target);
+        if(!boltCallee) {
             PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook rejected: FO4VR post-shot bolt producer differs");return false;
         }
         auto& trampoline=F4SE::GetTrampoline();
         if(trampoline.free_size()<14){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook has insufficient trampoline space");return false;}
-        s_originalBoltAction.store(reinterpret_cast<NativeActorActionFn>(target),std::memory_order_release);
+        s_originalBoltAction.store(reinterpret_cast<NativeActorActionFn>(boltCallee),std::memory_order_release);
         try {
             const auto original=trampoline.write_call<5>(site,&onAutomaticBoltAction);
-            if(original!=target){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook original target changed");return false;}
+            if(original!=boltCallee){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook original target changed");return false;}
         }catch(const std::exception& e){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook failed: {}",e.what());return false;}
         catch(...){PAPER_LOG_ERROR(Reload,"Physical manual-cycle hook failed");return false;}
         s_boltActionReady.store(true,std::memory_order_release);
