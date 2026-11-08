@@ -125,7 +125,7 @@ namespace paper::manual_reload_only
             };
 
         // MOV RDX,RCX; MOV RCX,[processor]; JMP. PAPER only calls this thunk,
-        // and another plugin may route its jump (SCISSORS Redux installs at
+        // and another plugin may route its jump (SCISSORS installs at
         // F4SE load to refuse a steered NPC's attacks, before this check runs),
         // so the jump's opcode is checked and its target is not.
         constexpr std::array<std::uint8_t, 11> kActionDataDispatcherSignature{
