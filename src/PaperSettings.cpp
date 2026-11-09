@@ -65,17 +65,20 @@ namespace paper::settings
         struct Old
         {
             std::string_view oldKey, table, key;
+            // The default in PAPER 1.2 when it differs from today's; an INI
+            // value equal to it was never chosen, so today's default applies.
+            std::string_view oldDefault{};
         };
-        // INI key of PAPER 1.2 and earlier, by option. Their defaults then were
-        // the compiled defaults now, so only changed values carry over.
+        // INI key of PAPER 1.2 and earlier, by option. Only values that differ
+        // from that version's default carry over.
         constexpr std::array kOldKeys{
             Old{ "bEnabled", "Main", "Enabled" },
             Old{ "iLogLevel", "Main", "LogLevel" },
-            Old{ "bManualReloadOnly", "Reload", "ManualReloadOnly" },
+            Old{ "bManualReloadOnly", "Reload", "ManualReloadOnly", "false" },
             Old{ "fHandBlendSeconds", "Reload", "HandBlendSeconds" },
             Old{ "bBoltHoldOpen", "Reload", "BoltHoldOpen" },
             Old{ "fBoltHoldCloseSeconds", "Reload", "BoltHoldCloseSeconds" },
-            Old{ "bChamberRound", "Reload", "ChamberRound" },
+            Old{ "bChamberRound", "Reload", "ChamberRound", "false" },
             Old{ "bBoltAppreciation", "Reload", "BoltAppreciation" },
             Old{ "fBoltPullDistance", "Reload", "BoltPullDistance" },
             Old{ "bBoltHandFromAnimation", "Reload", "BoltHandFromAnimation" },
@@ -189,7 +192,8 @@ namespace paper::settings
                 key.oldKey = old.oldKey;
                 key.table = old.table;
                 key.key = old.key;
-                key.oldDefault = table.defaults.emplace_back(found->defaultValue);
+                key.oldDefault = table.defaults.emplace_back(
+                    old.oldDefault.empty() ? found->defaultValue : std::string(old.oldDefault));
                 table.keys.push_back(key);
             }
             return table;

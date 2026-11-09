@@ -19,7 +19,7 @@ LogLevel = 2
 ## requests. false allows normal automatic reload. Manual input, ROCK reload dispatch, Tactical Reload and
 ## reload resumption remain available either way. While true, each trigger pull on an empty gun with rounds
 ## to load plays one dry-fire click, except on a charging-reload gun such as the laser musket.
-ManualReloadOnly = false
+ManualReloadOnly = true
 
 ## Seconds the left hand takes to move from your controller or grip onto the animation when a reload, pump
 ## stroke or cycle takes it, and back when that ends. 0 moves it instantly. Range: 0 to 1.
@@ -43,7 +43,7 @@ BoltHoldCloseSeconds = 0.15
 ## double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves,
 ## unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid
 ## with a round in it, dim without.
-ChamberRound = false
+ChamberRound = true
 
 ## true makes you work the bolt of a bolt-action rifle by hand after each shot. Use the hand the rifle's own
 ## cycle animation uses, usually the firing hand: hold the gun with your other hand, let go of the firing

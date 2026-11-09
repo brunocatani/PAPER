@@ -7,11 +7,11 @@ namespace paper
     struct PaperConfig
     {
         bool enabled{ true };
-        bool manualReloadOnly{ false };
+        bool manualReloadOnly{ true };
         float handBlendSeconds{ 0.15f };
         bool boltHoldOpen{ true };
         float boltHoldCloseSeconds{ 0.15f };
-        bool chamberRound{ false };
+        bool chamberRound{ true };
         bool boltAppreciation{ false };
         float boltPullDistance{ 7.0f };
         bool boltHandFromAnimation{ true };

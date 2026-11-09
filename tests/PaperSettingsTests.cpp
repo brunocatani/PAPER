@@ -105,6 +105,16 @@ int main(int argc, char** argv)
     assert(loaded.boltPullDistance == 9.5f);
     assert(read(upgrade / "PAPER.toml").find("ChamberRound = true\n") != std::string::npos);
 
+    // An INI holding PAPER 1.2's defaults for options whose default has changed
+    // since takes the new defaults.
+    const auto oldDefaults = root / "old-defaults";
+    fs::create_directories(oldDefaults);
+    write(oldDefaults / "PAPER.ini", "[Reload]\r\nbManualReloadOnly = false\r\nbChamberRound = false\r\n");
+    store = paper::settings::makeStore(oldDefaults);
+    store->load(true);
+    loaded = paper::settings::fromStore(*store);
+    assert(loaded.manualReloadOnly && loaded.chamberRound);
+
     fs::remove_all(root, ignored);
     return 0;
 }

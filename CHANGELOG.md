@@ -14,6 +14,7 @@
 - PAPER takes the hands only for a native reload or cycle action; firing alone no longer does.
 - Two copies of the same weapon equipped in both hands are now recognized as dual wielding.
 - During a cycle the left hand follows the animation only when the clip works the weapon with it; otherwise it stays where ROCK puts it. A reload always plays both hands.
+- `[Reload] ManualReloadOnly` and `ChamberRound` are on by default. An upgraded `PAPER.ini` that left them off, their old default, takes the new default.
 
 ### Added
 
