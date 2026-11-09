@@ -18,11 +18,9 @@ set(RPSUI_INCLUDE_DIR "${WORKSPACE_ROOT}/../ui_mods/RPS_UI_Framework/include" CA
 if(NOT EXISTS "${RPSUI_INCLUDE_DIR}/RPS_UI_Framework/WorldDraw.h")
   message(FATAL_ERROR "RPS UI Framework headers not found in '${RPSUI_INCLUDE_DIR}'; set RPSUI_INCLUDE_DIR.")
 endif()
-# RPS Framework's header-only required-update stop (RPS/Runtime/RequiredUpdate.h).
-set(RPS_FRAMEWORK_INCLUDE_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/include" CACHE PATH "RPS Framework public include directory")
-if(NOT EXISTS "${RPS_FRAMEWORK_INCLUDE_DIR}/RPS/Runtime/RequiredUpdate.h")
-  message(FATAL_ERROR "RPS Framework headers not found in '${RPS_FRAMEWORK_INCLUDE_DIR}'; set RPS_FRAMEWORK_INCLUDE_DIR.")
-endif()
+# RPS Framework's staged package: the settings files (RPS::Settings) and the
+# header-only required-update stop (RPS/Runtime/RequiredUpdate.h).
+set(RPSFramework_DIR "${WORKSPACE_ROOT}/my_frameworks_and_sdks/RPS_Framework/build-fast/stage/lib/cmake/RPSFramework" CACHE PATH "RPS Framework staged package")
 # PAPER's own provider API: self-contained headers PAPER compiles against.
 set(PAPER_PUBLIC_INCLUDE_DIR "${ROOT_DIR}/include")
 include_directories("${PAPER_PUBLIC_INCLUDE_DIR}" "${ROCK_INCLUDE_DIR}" "${RPSUI_INCLUDE_DIR}")
@@ -96,12 +94,13 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
 target_include_directories(${PROJECT_NAME} PRIVATE
   "${BUILD_DIR}/include"
   "${SOURCE_DIR}"
-  "${RPS_FRAMEWORK_INCLUDE_DIR}"
 )
 
 find_package(spdlog CONFIG REQUIRED)
+find_package(RPSFramework CONFIG REQUIRED)
 target_link_libraries(${PROJECT_NAME} PRIVATE
   CommonLibF4::CommonLibF4
+  RPS::Settings
   spdlog::spdlog
   shell32.lib
   version.lib
@@ -224,32 +223,34 @@ if(BUILD_PAPER_TESTS)
     COMMAND "$<TARGET_FILE:PAPERObservationApiTests>"
   )
 
-  add_executable(PAPERConfigFileTests
-    "${ROOT_DIR}/tests/PaperConfigFileTests.cpp"
-    "${SOURCE_DIR}/PaperConfigFile.cpp"
-    "${SOURCE_DIR}/PaperConfigDefaults.cpp"
+  add_executable(PAPERSettingsTests
+    "${ROOT_DIR}/tests/PaperSettingsTests.cpp"
+    "${SOURCE_DIR}/PaperSettings.cpp"
   )
-  target_compile_features(PAPERConfigFileTests PRIVATE cxx_std_23)
-  target_compile_definitions(PAPERConfigFileTests PRIVATE
+  target_compile_features(PAPERSettingsTests PRIVATE cxx_std_23)
+  target_compile_definitions(PAPERSettingsTests PRIVATE
     UNICODE
     _UNICODE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
+    PAPER_SETTINGS_TEST_DIR="${BUILD_DIR}/settings-test"
   )
-  target_compile_options(PAPERConfigFileTests PRIVATE
+  target_compile_options(PAPERSettingsTests PRIVATE
     /sdl
     /utf-8
     /permissive-
     /Zc:__cplusplus
     /Zc:preprocessor
     /W4
+    /UNDEBUG
   )
-  target_include_directories(PAPERConfigFileTests PRIVATE
+  target_include_directories(PAPERSettingsTests PRIVATE
     "${BUILD_DIR}/include"
     "${SOURCE_DIR}"
   )
-  add_test(NAME PAPERConfigFileTests COMMAND "$<TARGET_FILE:PAPERConfigFileTests>"
-    "${ROOT_DIR}/data/config/PAPER_example.ini")
+  target_link_libraries(PAPERSettingsTests PRIVATE RPS::Settings)
+  add_test(NAME PAPERSettingsTests COMMAND "$<TARGET_FILE:PAPERSettingsTests>"
+    "${ROOT_DIR}/data/config")
 
   add_executable(PAPERWeaponMotionCacheTests
     "${ROOT_DIR}/tests/PAPERWeaponMotionCacheTests.cpp"

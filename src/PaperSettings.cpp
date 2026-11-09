@@ -1,0 +1,327 @@
+#include "PaperSettings.h"
+
+#include <algorithm>
+#include <array>
+#include <charconv>
+#include <cmath>
+#include <concepts>
+#include <format>
+#include <stdexcept>
+#include <string>
+
+namespace paper::settings
+{
+    namespace
+    {
+        using RPS::Settings::Definition;
+        using RPS::Settings::Group;
+        using RPS::Settings::LegacyKey;
+        using RPS::Settings::ValueType;
+
+        constexpr std::array<std::string_view, 4> kCaptureModes{ "User", "Observe", "Harvest", "Capture" };
+        constexpr std::array<std::string_view, 3> kCacheAccessModes{ "Off", "ReadOnly", "ReadWrite" };
+
+        // Ranges the loader clamps to; the help states them.
+        constexpr float kHandBlendMax = 1.0f;
+        constexpr float kBoltHoldCloseMax = 1.0f;
+        constexpr float kBoltPullMin = 2.0f, kBoltPullMax = 30.0f;
+        constexpr float kAxisMin = 1.0f, kAxisMax = 20.0f;
+        constexpr float kMarkerMin = 0.25f, kMarkerMax = 5.0f;
+        constexpr long kSessionMin = 8, kSessionMax = 256;
+        constexpr long kDiskMin = 32, kDiskMax = 2048;
+        constexpr long kFileMin = 1, kFileMax = 64;
+        constexpr long kEntriesMin = 16, kEntriesMax = 2048;
+
+        std::string text(bool value) { return value ? "true" : "false"; }
+        std::string text(float value)
+        {
+            std::array<char, 32> buffer{};
+            const auto written = std::to_chars(buffer.data(), buffer.data() + buffer.size(), value);
+            return RPS::Settings::normalizeValue(ValueType::Float,
+                std::string_view(buffer.data(), static_cast<std::size_t>(written.ptr - buffer.data())))
+                .value_or("0.0");
+        }
+        std::string text(std::integral auto value) { return std::to_string(value); }
+
+        char lower(char value) { return value >= 'A' && value <= 'Z' ? static_cast<char>(value + ('a' - 'A')) : value; }
+        std::string lowered(std::string_view value)
+        {
+            std::string result(value);
+            std::ranges::transform(result, result.begin(), lower);
+            return result;
+        }
+
+        const std::string& valueOf(const RPS::Settings::Store& store, std::string_view table, std::string_view key)
+        {
+            const auto* setting = store.find(table, key);
+            if (!setting)
+                throw std::logic_error(std::format("PAPER setting {}.{} is not declared", table, key));
+            return setting->value;
+        }
+        bool boolean(const RPS::Settings::Store& store, std::string_view table, std::string_view key)
+        {
+            return valueOf(store, table, key) == "true";
+        }
+        float number(const RPS::Settings::Store& store, std::string_view table, std::string_view key, float fallback)
+        {
+            const auto& value = valueOf(store, table, key);
+            float result = fallback;
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
+            return parsed.ec == std::errc{} && std::isfinite(result) ? result : fallback;
+        }
+        long integer(const RPS::Settings::Store& store, std::string_view table, std::string_view key, long fallback)
+        {
+            const auto& value = valueOf(store, table, key);
+            long result = fallback;
+            const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
+            return parsed.ec == std::errc{} ? result : fallback;
+        }
+
+        struct Old
+        {
+            std::string_view oldKey, table, key;
+        };
+        // INI key of PAPER 1.2 and earlier, by option. Their defaults then were
+        // the compiled defaults now, so only changed values carry over.
+        constexpr std::array kOldKeys{
+            Old{ "bEnabled", "Main", "Enabled" },
+            Old{ "iLogLevel", "Main", "LogLevel" },
+            Old{ "bManualReloadOnly", "Reload", "ManualReloadOnly" },
+            Old{ "fHandBlendSeconds", "Reload", "HandBlendSeconds" },
+            Old{ "bBoltHoldOpen", "Reload", "BoltHoldOpen" },
+            Old{ "fBoltHoldCloseSeconds", "Reload", "BoltHoldCloseSeconds" },
+            Old{ "bChamberRound", "Reload", "ChamberRound" },
+            Old{ "bBoltAppreciation", "Reload", "BoltAppreciation" },
+            Old{ "fBoltPullDistance", "Reload", "BoltPullDistance" },
+            Old{ "bBoltHandFromAnimation", "Reload", "BoltHandFromAnimation" },
+            Old{ "bDebugDrawNativeAnimation", "Debug", "DebugDrawNativeAnimation" },
+            Old{ "bDebugDrawNativeAnimationText", "Debug", "DebugDrawNativeAnimationText" },
+            Old{ "fDebugNativeAnimationAxisLength", "Debug", "DebugNativeAnimationAxisLength" },
+            Old{ "fDebugNativeAnimationMarkerSize", "Debug", "DebugNativeAnimationMarkerSize" },
+            Old{ "sMaximumMode", "DevelopmentCapture", "MaximumMode" },
+            Old{ "bAutoStart", "DevelopmentCapture", "AutoStart" },
+            Old{ "bAllowApiActivation", "DevelopmentCapture", "AllowApiActivation" },
+            Old{ "sAccess", "WeaponMotionCache", "Access" },
+            Old{ "iSessionCacheMiB", "WeaponMotionCache", "SessionCacheMiB" },
+            Old{ "iDiskCacheMiB", "WeaponMotionCache", "DiskCacheMiB" },
+            Old{ "iMaximumFileMiB", "WeaponMotionCache", "MaximumFileMiB" },
+            Old{ "iMaximumEntries", "WeaponMotionCache", "MaximumEntries" },
+        };
+    }
+
+    std::vector<Definition> definitions()
+    {
+        const PaperConfig d{};
+        constexpr auto general = "01. General";
+        constexpr auto reload = "02. Reload";
+        constexpr auto debug = "03. Debug Drawing";
+        constexpr auto capture = "04. Development Capture";
+        constexpr auto cache = "05. Weapon Motion Cache";
+        const auto player = Group::Player;
+        return {
+            { "Main", "Enabled", general, "Enables PAPER's reload coordination and manual-reload-only behavior.", player,
+                ValueType::Boolean, text(d.enabled) },
+            { "Main", "LogLevel", general,
+                "Log file: Documents\\My Games\\Fallout4VR\\F4SE\\PAPER.log.\n"
+                "0=Trace, 1=Debug, 2=Info (normal play), 3=Warning, 4=Error, 5=Critical, 6=Off.\n"
+                "Includes the selected level and all more severe messages. Info includes startup, hook validation and\n"
+                "reload diagnostics; Trace and Debug are more verbose. This does not enable capture or debug drawings.",
+                player, ValueType::Integer, text(d.logLevel) },
+
+            { "Reload", "ManualReloadOnly", reload,
+                "true blocks automatic reload when ammunition reaches zero, including immediate, delayed and post-fire\n"
+                "requests. false allows normal automatic reload. Manual input, ROCK reload dispatch, Tactical Reload and\n"
+                "reload resumption remain available either way. While true, each trigger pull on an empty gun with rounds\n"
+                "to load plays one dry-fire click, except on a charging-reload gun such as the laser musket.",
+                player, ValueType::Boolean, text(d.manualReloadOnly) },
+            { "Reload", "HandBlendSeconds", reload,
+                "Seconds the left hand takes to move from your controller or grip onto the animation when a reload, pump\n"
+                "stroke or cycle takes it, and back when that ends. 0 moves it instantly. Range: 0 to 1.",
+                player, ValueType::Float, text(d.handBlendSeconds) },
+            { "Reload", "BoltHoldOpen", reload,
+                "true leaves the bolt or slide open on an empty gun, in either hand, until a reload starts or rounds\n"
+                "arrive, with the parts that move with it such as a tilting barrel. It needs a bolt on the game's standard\n"
+                "WeaponBolt bone. The open position is read off screen from the weapon's own clips the first time it is\n"
+                "equipped each session, so a gun none of whose clips open its bolt never holds. Manual actions such as\n"
+                "bolt, lever, pump and double-barrel guns and revolvers never hold.",
+                player, ValueType::Boolean, text(d.boltHoldOpen) },
+            { "Reload", "BoltHoldCloseSeconds", reload,
+                "Seconds the open bolt takes to return to the animation when a reload starts. 0 moves it instantly.\n"
+                "Range: 0 to 1.",
+                player, ValueType::Float, text(d.boltHoldCloseSeconds) },
+            { "Reload", "ChamberRound", reload,
+                "true keeps a round in the chamber of every gun that fires cartridges, in either hand: pistols, rifles,\n"
+                "shotguns and machine guns. Energy weapons, the Gauss rifle, launchers and other guns with no case to throw\n"
+                "out are left alone, and so is a gun a weapon mod has changed to such ammo. A round in the chamber when you\n"
+                "reload stays there on top of the full magazine, as far as your reserve goes, except on revolvers,\n"
+                "double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves,\n"
+                "unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid\n"
+                "with a round in it, dim without.",
+                player, ValueType::Boolean, text(d.chamberRound) },
+            { "Reload", "BoltAppreciation", reload,
+                "true makes you work the bolt of a bolt-action rifle by hand after each shot. Use the hand the rifle's own\n"
+                "cycle animation uses, usually the firing hand: hold the gun with your other hand, let go of the firing\n"
+                "grip and grip the bolt where the small white marker shows. Pull it all the way back to throw out the case\n"
+                "and push it home to chamber the next round. The trigger does nothing until you have, and clicks if you\n"
+                "pull it. The reload stays as it was. These rifles keep a chamber as ChamberRound describes, whatever that\n"
+                "option says. A rifle whose cycle animation shows no hand on the bolt keeps its usual cycle. Lever guns,\n"
+                "pumps and revolvers are not affected.",
+                player, ValueType::Boolean, text(d.boltAppreciation) },
+            { "Reload", "BoltPullDistance", reload,
+                "The length of a full pull, in game units, the same on every rifle. 7 is about 9 cm. Moving your hand past\n"
+                "half of it takes the bolt all the way, at the speed of the rifle's own animation. Let go and the bolt\n"
+                "stays where it is, open or closed. Range: 2 to 30.",
+                player, ValueType::Float, text(d.boltPullDistance) },
+            { "Reload", "BoltHandFromAnimation", reload,
+                "true lets the hand the rifle's cycle animation uses take the bolt the moment the rifle is drawn, placed\n"
+                "and posed the way the animation does as the bolt moves. Your other hand takes it where your grip puts it,\n"
+                "with the fingers closed on the bolt's surface, once the weapon's collision is built, about a second after\n"
+                "equipping. false treats both hands that way.",
+                player, ValueType::Boolean, text(d.boltHandFromAnimation) },
+
+            { "Debug", "DebugDrawNativeAnimation", debug,
+                "Draws PAPER's native weapon frame, native hand targets, ROCK live grip targets, applied FRIK hands and\n"
+                "their target-error lines through RPS UI Framework's world drawing. Diagnostic only; off for normal play.",
+                player, ValueType::Boolean, text(d.debugDrawNativeAnimation) },
+            { "Debug", "DebugDrawNativeAnimationText", debug, "Adds concise mode, capture and per-hand motion and error labels.",
+                player, ValueType::Boolean, text(d.debugDrawNativeAnimationText) },
+            { "Debug", "DebugNativeAnimationAxisLength", debug,
+                "World-space length in game units of transform axes. Range: 1 to 20.", player, ValueType::Float,
+                text(d.debugNativeAnimationAxisLength) },
+            { "Debug", "DebugNativeAnimationMarkerSize", debug,
+                "World-space size in game units of cross markers. Range: 0.25 to 5.", player, ValueType::Float,
+                text(d.debugNativeAnimationMarkerSize) },
+
+            { "DevelopmentCapture", "MaximumMode", capture,
+                "User, Observe, Harvest or Capture. User keeps all observation, exact animation harvesting, motion\n"
+                "compilation, learning and cache work dormant. Observe permits passive telemetry, Harvest additionally\n"
+                "permits exact off-screen clip sampling, and Capture also permits live part-motion learning. This is a hard\n"
+                "ceiling for API requests.",
+                player, ValueType::String,
+                std::string(kCaptureModes.at(static_cast<std::size_t>(d.developmentCaptureMode)))},
+            { "DevelopmentCapture", "AutoStart", capture,
+                "Starts the permitted development scopes without a consumer lease. Exact harvesting still waits for a\n"
+                "compiled-cache miss when cache reads are active.",
+                player, ValueType::Boolean, text(d.developmentCaptureAutoStart) },
+            { "DevelopmentCapture", "AllowApiActivation", capture,
+                "Allows other mods to wake permitted work, both by registering the read capabilities that need it and\n"
+                "through bounded DevelopmentCaptureControl leases. Work can never exceed MaximumMode.",
+                player, ValueType::Boolean, text(d.developmentCaptureAllowApiActivation) },
+
+            { "WeaponMotionCache", "Access", cache,
+                "Off, ReadOnly or ReadWrite. Stores only compact, value-only compiled authored paths; native animation\n"
+                "graphs and raw sampled clips are never retained. Off performs no cache I/O, ReadOnly never creates,\n"
+                "touches, prunes or writes files, and ReadWrite enables bounded persistence. User mode keeps the worker\n"
+                "dormant regardless.",
+                player, ValueType::String,
+                std::string(kCacheAccessModes.at(static_cast<std::size_t>(d.weaponMotionCacheAccess)))},
+            { "WeaponMotionCache", "SessionCacheMiB", cache,
+                "In-process LRU cache for fast re-equips during this game session, in MiB. Range: 8 to 256. Applies at the\n"
+                "next game session.",
+                player, ValueType::Integer, text(d.weaponMotionSessionCacheMiB) },
+            { "WeaponMotionCache", "DiskCacheMiB", cache,
+                "Persistent LRU bound for the cache under Mods_Config\\PAPER\\MotionCache\\v1, in MiB. Range: 32 to 2048.\n"
+                "Applies at the next game session.",
+                player, ValueType::Integer, text(d.weaponMotionDiskCacheMiB) },
+            { "WeaponMotionCache", "MaximumFileMiB", cache,
+                "Largest cache file, in MiB. Range: 1 to 64, and never more than DiskCacheMiB. Applies at the next game\n"
+                "session.",
+                player, ValueType::Integer, text(d.weaponMotionMaximumFileMiB) },
+            { "WeaponMotionCache", "MaximumEntries", cache,
+                "Most cache entries. Range: 16 to 2048. Applies at the next game session.", player, ValueType::Integer,
+                text(d.weaponMotionMaximumEntries) },
+        };
+    }
+
+    std::span<const LegacyKey> legacyKeys()
+    {
+        // Built once from the definitions, which own the default text.
+        static const auto keys = [] {
+            struct Table
+            {
+                std::vector<std::string> defaults;
+                std::vector<LegacyKey> keys;
+            } table;
+            const auto all = definitions();
+            table.defaults.reserve(kOldKeys.size());
+            for (const auto& old : kOldKeys) {
+                const auto found = std::ranges::find_if(all,
+                    [&](const Definition& definition) { return definition.table == old.table && definition.key == old.key; });
+                if (found == all.end())
+                    throw std::logic_error(std::format("PAPER old key {} names no option", old.oldKey));
+                LegacyKey key{};
+                key.oldKey = old.oldKey;
+                key.table = old.table;
+                key.key = old.key;
+                key.oldDefault = table.defaults.emplace_back(found->defaultValue);
+                table.keys.push_back(key);
+            }
+            return table;
+        }();
+        return keys.keys;
+    }
+
+    std::unique_ptr<RPS::Settings::Store> makeStore(const std::filesystem::path& directory)
+    {
+        return std::make_unique<RPS::Settings::Store>(
+            RPS::Settings::Files{ directory, "PAPER", std::string(kFileName), {},
+                "## PAPER.toml - PAPER options\n"
+                "## Change these in game in the RobCo PALM wheel menu, or edit this file. Changes apply while the game\n"
+                "## runs, except the weapon motion cache sizes, which apply at the next game session.\n"
+                "## Each option has its help above it. When PAPER starts it adds new options with their defaults and\n"
+                "## rewrites its help lines (##). Your own notes are kept when they start with a single # on the lines\n"
+                "## above an option.\n",
+                {} },
+            definitions(), RPS::Settings::LegacyIni{ { directory / "PAPER.ini" }, legacyKeys() });
+    }
+
+    PaperConfig fromStore(const RPS::Settings::Store& store)
+    {
+        const PaperConfig d{};
+        PaperConfig config{};
+        config.activePath = store.path(Group::Player).string();
+        config.enabled = boolean(store, "Main", "Enabled");
+        config.logLevel = static_cast<int>(integer(store, "Main", "LogLevel", d.logLevel));
+        config.manualReloadOnly = boolean(store, "Reload", "ManualReloadOnly");
+        config.handBlendSeconds =
+            std::clamp(number(store, "Reload", "HandBlendSeconds", d.handBlendSeconds), 0.0f, kHandBlendMax);
+        config.boltHoldOpen = boolean(store, "Reload", "BoltHoldOpen");
+        config.boltHoldCloseSeconds =
+            std::clamp(number(store, "Reload", "BoltHoldCloseSeconds", d.boltHoldCloseSeconds), 0.0f, kBoltHoldCloseMax);
+        config.chamberRound = boolean(store, "Reload", "ChamberRound");
+        config.boltAppreciation = boolean(store, "Reload", "BoltAppreciation");
+        config.boltPullDistance =
+            std::clamp(number(store, "Reload", "BoltPullDistance", d.boltPullDistance), kBoltPullMin, kBoltPullMax);
+        config.boltHandFromAnimation = boolean(store, "Reload", "BoltHandFromAnimation");
+        config.debugDrawNativeAnimation = boolean(store, "Debug", "DebugDrawNativeAnimation");
+        config.debugDrawNativeAnimationText = boolean(store, "Debug", "DebugDrawNativeAnimationText");
+        config.debugNativeAnimationAxisLength = std::clamp(
+            number(store, "Debug", "DebugNativeAnimationAxisLength", d.debugNativeAnimationAxisLength), kAxisMin, kAxisMax);
+        config.debugNativeAnimationMarkerSize = std::clamp(
+            number(store, "Debug", "DebugNativeAnimationMarkerSize", d.debugNativeAnimationMarkerSize), kMarkerMin, kMarkerMax);
+
+        const auto mode = lowered(valueOf(store, "DevelopmentCapture", "MaximumMode"));
+        config.developmentCaptureMode = mode == "observe" ? api::DevelopmentCaptureMode::Observe
+                                      : mode == "harvest" ? api::DevelopmentCaptureMode::Harvest
+                                      : mode == "capture" ? api::DevelopmentCaptureMode::Capture
+                                                          : api::DevelopmentCaptureMode::User;
+        config.developmentCaptureAutoStart = boolean(store, "DevelopmentCapture", "AutoStart");
+        config.developmentCaptureAllowApiActivation = boolean(store, "DevelopmentCapture", "AllowApiActivation");
+
+        const auto access = lowered(valueOf(store, "WeaponMotionCache", "Access"));
+        config.weaponMotionCacheAccess = access == "readonly" || access == "read-only" ? api::WeaponMotionCacheAccess::ReadOnly
+                                       : access == "readwrite" || access == "read-write"
+                                           ? api::WeaponMotionCacheAccess::ReadWrite
+                                           : api::WeaponMotionCacheAccess::Off;
+        config.weaponMotionSessionCacheMiB = static_cast<std::uint32_t>(
+            std::clamp(integer(store, "WeaponMotionCache", "SessionCacheMiB", d.weaponMotionSessionCacheMiB), kSessionMin, kSessionMax));
+        config.weaponMotionDiskCacheMiB = static_cast<std::uint32_t>(
+            std::clamp(integer(store, "WeaponMotionCache", "DiskCacheMiB", d.weaponMotionDiskCacheMiB), kDiskMin, kDiskMax));
+        config.weaponMotionMaximumFileMiB = static_cast<std::uint32_t>(
+            std::clamp(integer(store, "WeaponMotionCache", "MaximumFileMiB", d.weaponMotionMaximumFileMiB), kFileMin, kFileMax));
+        config.weaponMotionMaximumFileMiB = (std::min)(config.weaponMotionMaximumFileMiB, config.weaponMotionDiskCacheMiB);
+        config.weaponMotionMaximumEntries = static_cast<std::uint32_t>(
+            std::clamp(integer(store, "WeaponMotionCache", "MaximumEntries", d.weaponMotionMaximumEntries), kEntriesMin, kEntriesMax));
+        return config;
+    }
+}

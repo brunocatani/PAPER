@@ -32,7 +32,7 @@ What it provides:
 - **Bolt hold-open** - an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
 - **Round in the chamber** - optional: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
 - **Hand-worked bolts** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want.
-- **Live settings** - INI settings that reload while the game runs, with in-game pages in RobCo PALM.
+- **Live settings** - TOML settings that reload while the game runs, with in-game pages in RobCo PALM.
 - **Provider API** - 2 interfaces: reload, animation, pose and weapon-motion data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
 PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocatani/ROCK). Mods that make reloads physical take over from PAPER through its PhysicalReload interface.
@@ -67,26 +67,28 @@ Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/10
 PAPER reads one file under your Windows Documents folder:
 
 ```text
-My Games/Fallout4VR/Mods_Config/PAPER/PAPER.ini
+My Games/Fallout4VR/Mods_Config/PAPER/PAPER.toml
 ```
 
-PAPER creates the file from its compiled defaults only when it is missing and never rewrites an existing file: keys it does not have use their defaults. The file reloads while the game runs. RobCo PALM's PAPER pages edit it in game.
+PAPER creates the file from its compiled defaults when it is missing, and at every start adds options a new version brings, with their defaults. Each option has its help above it as `##` lines, which PAPER rewrites; your own notes on single-`#` lines above an option stay with it. An option PAPER no longer reads moves to a commented block at the end of the file. A value of the wrong type is logged with its line and that option keeps its last value. The file reloads while the game runs. RobCo PALM's PAPER page edits it in game.
+
+Upgrading from a PAPER that used `PAPER.ini`: the first start carries every option you changed into `PAPER.toml` and deletes `PAPER.ini` once `PAPER.toml` is written and read back. Nothing to do by hand.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `[Main] bEnabled` | `true` | Reload coordination and the manual-reload-only option. |
-| `[Main] iLogLevel` | `2` | Log level; 2 is normal information logging. |
-| `[Reload] bManualReloadOnly` | `false` | `true` stops automatic reloads when ammunition runs out. Manual reload input still works. |
-| `[Reload] fHandBlendSeconds` | `0.15` | Seconds the left hand takes to move onto a reload, pump stroke or cycle animation, and back when it ends. `0` moves it instantly. |
-| `[Reload] bBoltHoldOpen` | `true` | `true` leaves an empty gun's bolt or slide open, in either hand, until a reload starts or rounds arrive. It needs a bolt on the game's `WeaponBolt` bone, and a gun none of whose animations open its bolt never holds. Bolt, lever, pump and double-barrel guns and revolvers never hold. |
-| `[Reload] fBoltHoldCloseSeconds` | `0.15` | Seconds the open bolt takes to return to the animation when a reload starts. `0` moves it instantly. |
-| `[Reload] bChamberRound` | `false` | `true` keeps a round in the chamber of every gun that fires cartridges, in either hand. A round in the chamber when you reload stays on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber. Energy weapons, the Gauss rifle and launchers are left alone. |
-| `[Reload] bManualBoltCycle` | `false` | `true` makes you work the bolt of a bolt-action rifle by hand after each shot, with its own chamber whatever `bChamberRound` says. Lever guns, pumps and revolvers are not affected. |
-| `[Reload] fBoltPullDistance` | `7.0` | Game units of a full bolt pull, the same on every rifle. Moving your hand past half of it takes the bolt all the way. |
-| `[Reload] bBoltHandFromAnimation` | `true` | `true` lets the hand the rifle's cycle animation uses take the bolt the moment the rifle is drawn. `false` makes both hands wait for the weapon's collision. |
-| `[Debug] bDebugDrawNativeAnimation` | `false` | Draws PAPER's animation targets for diagnosis (needs RPS UI Framework). |
+| `[Main] Enabled` | `true` | Reload coordination and the manual-reload-only option. |
+| `[Main] LogLevel` | `2` | Log level; 2 is normal information logging. |
+| `[Reload] ManualReloadOnly` | `false` | `true` stops automatic reloads when ammunition runs out. Manual reload input still works. |
+| `[Reload] HandBlendSeconds` | `0.15` | Seconds the left hand takes to move onto a reload, pump stroke or cycle animation, and back when it ends. `0` moves it instantly. |
+| `[Reload] BoltHoldOpen` | `true` | `true` leaves an empty gun's bolt or slide open, in either hand, until a reload starts or rounds arrive. It needs a bolt on the game's `WeaponBolt` bone, and a gun none of whose animations open its bolt never holds. Bolt, lever, pump and double-barrel guns and revolvers never hold. |
+| `[Reload] BoltHoldCloseSeconds` | `0.15` | Seconds the open bolt takes to return to the animation when a reload starts. `0` moves it instantly. |
+| `[Reload] ChamberRound` | `false` | `true` keeps a round in the chamber of every gun that fires cartridges, in either hand. A round in the chamber when you reload stays on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber. Energy weapons, the Gauss rifle and launchers are left alone. |
+| `[Reload] BoltAppreciation` | `false` | `true` makes you work the bolt of a bolt-action rifle by hand after each shot, with its own chamber whatever `ChamberRound` says. Lever guns, pumps and revolvers are not affected. |
+| `[Reload] BoltPullDistance` | `7.0` | Game units of a full bolt pull, the same on every rifle. Moving your hand past half of it takes the bolt all the way. |
+| `[Reload] BoltHandFromAnimation` | `true` | `true` lets the hand the rifle's cycle animation uses take the bolt the moment the rifle is drawn. `false` makes both hands wait for the weapon's collision. |
+| `[Debug] DebugDrawNativeAnimation` | `false` | Draws PAPER's animation targets for diagnosis (needs RPS UI Framework). |
 
-[PAPER_example.ini](data/config/PAPER_example.ini) documents every option. It is a reference only, never a file to install.
+[PAPER_example.toml](data/config/PAPER_example.toml) documents every option. It is a reference only, never a file to install.
 
 Development capture and motion caching are off by default. The `[DevelopmentCapture]` settings are the ceiling for what developer tools and other mods may switch on. Persistent cache size limits apply at the next game session.
 
@@ -165,6 +167,7 @@ Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload p
   - `git clone https://github.com/microsoft/vcpkg.git`, run `bootstrap-vcpkg.bat`, then `setx VCPKG_ROOT "<path to vcpkg>"`
 - A [CommonLibF4VR](https://github.com/ArthurHub/CommonLibF4VR) checkout. PAPER links it directly.
 - [ROCK](https://github.com/brunocatani/ROCK) and [RPS UI Framework](https://github.com/brunocatani/RPS_UI_Framework) checkouts. PAPER compiles against the `include/` headers of both.
+- An [RPS Framework](https://github.com/brunocatani/RPS_Framework) checkout, built first with its own `custom-fast` preset, which stages the package PAPER links for its settings file.
 
 PAPER uses C++23. vcpkg installs the other libraries from `vcpkg.json`.
 
@@ -174,7 +177,7 @@ Copy [CMakeUserPresets.json.template](CMakeUserPresets.json.template) to `CMakeU
 
 - `COMMON_LIB_F4VR_PATH` to your CommonLibF4VR checkout;
 - `COPY_PLUGIN_BASE_PATH` to the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into (an MO2 mod folder or the game's `Data` folder);
-- `ROCK_INCLUDE_DIR` (ROCK's `include` directory) and `RPSUI_INCLUDE_DIR` (RPS UI's `include` directory) when your checkouts are not where [CMakeLists.txt](CMakeLists.txt) looks by default.
+- `ROCK_INCLUDE_DIR` (ROCK's `include` directory), `RPSUI_INCLUDE_DIR` (RPS UI's `include` directory) and `RPSFramework_DIR` (`build-fast/stage/lib/cmake/RPSFramework` in RPS Framework) when your checkouts are not where [CMakeLists.txt](CMakeLists.txt) looks by default.
 
 Then, from the repository root:
 

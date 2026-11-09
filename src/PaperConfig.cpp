@@ -1,21 +1,17 @@
 #include "PaperConfig.h"
 
-#include "PaperConfigFile.h"
-#include "PaperConfigDefaults.h"
 #include "PaperLog.h"
+#include "PaperSettings.h"
 
 #include <Windows.h>
 #include <ShlObj.h>
-#include <SimpleIni.h>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <cmath>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
-#include <string_view>
 #include <thread>
 
 namespace paper
@@ -27,183 +23,47 @@ namespace paper
         std::atomic<std::shared_ptr<const PaperConfig>> s_pendingConfig{};
         std::filesystem::path s_watchedPath{};
         std::jthread s_watcher{};
+        // PAPER.toml's store, read by reload() on the game thread and by the
+        // watcher thread; the mutex serializes them.
+        std::mutex s_storeMutex;
+        std::unique_ptr<RPS::Settings::Store> s_store;
 
-        [[nodiscard]] std::string resolveActiveIniPath()
+        [[nodiscard]] std::filesystem::path resolveConfigDirectory()
         {
-            char documents[MAX_PATH]{};
-            if (SUCCEEDED(SHGetFolderPathA(
-                    nullptr,
-                    CSIDL_MYDOCUMENTS,
-                    nullptr,
-                    0,
-                    documents))) {
-                return std::string(documents) +
-                    R"(\My Games\Fallout4VR\Mods_Config\PAPER\PAPER.ini)";
+            PWSTR documents{};
+            if (FAILED(SHGetKnownFolderPath(FOLDERID_Documents, KF_FLAG_DEFAULT, nullptr, &documents))) {
+                return {};
             }
-            return {};
+            const std::unique_ptr<wchar_t, decltype(&CoTaskMemFree)> owned(documents, &CoTaskMemFree);
+            return std::filesystem::path(documents) / L"My Games" / L"Fallout4VR" / L"Mods_Config" / L"PAPER";
         }
 
-        [[nodiscard]] char asciiLower(const char value)
+        // Reads PAPER.toml; startup also organizes it and migrates PAPER.ini once.
+        // A file that cannot be read gives nothing, so the last values stay.
+        [[nodiscard]] std::optional<PaperConfig> loadConfig(const bool startup)
         {
-            return value >= 'A' && value <= 'Z' ?
-                static_cast<char>(value + ('a' - 'A')) : value;
-        }
-
-        [[nodiscard]] std::string normalized(std::string_view value)
-        {
-            std::string result(value);
-            std::transform(
-                result.begin(), result.end(), result.begin(), asciiLower);
-            return result;
-        }
-
-        [[nodiscard]] api::DevelopmentCaptureMode readMode(
-            const CSimpleIniA& ini)
-        {
-            const auto value = normalized(ini.GetValue(
-                "DevelopmentCapture", "sMaximumMode", "User"));
-            if (value == "observe") {
-                return api::DevelopmentCaptureMode::Observe;
-            }
-            if (value == "harvest") {
-                return api::DevelopmentCaptureMode::Harvest;
-            }
-            if (value == "capture") {
-                return api::DevelopmentCaptureMode::Capture;
-            }
-            return api::DevelopmentCaptureMode::User;
-        }
-
-        [[nodiscard]] api::WeaponMotionCacheAccess readCacheAccess(
-            const CSimpleIniA& ini)
-        {
-            const auto value = normalized(ini.GetValue(
-                "WeaponMotionCache", "sAccess", "Off"));
-            if (value == "readonly" || value == "read-only") {
-                return api::WeaponMotionCacheAccess::ReadOnly;
-            }
-            if (value == "readwrite" || value == "read-write") {
-                return api::WeaponMotionCacheAccess::ReadWrite;
-            }
-            return api::WeaponMotionCacheAccess::Off;
-        }
-
-        [[nodiscard]] std::optional<PaperConfig> loadConfig(
-            const std::filesystem::path& path)
-        {
-            CSimpleIniA ini;
-            ini.SetUnicode();
-            if (ini.LoadFile(path.string().c_str()) < 0) {
+            std::scoped_lock lock(s_storeMutex);
+            try {
+                if (!s_store) {
+                    const auto directory = resolveConfigDirectory();
+                    if (directory.empty()) {
+                        PAPER_LOG_WARN(Config, "Could not resolve Documents; retaining compiled defaults without configuration I/O");
+                        return std::nullopt;
+                    }
+                    s_store = settings::makeStore(directory);
+                }
+                s_store->load(startup);
+                for (const auto& notice : s_store->notices()) {
+                    PAPER_LOG_INFO(Config, "{}", notice);
+                }
+                for (const auto& message : s_store->messages()) {
+                    PAPER_LOG_WARN(Config, "{}", message);
+                }
+                return settings::fromStore(*s_store);
+            } catch (const std::exception& error) {
+                PAPER_LOG_WARN(Config, "Could not load PAPER settings: {}", error.what());
                 return std::nullopt;
             }
-
-            PaperConfig config{};
-            config.activePath = path.string();
-            config.enabled = ini.GetBoolValue("Main", "bEnabled", config.enabled);
-            config.logLevel = static_cast<int>(
-                ini.GetLongValue("Main", "iLogLevel", config.logLevel));
-            config.manualReloadOnly = ini.GetBoolValue(
-                "Reload", "bManualReloadOnly", config.manualReloadOnly);
-            config.handBlendSeconds = static_cast<float>(ini.GetDoubleValue(
-                "Reload", "fHandBlendSeconds", config.handBlendSeconds));
-            config.boltHoldOpen = ini.GetBoolValue(
-                "Reload", "bBoltHoldOpen", config.boltHoldOpen);
-            config.boltHoldCloseSeconds = static_cast<float>(ini.GetDoubleValue(
-                "Reload", "fBoltHoldCloseSeconds", config.boltHoldCloseSeconds));
-            config.chamberRound = ini.GetBoolValue(
-                "Reload", "bChamberRound", config.chamberRound);
-            config.boltAppreciation = ini.GetBoolValue(
-                "Reload", "bBoltAppreciation", config.boltAppreciation);
-            config.boltPullDistance = static_cast<float>(ini.GetDoubleValue(
-                "Reload", "fBoltPullDistance", config.boltPullDistance));
-            config.boltHandFromAnimation = ini.GetBoolValue(
-                "Reload", "bBoltHandFromAnimation", config.boltHandFromAnimation);
-            config.debugDrawNativeAnimation = ini.GetBoolValue(
-                "Debug",
-                "bDebugDrawNativeAnimation",
-                config.debugDrawNativeAnimation);
-            config.debugDrawNativeAnimationText = ini.GetBoolValue(
-                "Debug",
-                "bDebugDrawNativeAnimationText",
-                config.debugDrawNativeAnimationText);
-            config.debugNativeAnimationAxisLength = static_cast<float>(
-                ini.GetDoubleValue(
-                    "Debug",
-                    "fDebugNativeAnimationAxisLength",
-                    config.debugNativeAnimationAxisLength));
-            config.debugNativeAnimationMarkerSize = static_cast<float>(
-                ini.GetDoubleValue(
-                    "Debug",
-                    "fDebugNativeAnimationMarkerSize",
-                    config.debugNativeAnimationMarkerSize));
-            config.developmentCaptureMode = readMode(ini);
-            config.developmentCaptureAutoStart = ini.GetBoolValue(
-                "DevelopmentCapture",
-                "bAutoStart",
-                config.developmentCaptureAutoStart);
-            config.developmentCaptureAllowApiActivation = ini.GetBoolValue(
-                "DevelopmentCapture",
-                "bAllowApiActivation",
-                config.developmentCaptureAllowApiActivation);
-            config.weaponMotionCacheAccess = readCacheAccess(ini);
-            config.weaponMotionSessionCacheMiB = static_cast<std::uint32_t>(
-                std::clamp<long>(
-                    ini.GetLongValue(
-                        "WeaponMotionCache",
-                        "iSessionCacheMiB",
-                        config.weaponMotionSessionCacheMiB),
-                    8,
-                    256));
-            config.weaponMotionDiskCacheMiB = static_cast<std::uint32_t>(
-                std::clamp<long>(
-                    ini.GetLongValue(
-                        "WeaponMotionCache",
-                        "iDiskCacheMiB",
-                        config.weaponMotionDiskCacheMiB),
-                    32,
-                    2048));
-            config.weaponMotionMaximumFileMiB = static_cast<std::uint32_t>(
-                std::clamp<long>(
-                    ini.GetLongValue(
-                        "WeaponMotionCache",
-                        "iMaximumFileMiB",
-                        config.weaponMotionMaximumFileMiB),
-                    1,
-                    64));
-            config.weaponMotionMaximumFileMiB = (std::min)(
-                config.weaponMotionMaximumFileMiB,
-                config.weaponMotionDiskCacheMiB);
-            config.weaponMotionMaximumEntries = static_cast<std::uint32_t>(
-                std::clamp<long>(
-                    ini.GetLongValue(
-                        "WeaponMotionCache",
-                        "iMaximumEntries",
-                        config.weaponMotionMaximumEntries),
-                    16,
-                    2048));
-            if (!std::isfinite(config.handBlendSeconds)) {
-                config.handBlendSeconds = PaperConfig{}.handBlendSeconds;
-            }
-            config.handBlendSeconds = std::clamp(config.handBlendSeconds, 0.0f, 1.0f);
-            if (!std::isfinite(config.boltHoldCloseSeconds)) {
-                config.boltHoldCloseSeconds = PaperConfig{}.boltHoldCloseSeconds;
-            }
-            config.boltHoldCloseSeconds = std::clamp(config.boltHoldCloseSeconds, 0.0f, 1.0f);
-            if (!std::isfinite(config.boltPullDistance)) {
-                config.boltPullDistance = PaperConfig{}.boltPullDistance;
-            }
-            config.boltPullDistance = std::clamp(config.boltPullDistance, 2.0f, 30.0f);
-            if (!std::isfinite(config.debugNativeAnimationAxisLength)) {
-                config.debugNativeAnimationAxisLength = 5.0f;
-            }
-            if (!std::isfinite(config.debugNativeAnimationMarkerSize)) {
-                config.debugNativeAnimationMarkerSize = 1.5f;
-            }
-            config.debugNativeAnimationAxisLength = std::clamp(
-                config.debugNativeAnimationAxisLength, 1.0f, 20.0f);
-            config.debugNativeAnimationMarkerSize = std::clamp(
-                config.debugNativeAnimationMarkerSize, 0.25f, 5.0f);
-            return config;
         }
 
         void logLoadedConfig(const PaperConfig& config, const bool hotReload)
@@ -239,35 +99,14 @@ namespace paper
     {
         s_pendingConfig.store(
             std::shared_ptr<const PaperConfig>{}, std::memory_order_release);
-        const auto resolvedPath = resolveActiveIniPath();
-        PaperConfig safeDefaults{};
-        safeDefaults.activePath = resolvedPath;
-        activePath = resolvedPath;
-        if (activePath.empty()) {
-            PAPER_LOG_WARN(Config, "Could not resolve Documents; retaining compiled defaults without configuration I/O");
-            *this = std::move(safeDefaults);
-            logger::setLevel(logLevel);
-            return false;
-        }
-        const auto ensureResult = config_file::ensureFileExists(
-            std::filesystem::path(activePath), config_defaults::makeDefaultIni());
-        if (ensureResult.status == config_file::EnsureStatus::Created) {
-            PAPER_LOG_INFO(Config, "Created default INI at '{}'", activePath);
-        } else if (ensureResult.status == config_file::EnsureStatus::Failed) {
-            PAPER_LOG_WARN(
-                Config,
-                "Could not create missing INI at '{}': {}; retaining safe compiled defaults if loading also fails",
-                activePath,
-                ensureResult.error.message());
-        }
-
-        auto loaded = loadConfig(activePath);
+        auto loaded = loadConfig(true);
         if (!loaded) {
-            PAPER_LOG_WARN(
-                Config,
-                "Could not load '{}'; retaining safe compiled defaults",
-                activePath);
-            *this = std::move(safeDefaults);
+            PAPER_LOG_WARN(Config, "Retaining safe compiled defaults");
+            *this = PaperConfig{};
+            // The motion cache lives beside the file, so keep naming it.
+            if (const auto directory = resolveConfigDirectory(); !directory.empty()) {
+                activePath = (directory / settings::kFileName).string();
+            }
             logger::setLevel(logLevel);
             return false;
         }
@@ -300,7 +139,7 @@ namespace paper
                 if (stopToken.stop_requested()) {
                     break;
                 }
-                if (auto loaded = loadConfig(s_watchedPath)) {
+                if (auto loaded = loadConfig(false)) {
                     s_pendingConfig.store(
                         std::make_shared<const PaperConfig>(std::move(*loaded)),
                         std::memory_order_release);
