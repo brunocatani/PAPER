@@ -70,7 +70,7 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} chamberRound={} boltAppreciation={} boltPullDistance={:.1f} boltHandFromAnimation={} captureMode={} autoStart={} apiActivation={} hotReload=enabled cacheAccess={} sessionMiB={} diskMiB={} maxFileMiB={} maxEntries={}",
+                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} chamberRound={} boltAppreciation={} boltPullDistance={:.1f} boltHandFromAnimation={}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
                 config.enabled,
@@ -81,15 +81,7 @@ namespace paper
                 config.chamberRound,
                 config.boltAppreciation,
                 config.boltPullDistance,
-                config.boltHandFromAnimation,
-                static_cast<std::uint32_t>(config.developmentCaptureMode),
-                config.developmentCaptureAutoStart,
-                config.developmentCaptureAllowApiActivation,
-                static_cast<std::uint32_t>(config.weaponMotionCacheAccess),
-                config.weaponMotionSessionCacheMiB,
-                config.weaponMotionDiskCacheMiB,
-                config.weaponMotionMaximumFileMiB,
-                config.weaponMotionMaximumEntries);
+                config.boltHandFromAnimation);
         }
     }
 
@@ -103,7 +95,7 @@ namespace paper
         if (!loaded) {
             PAPER_LOG_WARN(Config, "Retaining safe compiled defaults");
             *this = PaperConfig{};
-            // The motion cache lives beside the file, so keep naming it.
+            // Keep naming the file so the watcher can pick up a later fix.
             if (const auto directory = resolveConfigDirectory(); !directory.empty()) {
                 activePath = (directory / settings::kFileName).string();
             }
@@ -156,23 +148,8 @@ namespace paper
             return false;
         }
 
-        auto next = *pending;
-        const bool storageBoundsChanged =
-            next.weaponMotionSessionCacheMiB != weaponMotionSessionCacheMiB ||
-            next.weaponMotionDiskCacheMiB != weaponMotionDiskCacheMiB ||
-            next.weaponMotionMaximumFileMiB != weaponMotionMaximumFileMiB ||
-            next.weaponMotionMaximumEntries != weaponMotionMaximumEntries;
-        next.weaponMotionSessionCacheMiB = weaponMotionSessionCacheMiB;
-        next.weaponMotionDiskCacheMiB = weaponMotionDiskCacheMiB;
-        next.weaponMotionMaximumFileMiB = weaponMotionMaximumFileMiB;
-        next.weaponMotionMaximumEntries = weaponMotionMaximumEntries;
-        *this = std::move(next);
+        *this = *pending;
         logger::setLevel(logLevel);
-        if (storageBoundsChanged) {
-            PAPER_LOG_WARN(
-                Config,
-                "Weapon motion cache size limits changed during hot reload; the new limits will apply next session");
-        }
         logLoadedConfig(*this, true);
         return true;
     }

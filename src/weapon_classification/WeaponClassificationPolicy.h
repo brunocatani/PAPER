@@ -1,12 +1,177 @@
 #pragma once
 
-#include <PAPER/Provider.h>
-
 #include <cstdint>
 #include <string_view>
 
 namespace paper::weapon_classification_policy
 {
+    // Mirrors of ROCK's raw classification vocabulary (weapon size class and
+    // keyword mask), so the policy reads them without ROCK's headers.
+    enum class WeaponSizeClass : std::uint32_t
+    {
+        Melee = 0,
+        Pistol = 1,
+        Rifle = 2,
+        Heavy = 3,
+    };
+
+    enum class WeaponKeywordFlag : std::uint64_t
+    {
+        None = 0,
+        Pistol = 1ull << 0,
+        Rifle = 1ull << 1,
+        Shotgun = 1ull << 2,
+        AssaultRifle = 1ull << 3,
+        Sniper = 1ull << 4,
+        GaussRifle = 1ull << 5,
+        LaserMusket = 1ull << 6,
+        HeavyGun = 1ull << 7,
+        HandToHand = 1ull << 8,
+        Melee1H = 1ull << 9,
+        Melee2H = 1ull << 10,
+        Unarmed = 1ull << 11,
+        Minigun = 1ull << 12,
+        Fatman = 1ull << 13,
+        MissileLauncher = 1ull << 14,
+        GatlingLaser = 1ull << 15,
+        Flamer = 1ull << 16,
+        Cryolater = 1ull << 17,
+        JunkJet = 1ull << 18,
+        RailwayRifle = 1ull << 19,
+        Broadsider = 1ull << 20,
+        Syringer = 1ull << 21,
+        FlareGun = 1ull << 22,
+        GammaGun = 1ull << 23,
+        AlienBlaster = 1ull << 24,
+        Ripper = 1ull << 25,
+        Shishkebab = 1ull << 26,
+        Laser = 1ull << 27,
+        Plasma = 1ull << 28,
+        Ballistic = 1ull << 29,
+        Thrown = 1ull << 30,
+        Grenade = 1ull << 31,
+        Mine = 1ull << 32,
+        Explosive = 1ull << 33,
+        Automatic = 1ull << 34,
+    };
+
+    enum class WeaponPrimaryFamily : std::uint32_t
+    {
+        Unknown = 0,
+        Pistol = 1,
+        Revolver = 2,
+        Rifle = 3,
+        AssaultRifle = 4,
+        AKPattern = 5,
+        ARPattern = 6,
+        SubmachineGun = 7,
+        Shotgun = 8,
+        SniperRifle = 9,
+        BoltActionWithMagazine = 10,
+        BoltActionWithoutMagazine = 11,
+        BoltAction = 12,
+        LeverAction = 13,
+        PumpAction = 14,
+        BreakAction = 15,
+        HeavyWeapon = 16,
+        MachineGun = 17,
+        LightMachineGun = 18,
+        Minigun = 19,
+        Launcher = 20,
+        EnergyWeapon = 21,
+        MeleeWeapon = 22,
+        UnarmedWeapon = 23,
+        ThrownWeapon = 24,
+        ExplosiveWeapon = 25,
+    };
+
+    /*
+     * Multi-label taxonomy: family, operating mechanism, feed evidence, and
+     * the specific weapon families already represented by ROCK's raw keyword
+     * mask may coexist. The primary family is only a summary; policy reads
+     * these flags.
+     */
+    enum class WeaponFamilyFlag : std::uint64_t
+    {
+        None = 0,
+        Pistol = 1ull << 0,
+        Revolver = 1ull << 1,
+        Rifle = 1ull << 2,
+        AssaultRifle = 1ull << 3,
+        AKPattern = 1ull << 4,
+        ARPattern = 1ull << 5,
+        SubmachineGun = 1ull << 6,
+        Shotgun = 1ull << 7,
+        SniperRifle = 1ull << 8,
+        BoltAction = 1ull << 9,
+        BoltActionWithMagazine = 1ull << 10,
+        BoltActionWithoutMagazine = 1ull << 11,
+        LeverAction = 1ull << 12,
+        PumpAction = 1ull << 13,
+        BreakAction = 1ull << 14,
+        HeavyWeapon = 1ull << 15,
+        MachineGun = 1ull << 16,
+        LightMachineGun = 1ull << 17,
+        Minigun = 1ull << 18,
+        Launcher = 1ull << 19,
+        EnergyWeapon = 1ull << 20,
+        BallisticWeapon = 1ull << 21,
+        MeleeWeapon = 1ull << 22,
+        UnarmedWeapon = 1ull << 23,
+        ThrownWeapon = 1ull << 24,
+        ExplosiveWeapon = 1ull << 25,
+        MagazineFed = 1ull << 26,
+        CylinderFed = 1ull << 27,
+        SlideOperated = 1ull << 28,
+        LaserCellFed = 1ull << 29,
+        ShellFed = 1ull << 30,
+        LooseRoundFed = 1ull << 31,
+        Automatic = 1ull << 32,
+        SemiAutomatic = 1ull << 33,
+        ManualCycle = 1ull << 34,
+        InternalFeed = 1ull << 35,
+        SingleLoad = 1ull << 36,
+        TubeFed = 1ull << 37,
+        BeltFed = 1ull << 38,
+        DrumFed = 1ull << 39,
+        BullpupPattern = 1ull << 40,
+        GaussRifle = 1ull << 41,
+        LaserMusket = 1ull << 42,
+        RailwayRifle = 1ull << 43,
+        GatlingLaser = 1ull << 44,
+        MissileLauncher = 1ull << 45,
+        FatMan = 1ull << 46,
+        Flamer = 1ull << 47,
+        Cryolator = 1ull << 48,
+        JunkJet = 1ull << 49,
+        Broadsider = 1ull << 50,
+        Syringer = 1ull << 51,
+        FlareGun = 1ull << 52,
+        GammaGun = 1ull << 53,
+        AlienBlaster = 1ull << 54,
+        LaserWeapon = 1ull << 55,
+        PlasmaWeapon = 1ull << 56,
+        Grenade = 1ull << 57,
+        Mine = 1ull << 58,
+        OneHandedMelee = 1ull << 59,
+        TwoHandedMelee = 1ull << 60,
+        HandToHand = 1ull << 61,
+        Ripper = 1ull << 62,
+        Shishkebab = 1ull << 63,
+    };
+
+    enum class WeaponFamilyEvidenceFlag : std::uint32_t
+    {
+        None = 0,
+        RockKeyword = 1u << 0,
+        RockSizeClass = 1u << 1,
+        WeaponFlags = 1u << 2,
+        PartTopology = 1u << 3,
+        AnimationKeyword = 1u << 4,
+        FormIdentityText = 1u << 5,
+        PartEvidenceIncomplete = 1u << 6,
+    };
+
     struct WeaponFamilySignals
     {
         bool rockClassificationAvailable{ false };
@@ -42,8 +207,8 @@ namespace paper::weapon_classification_policy
     struct WeaponFamilyClassification
     {
         std::uint64_t familyFlags{ 0 };
-        api::WeaponPrimaryFamily primaryFamily{
-            api::WeaponPrimaryFamily::Unknown
+        WeaponPrimaryFamily primaryFamily{
+            WeaponPrimaryFamily::Unknown
         };
         std::uint32_t evidenceFlags{ 0 };
     };
@@ -145,12 +310,6 @@ namespace paper::weapon_classification_policy
     [[nodiscard]] constexpr WeaponFamilyClassification classifyWeaponFamily(
         const WeaponFamilySignals& signals) noexcept
     {
-        using api::WeaponFamilyEvidenceFlag;
-        using api::WeaponFamilyFlag;
-        using api::WeaponKeywordFlag;
-        using api::WeaponPrimaryFamily;
-        using api::WeaponSizeClass;
-
         WeaponFamilyClassification result{};
         const auto evidence = [](const WeaponFamilyEvidenceFlag value) {
             return static_cast<std::uint32_t>(value);
@@ -563,9 +722,9 @@ namespace paper::weapon_classification_policy
             hasFamily(WeaponFamilyFlag::ThrownWeapon) ||
             hasFamily(WeaponFamilyFlag::ExplosiveWeapon);
         if (signals.rockClassificationValid && !semanticSizeKnown) {
-            // ROCK's size class is a coarse physical bucket. Preserve it in
-            // the API, but use it as a semantic family only when stronger
-            // keyword, identity, runtime, or part evidence found no family.
+            // ROCK's size class is a coarse physical bucket. Use it as a
+            // semantic family only when stronger keyword, identity, runtime,
+            // or part evidence found no family.
             switch (static_cast<WeaponSizeClass>(signals.sizeClass)) {
             case WeaponSizeClass::Melee:
                 add(WeaponFamilyFlag::MeleeWeapon,

@@ -4,7 +4,6 @@
 #include "animation/NativeAnimationAuthorityPolicy.h"
 #include "animation/NativePosePipeline.h"
 #include "attachment_bindings/AttachmentBindings.h"
-#include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
 #include "api/PAPERProvider.h"
 #include "api/RequiredUpdates.h"
@@ -14,17 +13,13 @@
 #include "compat/MergedReloadCompatibility.h"
 #include "compat/ReloadSelectionTrace.h"
 #include "debug/NativeAnimationDebugVisualization.h"
-#include "development/DevelopmentCapturePolicy.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_control/BoltHold.h"
 #include "reload_control/ChamberEjection.h"
 #include "reload_control/ManualBolt.h"
 #include "reload_control/ManualReloadOnly.h"
-#include "reload_observation/ReloadObservation.h"
-#include "reload_stages/ReloadStages.h"
 #include "support/Fo4VrRuntime.h"
-#include "weapon_motion/WeaponMotion.h"
 
 #include <Windows.h>
 
@@ -48,12 +43,7 @@ namespace
     bool s_runtimeOperational{ false };
     bool s_climbingAnimationSuppressed{ false };
     bool s_automaticReloadBlockSent{ false };
-    bool s_reloadObservationDemandActive{ false };
-    bool s_animationTelemetryDemandActive{ false };
-    bool s_reloadStageDemandActive{ false };
     bool s_nativePosePipelineDemandActive{ false };
-    bool s_weaponMotionDemandActive{ false };
-    weapon_motion::RuntimeOptions s_weaponMotionOptions{};
     paper::RockWeaponGripState s_gripState{};
     paper::RockWeaponHandling s_handlingState{};
     bool s_gripStateValid{ false };
@@ -105,18 +95,6 @@ namespace
         }
     };
 
-    struct EnrichmentDemand
-    {
-        bool reloadObservation{ false };
-        bool reloadEvidenceGeometry{ false };
-        bool animationTelemetry{ false };
-        bool exactAnimationEvidence{ false };
-        bool reloadStages{ false };
-        bool nativePosePipeline{ false };
-        bool weaponMotion{ false };
-        weapon_motion::RuntimeOptions weaponMotionOptions{};
-    };
-
     using PerformanceClock = std::chrono::steady_clock;
 
     struct TimingCounter
@@ -136,12 +114,11 @@ namespace
     };
 
     /*
-     * This timing-only trace remains dormant on normal frames and reports at
-     * most once per second during enrichment or a slow frame. Comparing the
-     * engine frame interval with measured PAPER callbacks distinguishes work
-     * inside this plugin from engine work that occurs while PAPER retains the
-     * off-screen graph manager; the stage split then identifies the local
-     * owner without changing capture fidelity or scheduling.
+     * This timing-only trace stays quiet on normal frames and reports at most
+     * once per second when one of PAPER's frames took a millisecond or more.
+     * Comparing the engine frame interval with measured PAPER callbacks
+     * distinguishes work inside this plugin from engine work, and the phase
+     * split identifies the owner without changing scheduling.
      */
     struct ReloadPerformanceWindow
     {
@@ -157,28 +134,9 @@ namespace
         TimingCounter beforeRockPhase{};
         TimingCounter afterRockPhase{};
         TimingCounter completePhase{};
-        TimingCounter observationCapture{};
-        TimingCounter observationAdvance{};
-        TimingCounter observationComplete{};
-        TimingCounter animationAdvance{};
-        TimingCounter animationComplete{};
         TimingCounter consumerDispatch{};
-        TimingCounter catalogSetup{};
-        TimingCounter passiveDrain{};
-        TimingCounter nameCollection{};
-        TimingCounter passiveUpdate{};
-        TimingCounter exactUpdate{};
-        TimingCounter passiveStats{};
-        exact_clip_preharvest::RuntimeDiagnostics exact{};
-        std::uint64_t exactSamplesCompleted{ 0 };
-        std::uint64_t exactSamplingMicroseconds{ 0 };
-        std::uint64_t exactBudgetYieldCount{ 0 };
-        std::uint64_t exactSampleLimitYieldCount{ 0 };
         std::uint32_t callbackThreadId{ 0 };
         bool mixedCallbackThreads{ false };
-        bool observationDemandSeen{ false };
-        bool animationDemandSeen{ false };
-        bool exactAnimationDemandSeen{ false };
     };
 
     ReloadPerformanceWindow s_reloadPerformance{};
@@ -243,37 +201,8 @@ namespace
         }
     }
 
-    void recordAnimationDiagnostics(
-        const animation_evidence::FrameDiagnostics& diagnostics)
-    {
-        s_reloadPerformance.catalogSetup.add(
-            diagnostics.catalogSetupMicroseconds);
-        s_reloadPerformance.passiveDrain.add(
-            diagnostics.passiveDrainMicroseconds);
-        s_reloadPerformance.nameCollection.add(
-            diagnostics.nameCollectionMicroseconds);
-        s_reloadPerformance.passiveUpdate.add(
-            diagnostics.passiveUpdateMicroseconds);
-        s_reloadPerformance.exactUpdate.add(
-            diagnostics.exactUpdateMicroseconds);
-        s_reloadPerformance.passiveStats.add(
-            diagnostics.passiveStatsMicroseconds);
-        s_reloadPerformance.exact = diagnostics.exact;
-        s_reloadPerformance.exactSamplesCompleted +=
-            diagnostics.exact.samplesCompletedLastStep;
-        s_reloadPerformance.exactSamplingMicroseconds +=
-            diagnostics.exact.samplingMicrosecondsLastStep;
-        if (diagnostics.exact.samplingBudgetYielded) {
-            ++s_reloadPerformance.exactBudgetYieldCount;
-        }
-        if (diagnostics.exact.sampleLimitYielded) {
-            ++s_reloadPerformance.exactSampleLimitYieldCount;
-        }
-    }
-
     void completePerformanceFrame(
-        const rock::api::animation::AnimationPhaseContext& context,
-        const EnrichmentDemand demand)
+        const rock::api::animation::AnimationPhaseContext& context)
     {
         auto& performance = s_reloadPerformance;
         performance.paperFrame.add(performance.currentFrameMicroseconds);
@@ -288,13 +217,6 @@ namespace
         if (deltaMilliseconds > performance.gameDeltaMillisecondsMaximum) {
             performance.gameDeltaMillisecondsMaximum = deltaMilliseconds;
         }
-        performance.observationDemandSeen =
-            performance.observationDemandSeen || demand.reloadObservation;
-        performance.animationDemandSeen =
-            performance.animationDemandSeen || demand.animationTelemetry;
-        performance.exactAnimationDemandSeen =
-            performance.exactAnimationDemandSeen ||
-            demand.exactAnimationEvidence;
 
         const auto now = PerformanceClock::now();
         const auto wallMilliseconds =
@@ -314,15 +236,10 @@ namespace
                 static_cast<double>(wallMilliseconds) :
             0.0;
         // A game frame over 20 ms occurs nearly every second in VR and is not
-        // Paper's cost; report only Paper demand or Paper's own spikes.
-        const bool shouldReport =
-            performance.observationDemandSeen ||
-            performance.animationDemandSeen ||
-            performance.exactAnimationDemandSeen ||
-            performance.paperFrame.maximumMicroseconds >= 1000;
-        if (shouldReport) {
+        // Paper's cost; report only Paper's own spikes.
+        if (performance.paperFrame.maximumMicroseconds >= 1000) {
             PAPER_LOG_WARN(Performance,
-                "RELOAD-PERF frames={} wallMs={} hz={:.1f} thread={} mixedThreads={} gameMs(avg/max)={:.2f}/{:.2f} paperMs(avg/max)={:.3f}/{:.3f} demand(obs/anim/exact)={}/{}/{} phaseUs(avg/max)=[native {}/{} before {}/{} after {}/{} complete {}/{}]",
+                "RELOAD-PERF frames={} wallMs={} hz={:.1f} thread={} mixedThreads={} gameMs(avg/max)={:.2f}/{:.2f} paperMs(avg/max)={:.3f}/{:.3f} phaseUs(avg/max)=[native {}/{} before {}/{} after {}/{} complete {}/{} dispatch {}/{}]",
                 performance.frameCount,
                 wallMilliseconds,
                 observedHz,
@@ -334,9 +251,6 @@ namespace
                     performance.paperFrame)) / 1000.0,
                 static_cast<double>(
                     performance.paperFrame.maximumMicroseconds) / 1000.0,
-                performance.observationDemandSeen,
-                performance.animationDemandSeen,
-                performance.exactAnimationDemandSeen,
                 averageMicroseconds(performance.nativeGraphPhase),
                 performance.nativeGraphPhase.maximumMicroseconds,
                 averageMicroseconds(performance.beforeRockPhase),
@@ -344,172 +258,25 @@ namespace
                 averageMicroseconds(performance.afterRockPhase),
                 performance.afterRockPhase.maximumMicroseconds,
                 averageMicroseconds(performance.completePhase),
-                performance.completePhase.maximumMicroseconds);
-            PAPER_LOG_WARN(Performance,
-                "RELOAD-PERF detail observationUs(capture/advance/complete avg/max)=[{}/{} {}/{} {}/{}] animationUs(advance/complete/dispatch avg/max)=[{}/{} {}/{} {}/{}] animationStageUs(setup/names/drain/passive/exact/stats avg/max)=[{}/{} {}/{} {}/{} {}/{} {}/{} {}/{}] exact(state={} background={} resource={} path={}/{} sample={}/{} sampled={} sampleUs={} budgetYields={} limitYields={})",
-                averageMicroseconds(performance.observationCapture),
-                performance.observationCapture.maximumMicroseconds,
-                averageMicroseconds(performance.observationAdvance),
-                performance.observationAdvance.maximumMicroseconds,
-                averageMicroseconds(performance.observationComplete),
-                performance.observationComplete.maximumMicroseconds,
-                averageMicroseconds(performance.animationAdvance),
-                performance.animationAdvance.maximumMicroseconds,
-                averageMicroseconds(performance.animationComplete),
-                performance.animationComplete.maximumMicroseconds,
+                performance.completePhase.maximumMicroseconds,
                 averageMicroseconds(performance.consumerDispatch),
-                performance.consumerDispatch.maximumMicroseconds,
-                averageMicroseconds(performance.catalogSetup),
-                performance.catalogSetup.maximumMicroseconds,
-                averageMicroseconds(performance.nameCollection),
-                performance.nameCollection.maximumMicroseconds,
-                averageMicroseconds(performance.passiveDrain),
-                performance.passiveDrain.maximumMicroseconds,
-                averageMicroseconds(performance.passiveUpdate),
-                performance.passiveUpdate.maximumMicroseconds,
-                averageMicroseconds(performance.exactUpdate),
-                performance.exactUpdate.maximumMicroseconds,
-                averageMicroseconds(performance.passiveStats),
-                performance.passiveStats.maximumMicroseconds,
-                static_cast<unsigned>(performance.exact.state),
-                performance.exact.backgroundGraphActive,
-                performance.exact.clipResourceActive,
-                performance.exact.animationPathIndex,
-                performance.exact.animationPathCount,
-                performance.exact.nextSample,
-                performance.exact.sampleCount,
-                performance.exactSamplesCompleted,
-                performance.exactSamplingMicroseconds,
-                performance.exactBudgetYieldCount,
-                performance.exactSampleLimitYieldCount);
+                performance.consumerDispatch.maximumMicroseconds);
         }
         performance = {};
         performance.started = now;
     }
 
-    [[nodiscard]] EnrichmentDemand refreshEnrichmentDemand()
+    // The native pose pipeline is published only while a consumer holds the
+    // capability; the last snapshot is cleared when the demand ends.
+    [[nodiscard]] bool refreshNativePosePipelineDemand()
     {
-        const auto scope = [](const api::DevelopmentCaptureScope value) {
-            return static_cast<std::uint32_t>(value);
-        };
-        std::uint32_t legacyScopes = 0;
-        const bool catalogConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::WeaponMotionCatalog);
-        const bool diagnosticsConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::WeaponMotionDiagnostics);
-        const bool manipulationConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::WeaponManipulationTelemetry);
-        const bool motionConsumer =
-            catalogConsumer || diagnosticsConsumer || manipulationConsumer;
-        if (motionConsumer) {
-            legacyScopes |=
-                scope(api::DevelopmentCaptureScope::
-                    PassiveObservation) |
-                scope(api::DevelopmentCaptureScope::
-                    WeaponMotionCompilation) |
-                scope(api::DevelopmentCaptureScope::
-                    CompiledCacheRead) |
-                scope(api::DevelopmentCaptureScope::
-                    CompiledCacheWrite);
-        }
-        if (diagnosticsConsumer) {
-            legacyScopes |= scope(
-                api::DevelopmentCaptureScope::LiveMotionLearning);
-        }
-        const bool reloadStages = provider::hasConsumerCapability(
-            api::ConsumerCapability::
-                ReloadStageIdentification);
-        const bool exactConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::ReloadAnimationEvidence);
-        const bool telemetryConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::ReloadAnimationTelemetry);
-        const bool observationConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::ReloadObservations);
-        const bool geometryConsumer = provider::hasConsumerCapability(
-            api::ConsumerCapability::ReloadEvidenceGeometry);
-        if (reloadStages || exactConsumer || telemetryConsumer ||
-            observationConsumer || geometryConsumer) {
-            legacyScopes |= scope(
-                api::DevelopmentCaptureScope::PassiveObservation);
-        }
-        if (exactConsumer) {
-            legacyScopes |= scope(
-                api::DevelopmentCaptureScope::ExactAnimationHarvest);
-        }
-
-        auto captureScopes =
-            provider::refreshDevelopmentCaptureDemand(legacyScopes);
-        const bool weaponMotion = (captureScopes & scope(
-            api::DevelopmentCaptureScope::
-                WeaponMotionCompilation)) != 0;
-        weapon_motion::RuntimeOptions motionOptions{
-            .cacheRead = (captureScopes & scope(
-                api::DevelopmentCaptureScope::CompiledCacheRead)) != 0,
-            .cacheWrite = (captureScopes & scope(
-                api::DevelopmentCaptureScope::CompiledCacheWrite)) != 0,
-            .liveMotionLearning = (captureScopes & scope(
-                api::DevelopmentCaptureScope::LiveMotionLearning)) != 0,
-            .manipulationTelemetry = weaponMotion && manipulationConsumer,
-        };
-        const bool exactAnimationEvidence =
-            (captureScopes & scope(
-                api::DevelopmentCaptureScope::
-                    ExactAnimationHarvest)) != 0 ||
-            (weaponMotion &&
-                (provider::allowedDevelopmentCaptureScopes() & scope(
-                    api::DevelopmentCaptureScope::
-                        ExactAnimationHarvest)) != 0 &&
-                weapon_motion::requiresExactAnimationEvidence(
-                    motionOptions.cacheRead));
-        if (exactAnimationEvidence) {
-            captureScopes |= scope(
-                api::DevelopmentCaptureScope::ExactAnimationHarvest) |
-                scope(api::DevelopmentCaptureScope::PassiveObservation);
-        }
-        const bool passiveObservation = (captureScopes & scope(
-            api::DevelopmentCaptureScope::PassiveObservation)) != 0;
-        const bool animationTelemetry = passiveObservation;
-        const bool reloadEvidenceGeometry =
-            passiveObservation && geometryConsumer;
-        const bool reloadObservation = passiveObservation;
-        const bool reloadStagesActive = passiveObservation && reloadStages;
-        const bool nativePosePipeline = provider::hasConsumerCapability(
+        const bool demand = provider::hasConsumerCapability(
             api::ConsumerCapability::NativePosePipeline);
-
-        if (s_weaponMotionDemandActive &&
-            (!weaponMotion || s_weaponMotionOptions != motionOptions)) {
-            weapon_motion::reset(
-                weapon_motion::ResetReason::DemandEnded);
-        }
-        if (s_animationTelemetryDemandActive && !animationTelemetry) {
-            animation_evidence::reset();
-        }
-        if (s_reloadObservationDemandActive && !reloadObservation) {
-            reload_observation::reset();
-        }
-        if (s_reloadStageDemandActive && !reloadStagesActive) {
-            reload_stages::reset();
-        }
-        if (s_nativePosePipelineDemandActive && !nativePosePipeline) {
+        if (s_nativePosePipelineDemandActive && !demand) {
             provider::clearNativePosePipeline();
         }
-        s_reloadObservationDemandActive = reloadObservation;
-        s_animationTelemetryDemandActive = animationTelemetry;
-        s_reloadStageDemandActive = reloadStagesActive;
-        s_nativePosePipelineDemandActive = nativePosePipeline;
-        s_weaponMotionDemandActive = weaponMotion;
-        s_weaponMotionOptions = motionOptions;
-        provider::publishDevelopmentCaptureScopes(captureScopes);
-        return EnrichmentDemand{
-            .reloadObservation = reloadObservation,
-            .reloadEvidenceGeometry = reloadEvidenceGeometry,
-            .animationTelemetry = animationTelemetry,
-            .exactAnimationEvidence = exactAnimationEvidence,
-            .reloadStages = reloadStagesActive,
-            .nativePosePipeline = nativePosePipeline,
-            .weaponMotion = weaponMotion,
-            .weaponMotionOptions = motionOptions,
-        };
+        s_nativePosePipelineDemandActive = demand;
+        return demand;
     }
 
     [[nodiscard]] bool hasContextFlag(
@@ -627,29 +394,6 @@ namespace
         state.partialReloadAuthorityEnabled = 1u;
         state.logLevel = g_config.logLevel;
         state.revision = ++s_configRevision;
-        state.developmentCaptureMode = g_config.developmentCaptureMode;
-        state.weaponMotionCacheAccess = g_config.weaponMotionCacheAccess;
-        if (g_config.developmentCaptureAutoStart) {
-            state.developmentCaptureFlags |= static_cast<std::uint32_t>(
-                api::DevelopmentCaptureConfigFlag::AutoStart);
-        }
-        if (g_config.developmentCaptureAllowApiActivation) {
-            state.developmentCaptureFlags |= static_cast<std::uint32_t>(
-                api::DevelopmentCaptureConfigFlag::
-                    AllowApiActivation);
-        }
-        // Hot reload is mandatory, independent of development capture permissions.
-        state.developmentCaptureFlags |= static_cast<std::uint32_t>(
-            api::DevelopmentCaptureConfigFlag::HotReloadEnabled);
-        state.developmentCaptureAllowedScopes =
-            development_capture_policy::allowedScopes(
-                g_config.developmentCaptureMode,
-                g_config.weaponMotionCacheAccess);
-        provider::configureDevelopmentCapture(
-            state.developmentCaptureMode,
-            state.weaponMotionCacheAccess,
-            state.developmentCaptureFlags,
-            state.revision);
         provider::publishConfig(state);
         provider::dispatchEvent(api::EventKind::ConfigReloaded);
     }
@@ -1080,7 +824,6 @@ namespace
         if (context->phase ==
                 rock::api::animation::AnimationPhase::BeforeRock &&
             g_config.processPendingReload()) {
-            weapon_motion::setCacheAccess(g_config.weaponMotionCacheAccess);
             publishConfigState();
             configureManualReloadOnlyForSession();
         }
@@ -1098,7 +841,7 @@ namespace
 
         const bool operational =
             g_config.enabled && rockEnabled && rockReady && skeletonReady;
-        const auto enrichmentDemand = refreshEnrichmentDemand();
+        const bool nativePosePipelineDemand = refreshNativePosePipelineDemand();
         switch (context->phase) {
         case rock::api::animation::AnimationPhase::NativeGraphOutput: {
             const bool climbingAnimationSuppressed =
@@ -1110,22 +853,6 @@ namespace
             // yield at this same graph sample when Paper owns authority.
             publishRockAuthority(runtimeOperational);
             native_animation_authority::captureNativeGraphOutput();
-            paper::RockWeaponGripState gripState{};
-            if (enrichmentDemand.reloadObservation) {
-                const auto observationStarted = PerformanceClock::now();
-                if (rockApiClient().queryEquippedWeaponGripState(gripState) &&
-                    hasGripFlag(
-                        gripState.flags,
-                        rock::api::weapon::GripFlag::Valid)) {
-                    reload_observation::capturePhase(
-                        *context,
-                        gripState,
-                        api::ReloadObservationPhase::
-                            NativeGraphOutput);
-                }
-                s_reloadPerformance.observationCapture.add(
-                    elapsedPerformanceMicroseconds(observationStarted));
-            }
             recordPhasePerformance(context->phase,
                 elapsedPerformanceMicroseconds(phaseStarted));
             break;
@@ -1177,7 +904,6 @@ namespace
                     .manualBoltEnabled = operational && g_config.boltAppreciation,
                     .playerReloadActive = native_animation_authority::playerReloadActive(),
                     .physicalReloadActive = provider::physicalReloadActive(),
-                    .clipSamplerAvailable = !enrichmentDemand.exactAnimationEvidence,
                 });
             manual_bolt::update(
                 rockApiClient(),
@@ -1193,28 +919,6 @@ namespace
                     .handBlendSeconds = g_config.handBlendSeconds,
                     .deltaSeconds = context->deltaSeconds,
                 });
-            if (enrichmentDemand.reloadObservation) {
-                const auto observationStarted = PerformanceClock::now();
-                reload_observation::advanceFrame(
-                    *context,
-                    s_gripStateValid ? std::addressof(s_gripState) : nullptr,
-                    provider::generation(),
-                    enrichmentDemand.reloadEvidenceGeometry);
-                s_reloadPerformance.observationAdvance.add(
-                    elapsedPerformanceMicroseconds(observationStarted));
-            }
-            if (enrichmentDemand.animationTelemetry) {
-                const auto animationStarted = PerformanceClock::now();
-                animation_evidence::advanceFrame(
-                    *context,
-                    s_gripStateValid ? std::addressof(s_gripState) : nullptr,
-                    provider::generation(),
-                    enrichmentDemand.exactAnimationEvidence);
-                s_reloadPerformance.animationAdvance.add(
-                    elapsedPerformanceMicroseconds(animationStarted));
-                recordAnimationDiagnostics(
-                    animation_evidence::snapshotFrameDiagnostics());
-            }
             const auto preLifecycleCompatibility =
                 evaluateAnimationCompatibility(
                     *context,
@@ -1293,22 +997,13 @@ namespace
             }
             manual_bolt::presentHand(rockApiClient());
             chamber_ejection::update(rockApiClient(), *context);
-            if (enrichmentDemand.reloadObservation && s_gripStateValid) {
-                const auto observationStarted = PerformanceClock::now();
-                reload_observation::capturePhase(
-                    *context,
-                    s_gripState,
-                    api::ReloadObservationPhase::PostRock);
-                s_reloadPerformance.observationCapture.add(
-                    elapsedPerformanceMicroseconds(observationStarted));
-            }
             debug_visualization::publish(*context, s_gripState);
             recordPhasePerformance(context->phase,
                 elapsedPerformanceMicroseconds(phaseStarted));
             break;
         }
         case rock::api::animation::AnimationPhase::Complete: {
-            if (enrichmentDemand.nativePosePipeline) {
+            if (nativePosePipelineDemand) {
                 const auto authority = currentPaperAnimationAuthority();
                 native_pose_pipeline::publishFrame(
                     *context,
@@ -1325,54 +1020,19 @@ namespace
             }
             native_animation_authority::completeRockFrame(context->frameIndex);
             publishRuntimeState(*context, rockApiClient().ready(), skeletonReady);
-            if (enrichmentDemand.reloadObservation) {
-                const auto observationStarted = PerformanceClock::now();
-                reload_observation::completeFrame(
-                    *context,
-                    provider::generation());
-                s_reloadPerformance.observationComplete.add(
-                    elapsedPerformanceMicroseconds(observationStarted));
-            }
-            if (enrichmentDemand.animationTelemetry) {
-                const auto animationStarted = PerformanceClock::now();
-                animation_evidence::completeFrame(*context);
-                s_reloadPerformance.animationComplete.add(
-                    elapsedPerformanceMicroseconds(animationStarted));
-            }
-            if (enrichmentDemand.weaponMotion) {
-                weapon_motion::completeFrame(
-                    *context,
-                    rockApiClient(),
-                    provider::generation(),
-                    enrichmentDemand.weaponMotionOptions);
-            }
-            if (enrichmentDemand.reloadStages) {
-                reload_stages::completeFrame(*context);
-            }
             const auto dispatchStarted = PerformanceClock::now();
-            std::array<
-                api::Event,
-                api::kMaxWeaponMotionEvents> motionEvents{};
-            const auto motionEventCount = weapon_motion::drainEvents(
-                motionEvents.data(),
-                static_cast<std::uint32_t>(motionEvents.size()));
-            for (std::uint32_t index = 0;
-                 index < motionEventCount;
-                 ++index) {
-                provider::dispatchEvent(motionEvents[index]);
-            }
             provider::dispatchEvent(api::EventKind::FrameComplete);
             s_reloadPerformance.consumerDispatch.add(
                 elapsedPerformanceMicroseconds(dispatchStarted));
             provider::completeFrame();
             recordPhasePerformance(context->phase,
                 elapsedPerformanceMicroseconds(phaseStarted));
-            completePerformanceFrame(*context, enrichmentDemand);
+            completePerformanceFrame(*context);
             break;
         }
         case rock::api::animation::AnimationPhase::Presented: {
             native_animation_authority::capturePresentedHandBaselines(context->frameIndex);
-            if (enrichmentDemand.nativePosePipeline) {
+            if (nativePosePipelineDemand) {
                 const auto authority = currentPaperAnimationAuthority();
                 native_pose_pipeline::publishFrame(*context, s_lastAnimationCompatibilityReason,
                     authority.localFlags, authority.consumerFlags,
@@ -1439,13 +1099,7 @@ namespace
         s_lastAuthorityPublishFailureFlags = UINT32_MAX;
         s_runtimeOperational = false;
         s_climbingAnimationSuppressed = false;
-        s_reloadObservationDemandActive = false;
-        s_animationTelemetryDemandActive = false;
-        s_reloadStageDemandActive = false;
         s_nativePosePipelineDemandActive = false;
-        s_weaponMotionDemandActive = false;
-        s_weaponMotionOptions = {};
-        weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
         s_reloadPerformance = {};
         provider::resetRuntime();
     }
@@ -1461,7 +1115,6 @@ namespace
             required_updates::watch();
             (void)g_config.reload();
             native_animation_authority::initializeCycleTrace();
-            weapon_motion::configureCache(g_config);
             publishConfigState();
             g_config.startWatching();
             configureManualReloadOnlyForSession();
@@ -1485,7 +1138,6 @@ namespace
             s_gameLoaded.store(false, std::memory_order_release);
             resetSession();
             (void)g_config.reload();
-            weapon_motion::configureCache(g_config);
             publishConfigState();
             g_config.startWatching();
             configureManualReloadOnlyForSession();

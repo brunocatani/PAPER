@@ -13,7 +13,6 @@ namespace paper::animation_preharvest_policy
     inline constexpr std::size_t kFirstPersonGraphIndex = 1;
     inline constexpr std::uint32_t kAnimationResourceStateMask = 0x70000000u;
     inline constexpr unsigned kAnimationResourceStateShift = 28;
-    inline constexpr float kSamplesPerSecond = 120.0f;
     inline constexpr std::uint32_t kMinimumClipSamples = 24;
     inline constexpr std::uint32_t kMaximumClipSamples = 720;
     inline constexpr std::uint32_t kMaximumSamplesPerFrame = 24;
@@ -60,7 +59,7 @@ namespace paper::animation_preharvest_policy
 
     [[nodiscard]] inline std::uint32_t clipSampleCount(
         const float durationSeconds,
-        const float samplesPerSecond = kSamplesPerSecond) noexcept
+        const float samplesPerSecond) noexcept
     {
         if (!std::isfinite(durationSeconds) || !(durationSeconds > 0.0f)) {
             return 0;

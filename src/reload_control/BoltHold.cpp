@@ -6,7 +6,7 @@
 #include "api/RockApiClient.h"
 #include "reload_control/BoltHoldPolicy.h"
 #include "reload_control/BoltStroke.h"
-#include "reload_observation/ReloadObservation.h"
+#include "weapon_classification/WeaponClassification.h"
 #include "support/TransformMath.h"
 
 #include <algorithm>
@@ -494,7 +494,7 @@ namespace paper::bolt_hold
 
         void updateRead(const FrameInput& input)
         {
-            if ((!input.enabled && !input.manualBoltEnabled) || !input.clipSamplerAvailable) {
+            if (!input.enabled && !input.manualBoltEnabled) {
                 stopRead();
                 return;
             }
@@ -608,7 +608,7 @@ namespace paper::bolt_hold
             // not wait for them. Their parts decide the family again when they arrive,
             // since that re-keys the weapon and brings it back here.
             const bool rifleAlready = manualBoltEnabled && index == 0 && !evidenceCount &&
-                policy::familyIsBoltAction(reload_observation::classifyWeaponFamilyFlags(slot.form, classification, {})) &&
+                policy::familyIsBoltAction(weapon_classification::classifyWeaponFamilyFlags(slot.form, classification, {})) &&
                 !sourcesCouldBeAnotherAction();
             if (!evidenceCount && !rifleAlready && ++slot.evidenceWaitFrames < kEvidenceWaitFrames) {
                 return false;
@@ -633,7 +633,7 @@ namespace paper::bolt_hold
                 }
             }
 
-            const auto family = reload_observation::classifyWeaponFamilyFlags(
+            const auto family = weapon_classification::classifyWeaponFamilyFlags(
                 slot.form,
                 classification,
                 std::span(s_evidence).first(evidenceCount));

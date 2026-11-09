@@ -48,18 +48,6 @@ namespace paper
         [[nodiscard]] bool queryPresentedHandPose(
             rock::api::Hand hand,
             rock::api::hands::PresentedHandPose& outPose) const;
-        [[nodiscard]] bool queryEquippedWeaponClassification(
-            rock::api::weapon::Classification& outClassification) const;
-        [[nodiscard]] bool reloadObservationEvidenceReady() const;
-        // Returns the records copied; outTotal receives ROCK's full count.
-        [[nodiscard]] std::uint32_t copyWeaponEvidenceDetails(
-            rock::api::weaponparts::EvidenceDetail* outDetails,
-            std::uint32_t maxDetails,
-            std::uint32_t& outTotal) const;
-        [[nodiscard]] std::uint32_t copyWeaponEvidencePoints(
-            std::uint32_t bodyId,
-            rock::api::Point3* outPoints,
-            std::uint32_t maxPoints) const;
         // Per weapon slot: what the bolt hold needs on both equipped weapons.
         [[nodiscard]] bool queryWeaponState(
             std::uint32_t weaponSlot,
@@ -70,6 +58,7 @@ namespace paper
         [[nodiscard]] bool queryWeaponClassification(
             std::uint32_t weaponSlot,
             rock::api::weapon::Classification& outClassification) const;
+        // Returns the records copied; outTotal receives ROCK's full count.
         [[nodiscard]] std::uint32_t copyWeaponEvidenceDetails(
             std::uint32_t weaponSlot,
             rock::api::weaponparts::EvidenceDetail* outDetails,
@@ -140,7 +129,6 @@ namespace paper
         std::uint64_t _ownerToken{ 0 };
         std::uint64_t _phaseCallbackToken{ 0 };
         std::uint32_t _publishedAuthorityFlags{ 0 };
-        bool _reloadObservationEvidenceReady{ false };
     };
 
     RockApiClient& rockApiClient();

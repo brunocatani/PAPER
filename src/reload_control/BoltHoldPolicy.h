@@ -1,8 +1,7 @@
 #pragma once
 
-#include <PAPER/Provider.h>
-
 #include "animation_evidence/AnimationPreharvestPolicy.h"
+#include "weapon_classification/WeaponClassificationPolicy.h"
 
 #include <algorithm>
 #include <array>
@@ -129,7 +128,7 @@ namespace paper::bolt_hold_policy
     // its own clips: if none of them opens its bolt there is no pose to hold.
     [[nodiscard]] constexpr bool familyHoldsOpen(const std::uint64_t familyFlags) noexcept
     {
-        return (familyFlags & static_cast<std::uint64_t>(api::WeaponFamilyFlag::ManualCycle)) == 0;
+        return (familyFlags & static_cast<std::uint64_t>(weapon_classification_policy::WeaponFamilyFlag::ManualCycle)) == 0;
     }
 
     // A rifle worked by its bolt. The game flags lever guns, pumps and single-action
@@ -138,13 +137,13 @@ namespace paper::bolt_hold_policy
     // shotgun with that flag is a pump, whatever its parts are called.
     [[nodiscard]] constexpr bool familyIsBoltAction(const std::uint64_t familyFlags) noexcept
     {
-        const auto has = [familyFlags](const api::WeaponFamilyFlag flag) {
+        const auto has = [familyFlags](const weapon_classification_policy::WeaponFamilyFlag flag) {
             return (familyFlags & static_cast<std::uint64_t>(flag)) != 0;
         };
-        return has(api::WeaponFamilyFlag::BoltAction) && !has(api::WeaponFamilyFlag::LeverAction) &&
-               !has(api::WeaponFamilyFlag::PumpAction) && !has(api::WeaponFamilyFlag::BreakAction) &&
-               !has(api::WeaponFamilyFlag::Shotgun) &&
-               (!has(api::WeaponFamilyFlag::Revolver) || has(api::WeaponFamilyFlag::BoltActionWithMagazine));
+        return has(weapon_classification_policy::WeaponFamilyFlag::BoltAction) && !has(weapon_classification_policy::WeaponFamilyFlag::LeverAction) &&
+               !has(weapon_classification_policy::WeaponFamilyFlag::PumpAction) && !has(weapon_classification_policy::WeaponFamilyFlag::BreakAction) &&
+               !has(weapon_classification_policy::WeaponFamilyFlag::Shotgun) &&
+               (!has(weapon_classification_policy::WeaponFamilyFlag::Revolver) || has(weapon_classification_policy::WeaponFamilyFlag::BoltActionWithMagazine));
     }
 
     // Whether a round can wait in the chamber on top of a full magazine. A revolver's
@@ -153,11 +152,11 @@ namespace paper::bolt_hold_policy
     // and a gas cylinder would cost a semi-automatic its round.
     [[nodiscard]] constexpr bool familyKeepsChamberedRound(const std::uint64_t familyFlags) noexcept
     {
-        const auto has = [familyFlags](const api::WeaponFamilyFlag flag) {
+        const auto has = [familyFlags](const weapon_classification_policy::WeaponFamilyFlag flag) {
             return (familyFlags & static_cast<std::uint64_t>(flag)) != 0;
         };
-        return !has(api::WeaponFamilyFlag::Revolver) && !has(api::WeaponFamilyFlag::BreakAction) &&
-               !has(api::WeaponFamilyFlag::Minigun);
+        return !has(weapon_classification_policy::WeaponFamilyFlag::Revolver) && !has(weapon_classification_policy::WeaponFamilyFlag::BreakAction) &&
+               !has(weapon_classification_policy::WeaponFamilyFlag::Minigun);
     }
 
     // Opens at the bolt's own speed; closes over the configured blend, or at

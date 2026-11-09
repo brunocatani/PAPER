@@ -8,7 +8,7 @@
 #include "reload_control/BoltStroke.h"
 #include "reload_control/ChamberEjection.h"
 #include "reload_control/ManualReloadOnly.h"
-#include "reload_observation/ReloadObservation.h"
+#include "weapon_classification/WeaponClassification.h"
 #include "support/Fo4VrRuntime.h"
 #include "support/TransformMath.h"
 
@@ -336,7 +336,7 @@ namespace paper::manual_bolt
         {
             rock::api::weapon::Classification classification{};
             return rock.queryWeaponClassification(gun.slot, classification) &&
-                policy::familyKeepsChamberedRound(reload_observation::classifyWeaponFamilyFlags(gun.form, classification, {}));
+                policy::familyKeepsChamberedRound(weapon_classification::classifyWeaponFamilyFlags(gun.form, classification, {}));
         }
 
         // The inventory item in the gun's slot, by weapon, owner and ExtraUniqueID, giving

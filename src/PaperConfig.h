@@ -1,8 +1,5 @@
 #pragma once
 
-#include <PAPER/Provider.h>
-
-#include <cstdint>
 #include <string>
 
 namespace paper
@@ -22,18 +19,6 @@ namespace paper
         bool debugDrawNativeAnimationText{ true };
         float debugNativeAnimationAxisLength{ 5.0f };
         float debugNativeAnimationMarkerSize{ 1.5f };
-        api::DevelopmentCaptureMode developmentCaptureMode{
-            api::DevelopmentCaptureMode::User
-        };
-        api::WeaponMotionCacheAccess weaponMotionCacheAccess{
-            api::WeaponMotionCacheAccess::Off
-        };
-        bool developmentCaptureAutoStart{ false };
-        bool developmentCaptureAllowApiActivation{ false };
-        std::uint32_t weaponMotionSessionCacheMiB{ 64 };
-        std::uint32_t weaponMotionDiskCacheMiB{ 256 };
-        std::uint32_t weaponMotionMaximumFileMiB{ 16 };
-        std::uint32_t weaponMotionMaximumEntries{ 256 };
         int logLevel{ 2 };
         std::string activePath{};
 

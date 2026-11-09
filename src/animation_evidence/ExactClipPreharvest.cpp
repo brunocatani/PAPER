@@ -36,7 +36,7 @@ namespace paper::exact_clip_preharvest
          * These FO4VR 1.2.72 entries and layouts are the production ROCK
          * NativeIdleGripPreharvest boundary. PAPER keeps the identical live-
          * byte gates and uses the same ownership order; the only extension is
-         * sampling every exact AnimationFileData clip over its full duration.
+         * sampling the weapon's own clips over their full duration.
          */
         constexpr std::uintptr_t kSimpleAnimationGraphManagerHolderCtor = 0x0811F10;
         constexpr std::uintptr_t kSimpleAnimationGraphManagerHolderDtor = 0x0811F50;
@@ -86,10 +86,8 @@ namespace paper::exact_clip_preharvest
         constexpr std::ptrdiff_t kTrackToBoneMappingCountOffset = 0x28;
         constexpr std::ptrdiff_t kPartitionIndicesOffset = 0x40;
         constexpr std::ptrdiff_t kPartitionIndicesCountOffset = 0x48;
-        constexpr std::ptrdiff_t kAnimationTypeOffset = 0x10;
         constexpr std::ptrdiff_t kAnimationDurationOffset = 0x14;
         constexpr std::ptrdiff_t kAnimationTransformTrackCountOffset = 0x18;
-        constexpr std::ptrdiff_t kAnimationFloatTrackCountOffset = 0x1C;
         constexpr std::ptrdiff_t kAnimationResourceFlagsOffset = 0x0C;
         constexpr std::ptrdiff_t kAnimationResourceDataOffset = 0x20;
         constexpr std::ptrdiff_t kRootContainerFromAnimationDataOffset = 0x08;
@@ -129,6 +127,8 @@ namespace paper::exact_clip_preharvest
         constexpr std::ptrdiff_t kBindingTableNodeOccupancyOffset = 0x10;
 
         constexpr std::size_t kMaxBonesAndTracks = 768;
+        constexpr std::size_t kMaxTargets = 128;
+        constexpr std::size_t kBoneNameCapacity = 64;
         constexpr std::size_t kMaxSkeletonPartitions = 256;
         constexpr std::size_t kMaxBoneChainDepth = 96;
         constexpr std::size_t kMaxArmTargets = 40;
@@ -257,19 +257,12 @@ namespace paper::exact_clip_preharvest
 
         struct BoneTarget
         {
-            std::array<char, animation_evidence::kBoneNameCapacity> name{};
+            std::array<char, kBoneNameCapacity> name{};
             std::uint32_t nameIndex{ 0 };
             std::int16_t boneIndex{ -1 };
             std::uint16_t chainCount{ 0 };
             bool tracked{ false };
             std::array<std::int16_t, kMaxBoneChainDepth> chain{};
-        };
-
-        struct Consumer
-        {
-            ClipSink sink{ nullptr };
-            void* sinkUserData{ nullptr };
-            const PoseReader* reader{ nullptr };
         };
 
         struct ClipWork
@@ -278,24 +271,16 @@ namespace paper::exact_clip_preharvest
             std::uint32_t sampleCount{ 0 };
             std::uint32_t nextSample{ 0 };
             std::uint32_t targetCount{ 0 };
-            std::int32_t animationType{ -1 };
-            std::int32_t floatTrackCount{ 0 };
             std::int32_t transformTrackCount{ 0 };
             std::int32_t boneCount{ 0 };
             std::int16_t weaponBoneIndex{ -1 };
-            bool targetTracksTruncated{ false };
             std::array<std::int16_t, kMaxBonesAndTracks> trackToBone{};
             std::array<std::int16_t, kMaxBonesAndTracks> parentIndices{};
             std::array<std::uint8_t, kMaxBonesAndTracks> requiredBones{};
+            // Nonzero for a bone this clip has a transform track for.
+            std::array<std::uint8_t, kMaxBonesAndTracks> trackedBones{};
             std::array<RE::NiTransform, kMaxBonesAndTracks> referenceLocals{};
-            std::array<BoneTarget, animation_evidence::kMaxExactTracksPerClip> targets{};
-            std::array<animation_evidence::ExactTrackSamples,
-                animation_evidence::kMaxExactTracksPerClip>
-                tracks{};
-            std::array<
-                animation_evidence::ExactSkeletonBone,
-                animation_evidence::kMaxSkeletonBones>
-                skeletonBones{};
+            std::array<BoneTarget, kMaxTargets> targets{};
             // A pose reader's bones outside Weapon. Their chains and Weapon's start
             // below one common ancestor, and what lies above it cancels out.
             std::array<BoneTarget, kMaxArmTargets> armTargets{};
@@ -326,10 +311,18 @@ namespace paper::exact_clip_preharvest
             State phase{ State::Idle };
             // The list holds the graph's clip names instead of file paths.
             bool clipsAreGraphBound{ false };
-            bool readsPoses{ false };
             bool inPowerArmor{ false };
             bool graphHolderConstructed{ false };
             bool longLoadLogged{ false };
+        };
+
+        // Job counters for its completion log.
+        struct Stats
+        {
+            std::uint32_t animationFileCount{ 0 };
+            std::uint32_t clipsSampled{ 0 };
+            std::uint32_t clipsRejected{ 0 };
+            bool usedLoadedGraphPathFallback{ false };
         };
 
         struct Runtime
@@ -338,10 +331,9 @@ namespace paper::exact_clip_preharvest
             Job job{};
             ClipWork clip{};
             Stats stats{};
-            RuntimeDiagnostics diagnostics{};
             alignas(16) std::array<HkQsTransform, kMaxBonesAndTracks> sampledTracks{};
             std::array<RE::NiTransform, kMaxBonesAndTracks> sampledLocals{};
-            std::array<PoseBone, animation_evidence::kMaxExactTracksPerClip + kMaxArmTargets> poseBones{};
+            std::array<PoseBone, kMaxTargets + kMaxArmTargets> poseBones{};
             std::array<PoseMarker, kMaxPoseMarkers> poseMarkers{};
             std::array<std::array<char, kPoseMarkerTextCapacity>, kMaxPoseMarkers> poseMarkerTexts{};
             const char* prepareFailure{ "" };
@@ -560,7 +552,7 @@ namespace paper::exact_clip_preharvest
         void clearClipWork(ClipWork& clip) noexcept
         {
             static_assert(std::is_trivially_copyable_v<ClipWork>);
-            // ClipWork is roughly two MiB. Aggregate assignment from `{}` may
+            // ClipWork is about 90 KiB. Aggregate assignment from `{}` may
             // materialize that temporary on Fallout's main-thread stack;
             // clear the process-lifetime heap object in place instead.
             std::memset(&clip, 0, sizeof(clip));
@@ -587,7 +579,6 @@ namespace paper::exact_clip_preharvest
             job.phaseStartedAtMilliseconds = 0;
             job.phase = State::Idle;
             job.clipsAreGraphBound = false;
-            job.readsPoses = false;
             job.inPowerArmor = false;
             job.graphHolderConstructed = false;
             job.longLoadLogged = false;
@@ -632,7 +623,6 @@ namespace paper::exact_clip_preharvest
             clearJob(state.job);
             clearClipWork(state.clip);
             state.stats = {};
-            state.diagnostics = {};
         }
 
         void finishTerminal(Runtime& state, const State terminalState, const char* reason)
@@ -640,24 +630,21 @@ namespace paper::exact_clip_preharvest
             const auto formId = state.job.weaponFormId;
             const auto generation = state.job.weaponGenerationKey;
             const auto stats = state.stats;
-            const bool readsPoses = state.job.readsPoses;
             releaseNativeOwnership(state);
             clearJob(state.job);
             state.job.weaponFormId = formId;
             state.job.weaponGenerationKey = generation;
-            state.job.readsPoses = readsPoses;
             state.job.phase = terminalState;
             state.stats = stats;
 
             if (terminalState == State::Completed) {
                 PAPER_LOG_INFO(Animation,
-                    "Raw animation preharvest complete weapon={:08X} generation={:016X} pathSource={} files={} sampled={} published={} rejected={}",
+                    "Raw animation preharvest complete weapon={:08X} generation={:016X} pathSource={} files={} sampled={} rejected={}",
                     formId,
                     generation,
                     stats.usedLoadedGraphPathFallback ? "loaded-exact-subgraph" : "AnimationFileData",
                     stats.animationFileCount,
                     stats.clipsSampled,
-                    stats.clipsPublished,
                     stats.clipsRejected);
             } else {
                 PAPER_LOG_WARN(Animation,
@@ -727,62 +714,6 @@ namespace paper::exact_clip_preharvest
                 transform_math::havokQuaternionToNiRows<RE::NiMatrix3>(source.rotation));
             outTransform.scale = source.scale[0];
             return isFiniteTransform(outTransform);
-        }
-
-        [[nodiscard]] animation_evidence::PoseSample poseFromNiTransform(
-            const RE::NiTransform& transform)
-        {
-            float quaternion[4]{};
-            transform_math::niRowsToHavokQuaternion(transform.rotate, quaternion);
-            return animation_evidence::PoseSample{
-                .translate = {
-                    transform.translate.x,
-                    transform.translate.y,
-                    transform.translate.z,
-                },
-                .rotate = {
-                    quaternion[3], quaternion[0], quaternion[1], quaternion[2]
-                },
-            };
-        }
-
-        [[nodiscard]] bool rawReferencePose(
-            const HkQsTransform& source,
-            animation_evidence::PoseSample& outPose,
-            animation_evidence::Vec3& outScale)
-        {
-            for (const float value : source.translation) {
-                if (!std::isfinite(value)) {
-                    return false;
-                }
-            }
-            for (const float value : source.rotation) {
-                if (!std::isfinite(value)) {
-                    return false;
-                }
-            }
-            for (const float value : source.scale) {
-                if (!std::isfinite(value)) {
-                    return false;
-                }
-            }
-            outPose.translate = {
-                source.translation[0],
-                source.translation[1],
-                source.translation[2],
-            };
-            outPose.rotate = animation_evidence::normalizedQuaternionOrIdentity({
-                source.rotation[3],
-                source.rotation[0],
-                source.rotation[1],
-                source.rotation[2],
-            });
-            outScale = {
-                source.scale[0],
-                source.scale[1],
-                source.scale[2],
-            };
-            return true;
         }
 
         [[nodiscard]] bool guardedSampleTracks(
@@ -909,7 +840,7 @@ namespace paper::exact_clip_preharvest
         [[nodiscard]] bool skeletonBoneName(
             const void* bones,
             const std::int32_t boneIndex,
-            std::array<char, animation_evidence::kBoneNameCapacity>& outName)
+            std::array<char, kBoneNameCapacity>& outName)
         {
             outName = {};
             if (!bones || boneIndex < 0) {
@@ -1173,7 +1104,7 @@ namespace paper::exact_clip_preharvest
             std::int16_t common = prepared.weaponBoneIndex;
             std::uint32_t count = 0;
             for (std::int32_t bone = 0; bone < prepared.boneCount && count < prepared.armTargets.size(); ++bone) {
-                std::array<char, animation_evidence::kBoneNameCapacity> name{};
+                std::array<char, kBoneNameCapacity> name{};
                 std::uint32_t nameIndex = 0;
                 if (!skeletonBoneName(bones, bone, name) ||
                     !findAllowedName(std::string_view{ name.data() }, reader.armNodeNames, reader.armNodeNameCount, nameIndex)) {
@@ -1183,7 +1114,7 @@ namespace paper::exact_clip_preharvest
                 target.name = name;
                 target.nameIndex = firstNameIndex + nameIndex;
                 target.boneIndex = static_cast<std::int16_t>(bone);
-                target.tracked = prepared.skeletonBones[static_cast<std::size_t>(bone)].transformTrackIndex >= 0;
+                target.tracked = prepared.trackedBones[static_cast<std::size_t>(bone)] != 0;
                 common = animation_preharvest_policy::commonAncestorBone(common, target.boneIndex, parents);
             }
             if (count == 0 || common < 0) {
@@ -1234,8 +1165,7 @@ namespace paper::exact_clip_preharvest
             Runtime& state,
             const char* const* allowedNodeNames,
             const std::uint32_t allowedNodeNameCount,
-            const float samplesPerSecond,
-            const PoseReader* reader)
+            const PoseReader& reader)
         {
             RE::BShkbAnimationGraph* graph = nullptr;
             void* skeleton = nullptr;
@@ -1250,15 +1180,11 @@ namespace paper::exact_clip_preharvest
             auto& prepared = state.clip;
             state.prepareFailure = "animationHeaderInvalid";
             if (!native_memory::tryReadField(
-                    animation, kAnimationTypeOffset, prepared.animationType) ||
-                !native_memory::tryReadField(
                     animation, kAnimationDurationOffset, prepared.durationSeconds) ||
                 !native_memory::tryReadField(
                     animation,
                     kAnimationTransformTrackCountOffset,
                     prepared.transformTrackCount) ||
-                !native_memory::tryReadField(
-                    animation, kAnimationFloatTrackCountOffset, prepared.floatTrackCount) ||
                 !std::isfinite(prepared.durationSeconds) ||
                 !(prepared.durationSeconds > 0.0f) ||
                 prepared.transformTrackCount <= 0 ||
@@ -1268,9 +1194,10 @@ namespace paper::exact_clip_preharvest
             prepared.sampleCount =
                 animation_preharvest_policy::clipSampleCount(
                     prepared.durationSeconds,
-                    samplesPerSecond);
+                    reader.samplesPerSecond);
             if (prepared.sampleCount < 2 ||
-                prepared.sampleCount > animation_evidence::kMaxExactClipSamples) {
+                prepared.sampleCount >
+                    animation_preharvest_policy::kMaximumClipSamples) {
                 return false;
             }
 
@@ -1332,36 +1259,19 @@ namespace paper::exact_clip_preharvest
                 return false;
             }
 
-            for (std::int32_t bone = 0; bone < prepared.boneCount; ++bone) {
-                auto& metadata = prepared.skeletonBones[static_cast<std::size_t>(bone)];
-                metadata.boneIndex = static_cast<std::int16_t>(bone);
-                metadata.transformTrackIndex = -1;
-                metadata.parentBoneIndex =
-                    prepared.parentIndices[static_cast<std::size_t>(bone)];
-                if (skeletonBoneName(bones, bone, metadata.name)) {
-                    metadata.flags |= 1u;
-                }
-                if (rawReferencePose(
-                        referenceBuffer[static_cast<std::size_t>(bone)],
-                        metadata.referenceLocal,
-                        metadata.referenceScale)) {
-                    metadata.flags |= 2u;
-                }
-            }
             for (std::int32_t track = 0;
                  track < prepared.transformTrackCount;
                  ++track) {
                 const auto bone =
                     prepared.trackToBone[static_cast<std::size_t>(track)];
                 if (bone >= 0 && bone < prepared.boneCount) {
-                    prepared.skeletonBones[static_cast<std::size_t>(bone)]
-                        .transformTrackIndex = static_cast<std::int16_t>(track);
+                    prepared.trackedBones[static_cast<std::size_t>(bone)] = 1;
                 }
             }
 
             std::uint32_t matchingBoneCount = 0;
             for (std::int32_t bone = 0; bone < prepared.boneCount; ++bone) {
-                std::array<char, animation_evidence::kBoneNameCapacity> name{};
+                std::array<char, kBoneNameCapacity> name{};
                 if (!skeletonBoneName(bones, bone, name)) {
                     continue;
                 }
@@ -1392,24 +1302,11 @@ namespace paper::exact_clip_preharvest
                 target.nameIndex = nameIndex;
                 target.boneIndex = static_cast<std::int16_t>(bone);
                 target.chainCount = static_cast<std::uint16_t>(chainCount);
-                target.tracked =
-                    prepared.skeletonBones[static_cast<std::size_t>(bone)].transformTrackIndex >= 0;
+                target.tracked = prepared.trackedBones[static_cast<std::size_t>(bone)] != 0;
                 target.chain = chain;
-                auto& track = prepared.tracks[prepared.targetCount];
-                track.sampleCount = 0;
-                track.boneName = name;
-                track.boneIndex = target.boneIndex;
-                track.parentBoneIndex =
-                    prepared.parentIndices[static_cast<std::size_t>(bone)];
-                track.transformTrackIndex =
-                    prepared.skeletonBones[static_cast<std::size_t>(bone)]
-                        .transformTrackIndex;
-                track.chainDepth = target.chainCount;
                 ++prepared.targetCount;
             }
             if (matchingBoneCount > prepared.targets.size()) {
-                ++state.stats.targetBonesTruncated;
-                prepared.targetTracksTruncated = true;
                 PAPER_LOG_WARN(Animation,
                     "Raw animation preharvest truncated clip '{}' from {} matching Weapon-descendant bones to capacity {}",
                     state.job.currentClipPath.data(),
@@ -1452,40 +1349,13 @@ namespace paper::exact_clip_preharvest
                 }
             }
 
-            const auto& referenceWeapon = prepared.referenceLocals[
-                static_cast<std::size_t>(prepared.weaponBoneIndex)];
-            for (std::uint32_t targetIndex = 0;
-                 targetIndex < prepared.targetCount;
-                 ++targetIndex) {
-                const auto& target = prepared.targets[targetIndex];
-                RE::NiTransform partInWeaponParent = referenceWeapon;
-                for (std::uint16_t chainIndex = 0;
-                     chainIndex < target.chainCount;
-                     ++chainIndex) {
-                    partInWeaponParent = transform_math::composeTransforms(
-                        partInWeaponParent,
-                        prepared.referenceLocals[static_cast<std::size_t>(
-                            target.chain[chainIndex])]);
-                }
-                const auto weaponLocal = transform_math::relativeTransform(
-                    referenceWeapon,
-                    partInWeaponParent);
-                auto& track = prepared.tracks[targetIndex];
-                track.referenceLocal = poseFromNiTransform(weaponLocal);
-                track.referenceScale = {
-                    weaponLocal.scale,
-                    weaponLocal.scale,
-                    weaponLocal.scale,
-                };
-            }
-
-            if (reader && reader->armNodeNameCount != 0) {
+            if (reader.armNodeNameCount != 0) {
                 prepareArmTargets(
                     state,
                     bones,
                     std::span<const HkQsTransform>{ referenceBuffer.data(), static_cast<std::size_t>(prepared.boneCount) },
                     allowedNodeNameCount,
-                    *reader);
+                    reader);
             }
             return true;
         }
@@ -1632,7 +1502,7 @@ namespace paper::exact_clip_preharvest
                 reader.userData);
         }
 
-        [[nodiscard]] bool sampleClipBatch(Runtime& state, const PoseReader* reader)
+        [[nodiscard]] bool sampleClipBatch(Runtime& state, const PoseReader& reader)
         {
             auto& clip = state.clip;
             RE::BShkbAnimationGraph* graph = nullptr;
@@ -1708,124 +1578,11 @@ namespace paper::exact_clip_preharvest
                     }
                 }
 
-                if (reader) {
-                    const bool wantsMore = publishPose(state, *reader, animation, timeSeconds, armsValid);
-                    clip.nextSample = wantsMore ? clip.nextSample + 1 : clip.sampleCount;
-                    ++samplesCompletedThisFrame;
-                    continue;
-                }
-
-                const auto& weaponInParent = state.sampledLocals[
-                    static_cast<std::size_t>(clip.weaponBoneIndex)];
-                if (!isFiniteTransform(weaponInParent)) {
-                    return false;
-                }
-
-                for (std::uint32_t targetIndex = 0;
-                     targetIndex < clip.targetCount;
-                     ++targetIndex) {
-                    const auto& target = clip.targets[targetIndex];
-                    RE::NiTransform partInWeaponParent = weaponInParent;
-                    for (std::uint16_t chainIndex = 0;
-                         chainIndex < target.chainCount;
-                         ++chainIndex) {
-                        const auto bone = target.chain[chainIndex];
-                        if (bone < 0 || bone >= clip.boneCount) {
-                            return false;
-                        }
-                        partInWeaponParent = transform_math::composeTransforms(
-                            partInWeaponParent,
-                            state.sampledLocals[static_cast<std::size_t>(bone)]);
-                    }
-                    const auto weaponLocal = transform_math::relativeTransform(
-                        weaponInParent, partInWeaponParent);
-                    if (!isFiniteTransform(weaponLocal)) {
-                        return false;
-                    }
-                    auto& track = clip.tracks[targetIndex];
-                    track.samples[clip.nextSample] = poseFromNiTransform(weaponLocal);
-                    track.scales[clip.nextSample] = {
-                        weaponLocal.scale, weaponLocal.scale, weaponLocal.scale
-                    };
-                }
-                ++clip.nextSample;
+                const bool wantsMore = publishPose(state, reader, animation, timeSeconds, armsValid);
+                clip.nextSample = wantsMore ? clip.nextSample + 1 : clip.sampleCount;
                 ++samplesCompletedThisFrame;
             }
-            const auto samplingElapsed =
-                std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now() - batchStarted);
-            state.diagnostics.samplesCompletedLastStep =
-                samplesCompletedThisFrame;
-            state.diagnostics.samplingMicrosecondsLastStep =
-                static_cast<std::uint32_t>((std::min)(
-                    samplingElapsed.count(),
-                    static_cast<std::int64_t>(UINT32_MAX)));
-            state.diagnostics.samplingBudgetYielded =
-                clip.nextSample < clip.sampleCount &&
-                samplingElapsed >=
-                    animation_preharvest_policy::kSamplingFrameBudget;
-            state.diagnostics.sampleLimitYielded =
-                clip.nextSample < clip.sampleCount &&
-                samplesCompletedThisFrame >=
-                    animation_preharvest_policy::kMaximumSamplesPerFrame;
             return true;
-        }
-
-        [[nodiscard]] std::string_view clipFileName(const std::string_view path)
-        {
-            const auto separator = path.find_last_of("/\\");
-            return separator == std::string_view::npos
-                ? path
-                : path.substr(separator + 1);
-        }
-
-        [[nodiscard]] std::uint32_t publishSampledClip(
-            Runtime& state,
-            const Consumer& consumer)
-        {
-            if (consumer.reader) {
-                ++state.stats.clipsSampled;
-                return 0;
-            }
-            if (!consumer.sink) {
-                return 0;
-            }
-            auto& clip = state.clip;
-            for (std::uint32_t index = 0; index < clip.targetCount; ++index) {
-                clip.tracks[index].sampleCount = clip.targetCount > 0 ?
-                    clip.sampleCount :
-                    0;
-            }
-            const ClipView view{
-                .weaponFormId = state.job.weaponFormId,
-                .weaponGenerationKey = state.job.weaponGenerationKey,
-                .animationPath = state.job.currentClipPath.data(),
-                .durationSeconds = clip.durationSeconds,
-                .animationType = clip.animationType,
-                .rawTransformTrackCount = clip.transformTrackCount,
-                .rawFloatTrackCount = clip.floatTrackCount,
-                .sampleCount = clip.sampleCount,
-                .tracks = clip.tracks.data(),
-                .trackCount = clip.targetCount,
-                .skeletonBones = clip.skeletonBones.data(),
-                .skeletonBoneCount = static_cast<std::uint32_t>(clip.boneCount),
-                .weaponBoneIndex = clip.weaponBoneIndex,
-                .targetTracksTruncated = clip.targetTracksTruncated,
-            };
-            consumer.sink(view, consumer.sinkUserData);
-            ++state.stats.clipsSampled;
-            ++state.stats.clipsPublished;
-            PAPER_LOG_DEBUG(Animation,
-                "Raw animation sampled weapon={:08X} clip={}/{} '{}' duration={:.3f}s samples={} targetTracks={} rawTracks={}",
-                state.job.weaponFormId,
-                state.job.animationPathIndex + 1,
-                state.job.animationPathCount,
-                clipFileName(state.job.currentClipPath.data()),
-                clip.durationSeconds,
-                clip.sampleCount,
-                clip.targetCount,
-                clip.transformTrackCount);
-            return 1;
         }
 
         void advancePastCurrentClip(Runtime& state)
@@ -1882,8 +1639,7 @@ namespace paper::exact_clip_preharvest
         [[nodiscard]] bool startJob(
             Runtime& state,
             const std::uint32_t weaponFormId,
-            const std::uint64_t weaponGenerationKey,
-            const bool readsPoses)
+            const std::uint64_t weaponGenerationKey)
         {
             auto* player = RE::PlayerCharacter::GetSingleton();
             RE::TESObjectWEAP* weapon = nullptr;
@@ -1900,7 +1656,6 @@ namespace paper::exact_clip_preharvest
             state.job.weaponFormId = weaponFormId;
             state.job.weaponGenerationKey = weaponGenerationKey;
             state.job.inPowerArmor = RE::PowerArmor::PlayerInPowerArmor();
-            state.job.readsPoses = readsPoses;
             state.job.phase = State::LoadingBaseGraphs;
             state.job.phaseStartedAtMilliseconds = GetTickCount64();
             clearClipWork(state.clip);
@@ -2284,7 +2039,7 @@ namespace paper::exact_clip_preharvest
             Runtime& state,
             const char* const* allowedNodeNames,
             const std::uint32_t allowedNodeNameCount,
-            const Consumer& consumer)
+            const PoseReader& reader)
         {
             auto& job = state.job;
             if (job.phase == State::Idle || job.phase == State::Completed ||
@@ -2384,9 +2139,7 @@ namespace paper::exact_clip_preharvest
                     finishTerminal(state, State::Failed, "exactAnimationFileListUnavailable");
                     return StepResult{ .state = State::Failed };
                 }
-                if (consumer.reader) {
-                    orderClipsForReader(job, *consumer.reader);
-                }
+                orderClipsForReader(job, reader);
                 job.animationPathIndex = 0;
                 job.phase = State::LoadingClip;
                 job.phaseStartedAtMilliseconds = now;
@@ -2401,11 +2154,11 @@ namespace paper::exact_clip_preharvest
             }
 
             if (job.phase == State::LoadingClip) {
-                const bool readerIsDone = consumer.reader && !job.clipResource.entry &&
+                const bool readerIsDone = !job.clipResource.entry &&
                     job.animationPathIndex < job.animationPathCount &&
-                    !consumer.reader->readsClip(
+                    !reader.readsClip(
                         std::string_view{ job.animationPaths[job.animationPathIndex].data() },
-                        consumer.reader->userData);
+                        reader.userData);
                 if (job.animationPathIndex >= job.animationPathCount || readerIsDone) {
                     finishTerminal(state, State::Completed, "allExactAnimationFilesSampled");
                     return StepResult{ .state = State::Completed };
@@ -2450,24 +2203,15 @@ namespace paper::exact_clip_preharvest
                         state,
                         allowedNodeNames,
                         allowedNodeNameCount,
-                        consumer.reader
-                            ? consumer.reader->samplesPerSecond
-                            : animation_preharvest_policy::kSamplesPerSecond,
-                        consumer.reader)) {
+                        reader)) {
                     rejectCurrentClip(state, state.prepareFailure);
                     return StepResult{ .state = job.phase };
                 }
-                if (consumer.reader && !clipTracksFirstName(state.clip)) {
+                // A clip with no track for the first name is skipped unread, so
+                // every clip that reaches sampling has at least one target.
+                if (!clipTracksFirstName(state.clip)) {
                     advancePastCurrentClip(state);
                     return StepResult{ .state = job.phase };
-                }
-                if (state.clip.targetCount == 0) {
-                    const auto published = publishSampledClip(state, consumer);
-                    advancePastCurrentClip(state);
-                    return StepResult{
-                        .state = job.phase,
-                        .clipsPublished = published,
-                    };
                 }
                 job.phase = State::SamplingClip;
                 job.phaseStartedAtMilliseconds = now;
@@ -2476,101 +2220,22 @@ namespace paper::exact_clip_preharvest
             }
 
             if (job.phase == State::SamplingClip) {
-                if (!consumer.sink && !consumer.reader) {
-                    finishTerminal(state, State::Failed, "rawClipSinkUnavailable");
-                    return StepResult{ .state = State::Failed };
-                }
-                if (!sampleClipBatch(state, consumer.reader)) {
+                if (!sampleClipBatch(state, reader)) {
                     rejectCurrentClip(state, "nativeTrackSamplingOrHierarchyCompositionFailed");
                     return StepResult{ .state = job.phase };
                 }
                 if (state.clip.nextSample < state.clip.sampleCount) {
                     return StepResult{ .state = job.phase };
                 }
-                const auto published = publishSampledClip(state, consumer);
+                ++state.stats.clipsSampled;
                 advancePastCurrentClip(state);
-                return StepResult{
-                    .state = job.phase,
-                    .clipsPublished = published,
-                };
+                return StepResult{ .state = job.phase };
             }
 
             finishTerminal(state, State::Failed, "unknownPreharvestState");
             return StepResult{ .state = State::Failed };
         }
 
-        [[nodiscard]] StepResult advanceJob(
-            const std::uint32_t weaponFormId,
-            const std::uint64_t weaponGenerationKey,
-            const char* const* allowedNodeNames,
-            const std::uint32_t allowedNodeNameCount,
-            const Consumer& consumer) noexcept
-        {
-            auto& state = runtime();
-            state.diagnostics.samplesCompletedLastStep = 0;
-            state.diagnostics.samplingMicrosecondsLastStep = 0;
-            state.diagnostics.samplingBudgetYielded = false;
-            state.diagnostics.sampleLimitYielded = false;
-            if (!claimOrValidateThread(state)) {
-                return StepResult{ .state = State::Failed };
-            }
-            if (state.resetRequested.exchange(
-                    false, std::memory_order_acq_rel)) {
-                resetRuntimeJob(state);
-            }
-            if (weaponFormId == 0 || weaponGenerationKey == 0) {
-                resetRuntimeJob(state);
-                return {};
-            }
-            if (!allowedNodeNames || allowedNodeNameCount == 0) {
-                return StepResult{ .state = state.job.phase };
-            }
-            if (!consumer.sink && !consumer.reader) {
-                return StepResult{ .state = State::Failed };
-            }
-            if (!resolveNativeFunctions(state)) {
-                return StepResult{ .state = State::Failed };
-            }
-
-            const bool readsPoses = consumer.reader != nullptr;
-            if (state.job.weaponFormId != weaponFormId ||
-                state.job.weaponGenerationKey != weaponGenerationKey ||
-                state.job.readsPoses != readsPoses) {
-                resetRuntimeJob(state);
-                if (!startJob(state, weaponFormId, weaponGenerationKey, readsPoses)) {
-                    // ROCK's committed scene generation can precede the actor's
-                    // equipped-item/process view by a few frames. An unavailable
-                    // initial context is pending, not a terminal failure; leave
-                    // identity clear so the same generation retries next frame.
-                    return StepResult{
-                        .state = state.job.phase == State::Failed
-                            ? State::Failed
-                            : State::Idle,
-                    };
-                }
-            }
-            return progressJob(
-                state,
-                allowedNodeNames,
-                allowedNodeNameCount,
-                consumer);
-        }
-    }
-
-    StepResult step(
-        const std::uint32_t weaponFormId,
-        const std::uint64_t weaponGenerationKey,
-        const char* const* allowedNodeNames,
-        const std::uint32_t allowedNodeNameCount,
-        const ClipSink sink,
-        void* sinkUserData) noexcept
-    {
-        return advanceJob(
-            weaponFormId,
-            weaponGenerationKey,
-            allowedNodeNames,
-            allowedNodeNameCount,
-            Consumer{ .sink = sink, .sinkUserData = sinkUserData });
     }
 
     StepResult stepPoses(
@@ -2580,12 +2245,48 @@ namespace paper::exact_clip_preharvest
         const std::uint32_t nodeNameCount,
         const PoseReader& reader) noexcept
     {
-        return advanceJob(
-            weaponFormId,
-            weaponGenerationKey,
+        auto& state = runtime();
+        if (!claimOrValidateThread(state)) {
+            return StepResult{ .state = State::Failed };
+        }
+        if (state.resetRequested.exchange(
+                false, std::memory_order_acq_rel)) {
+            resetRuntimeJob(state);
+        }
+        if (weaponFormId == 0 || weaponGenerationKey == 0) {
+            resetRuntimeJob(state);
+            return {};
+        }
+        if (!nodeNames || nodeNameCount == 0) {
+            return StepResult{ .state = state.job.phase };
+        }
+        if (!reader.pose || !reader.readsClip || !reader.clipOrder) {
+            return StepResult{ .state = State::Failed };
+        }
+        if (!resolveNativeFunctions(state)) {
+            return StepResult{ .state = State::Failed };
+        }
+
+        if (state.job.weaponFormId != weaponFormId ||
+            state.job.weaponGenerationKey != weaponGenerationKey) {
+            resetRuntimeJob(state);
+            if (!startJob(state, weaponFormId, weaponGenerationKey)) {
+                // ROCK's committed scene generation can precede the actor's
+                // equipped-item/process view by a few frames. An unavailable
+                // initial context is pending, not a terminal failure; leave
+                // identity clear so the same generation retries next frame.
+                return StepResult{
+                    .state = state.job.phase == State::Failed
+                        ? State::Failed
+                        : State::Idle,
+                };
+            }
+        }
+        return progressJob(
+            state,
             nodeNames,
             nodeNameCount,
-            Consumer{ .reader = &reader });
+            reader);
     }
 
     void reset() noexcept
@@ -2602,26 +2303,5 @@ namespace paper::exact_clip_preharvest
         }
         state.resetRequested.store(false, std::memory_order_release);
         resetRuntimeJob(state);
-    }
-
-    Stats snapshotStats() noexcept
-    {
-        return runtime().stats;
-    }
-
-    RuntimeDiagnostics snapshotDiagnostics() noexcept
-    {
-        const auto& state = runtime();
-        auto diagnostics = state.diagnostics;
-        diagnostics.state = state.job.phase;
-        diagnostics.animationPathIndex = state.job.animationPathIndex;
-        diagnostics.animationPathCount = state.job.animationPathCount;
-        diagnostics.nextSample = state.clip.nextSample;
-        diagnostics.sampleCount = state.clip.sampleCount;
-        diagnostics.backgroundGraphActive =
-            state.job.graphHolderConstructed;
-        diagnostics.clipResourceActive =
-            state.job.clipResource.entry != nullptr;
-        return diagnostics;
     }
 }

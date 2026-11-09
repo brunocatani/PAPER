@@ -296,8 +296,6 @@ namespace paper::native_animation_authority
         std::atomic<std::uint64_t> s_playerReloadStartSequence{ 0 };
         std::atomic<std::uint64_t> s_playerReloadEndSequence{ 0 };
         std::atomic<std::uint64_t> s_playerWeaponFireSequence{ 0 };
-        std::atomic<std::uint64_t>
-            s_playerWeaponFireActivityOrderAtEvent{ 0 };
         std::atomic<bool> s_playerReloadEventActive{ false };
         std::atomic<std::uint32_t> s_capturedFlags{ 0 };
         std::atomic<std::uint32_t> s_capturedTransformCount{ 0 };
@@ -1039,25 +1037,11 @@ namespace paper::native_animation_authority
         bool onWeaponFire(void* handler, RE::Actor* actor, RE::BSFixedString* eventData)
         {
             const auto* player = RE::PlayerCharacter::GetSingleton();
-            std::uint64_t activityOrderBeforeEvent = 0;
-            if (actor && actor == player) {
-                activityOrderBeforeEvent =
-                    clip_telemetry::activityState().activationOrder;
-            }
             const bool handled = s_originalWeaponFire ?
                 s_originalWeaponFire(handler, actor, eventData) :
                 false;
 
             if (handled && actor && actor == player) {
-                const auto afterHandlerActivityOrder =
-                    clip_telemetry::activityState().activationOrder;
-                const auto activityOrderAtEvent =
-                    afterHandlerActivityOrder > activityOrderBeforeEvent ?
-                    afterHandlerActivityOrder :
-                    0;
-                s_playerWeaponFireActivityOrderAtEvent.store(
-                    activityOrderAtEvent,
-                    std::memory_order_release);
                 s_playerWeaponFireSequence.fetch_add(
                     1,
                     std::memory_order_acq_rel);
@@ -3149,9 +3133,6 @@ namespace paper::native_animation_authority
         s_seenLocalManualCycleTestRequestSequence =
             s_localManualCycleTestRequestSequence.load(std::memory_order_acquire);
         s_playerReloadEventActive.store(false, std::memory_order_release);
-        s_playerWeaponFireActivityOrderAtEvent.store(
-            0,
-            std::memory_order_release);
         const DWORD ownerThread = s_ownerThreadId.load(std::memory_order_acquire);
         if (ownerThread == 0 || ownerThread == GetCurrentThreadId()) {
             clearManualCycleVisualAuthorityPreservingWeapon();
@@ -3202,15 +3183,10 @@ namespace paper::native_animation_authority
             s_playerReloadEndSequence.load(std::memory_order_acquire);
         result.fireSequence =
             s_playerWeaponFireSequence.load(std::memory_order_acquire);
-        result.fireActivityOrderAtEvent =
-            s_playerWeaponFireActivityOrderAtEvent.load(
-                std::memory_order_acquire);
         result.reloadEventActive =
             s_playerReloadEventActive.load(std::memory_order_acquire);
         result.localManualCycleLeaseActive =
             s_localManualCycleTestLeaseActive.load(std::memory_order_acquire);
-        result.weaponFireHookReady =
-            s_weaponFireHookInstalled.load(std::memory_order_acquire);
         if (s_hookInstalled.load(std::memory_order_acquire)) {
             result.statusFlags |= static_cast<std::uint32_t>(RuntimeStatusFlag::HookInstalled);
         }

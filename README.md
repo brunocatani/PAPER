@@ -33,7 +33,7 @@ What it provides:
 - **Round in the chamber** - optional: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
 - **Hand-worked bolts** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want.
 - **Live settings** - TOML settings that reload while the game runs, with in-game pages in RobCo PALM.
-- **Provider API** - 2 interfaces: reload, animation, pose and weapon-motion data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
+- **Provider API** - 2 interfaces: runtime, animation and hand-pose data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
 PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocatani/ROCK). Mods that make reloads physical take over from PAPER through its PhysicalReload interface.
 
@@ -90,8 +90,6 @@ Upgrading from a PAPER that used `PAPER.ini`: the first start carries every opti
 
 [PAPER_example.toml](data/config/PAPER_example.toml) documents every option. It is a reference only, never a file to install.
 
-Development capture and motion caching are off by default. The `[DevelopmentCapture]` settings are the ceiling for what developer tools and other mods may switch on. Persistent cache size limits apply at the next game session.
-
 The log is `Documents/My Games/Fallout4VR/F4SE/PAPER.log`. When reporting an animation problem, include the weapon, the animation replacer you use, the action that failed and the log from that game session.
 
 ## Building mods with PAPER
@@ -142,7 +140,7 @@ Call `paper.close()` on the game thread before your plugin's callback data goes 
 
 | Interface | Use it to |
 | --- | --- |
-| [Provider](docs/api/Provider.md) | Register your mod; read runtime state, captured hand poses, reload observations, animation evidence, reload stages, the native pose pipeline and weapon motion; get a callback every frame; coordinate native animation; request development capture. |
+| [Provider](docs/api/Provider.md) | Register your mod; read runtime state, captured hand poses and the native pose pipeline; get a callback every frame; coordinate native animation. |
 | [PhysicalReload](docs/api/PhysicalReload.md) | Take a reload or manual cycle away from PAPER's animation while your mod drives it with the player's hands. |
 
 ### Rules every consumer follows
@@ -150,7 +148,7 @@ Call `paper.close()` on the game thread before your plugin's callback data goes 
 - One owner per mod, named after the mod. Request only the capabilities you use and check they were granted.
 - Value-initialize every record (`{}`); PAPER checks each record's `size` and `version`.
 - Every call except discovery, `getModVersion` and `isReady` runs on the game thread.
-- Leases (physical reload, development capture, timed animation authority) last a set number of frames: renew them while you need them.
+- Leases (physical reload, timed animation authority) last a set number of frames: renew them while you need them.
 - Copied state carries generations and sequences: drop cached data when they change, and restart a paged copy on `StaleSnapshot`.
 
 Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload page](docs/api/PhysicalReload.md) if you drive reloads. The [developer guide](https://devartificial.pro/docs/apis/paper) adds a first consumer, recipes and a table of where the pre-2.0 API moved.
@@ -195,7 +193,7 @@ cmake --build build-fast --config Release --target build_tests
 ctest --test-dir build-fast -C Release --output-on-failure
 ```
 
-They cover the public headers (each compiled on its own, plus the consumer example), discovery, the API layout, configuration files, reload policy, attachment bindings, the physical-reload lease and the weapon-motion cache.
+They cover the public headers (each compiled on its own, plus the consumer example), discovery, the API layout, configuration files, reload policy, attachment bindings and the physical-reload lease.
 
 ### Release package
 
@@ -217,8 +215,8 @@ This writes a release's two files to `build-release/package`: a `.zip` that inst
 | [src/PaperMain.cpp](src/PaperMain.cpp) | Plugin initialization and lifecycle |
 | [src/animation](src/animation/) | Native animation authority and the hand pose pipeline |
 | [src/reload_control](src/reload_control/) | Manual-reload-only control, the empty-gun bolt hold and the physical-reload lease |
-| [src/reload_observation](src/reload_observation/), [src/reload_stages](src/reload_stages/), [src/animation_evidence](src/animation_evidence/) | Reload observation, stage identification and animation evidence |
-| [src/weapon_motion](src/weapon_motion/) | Weapon-part motion paths, learning and the motion cache |
+| [src/animation_evidence](src/animation_evidence/) | The off-screen clip reader behind the bolt hold and the hand-action trace |
+| [src/weapon_classification](src/weapon_classification/) | Weapon family classification |
 | [src/api](src/api/) | Provider interface implementations and the ROCK client |
 | [tests](tests/) | Tests and the consumer example |
 | [cmake](cmake/) | Version resource and release packaging |

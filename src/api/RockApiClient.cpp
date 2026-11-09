@@ -61,7 +61,6 @@ namespace paper
             (void)_client.close(); return false;
         }
         _ownerToken=_client.owner();
-        _reloadObservationEvidenceReady=true;
         PAPER_LOG_INFO(Api,"Registered modular ROCK interfaces for owner {:016X}",_ownerToken);
         return true;
     }
@@ -73,7 +72,7 @@ namespace paper
         }
         _ownerToken=0; _phaseCallbackToken=0; _publishedAuthorityFlags=0;
         _core=nullptr; _hands=nullptr; _grab=nullptr; _weapon=nullptr; _parts=nullptr; _animation=nullptr; _input=nullptr; _collision=nullptr;
-        _reloadObservationEvidenceReady=false; _sample={};
+        _sample={};
     }
     bool RockApiClient::ready() const { return _ownerToken && _client.owner()==_ownerToken; }
     std::uint64_t RockApiClient::ownerToken() const { return _ownerToken; }
@@ -215,25 +214,9 @@ namespace paper
                    rock::api::Status::Ok;
     }
 
-    bool RockApiClient::queryEquippedWeaponClassification(
-        rock::api::weapon::Classification& outClassification) const
-    {
-        outClassification = {};
-        return ready() &&
-               _weapon->getClassification(_ownerToken,kRockWeaponSlot,&outClassification)==rock::api::Status::Ok;
-    }
-
-    bool RockApiClient::reloadObservationEvidenceReady() const
-    {
-        return ready() && _reloadObservationEvidenceReady;
-    }
-
-    std::uint32_t RockApiClient::copyWeaponEvidenceDetails(rock::api::weaponparts::EvidenceDetail* output,std::uint32_t capacity,std::uint32_t& outTotal) const {
-        return copyWeaponEvidenceDetails(kRockWeaponSlot,output,capacity,outTotal);
-    }
     std::uint32_t RockApiClient::copyWeaponEvidenceDetails(std::uint32_t slot,rock::api::weaponparts::EvidenceDetail* output,std::uint32_t capacity,std::uint32_t& outTotal) const {
         outTotal=0;
-        if (!reloadObservationEvidenceReady() || !output) return 0;
+        if (!ready() || !output) return 0;
         const auto count=std::min(capacity,rock::api::weaponparts::kMaxEvidenceDetails);
         for (std::uint32_t i=0;i<count;++i) output[i]={};
         if (_parts->copyEvidenceDetails(_ownerToken,slot,output,count,&outTotal)!=rock::api::Status::Ok) {
@@ -326,13 +309,6 @@ namespace paper
         if (!ready()) return rock::api::Status::NotReady;
         return _weapon->setChamberMarker(_ownerToken,slot,marker,2);
     }
-    std::uint32_t RockApiClient::copyWeaponEvidencePoints(std::uint32_t body,rock::api::Point3* output,std::uint32_t capacity) const {
-        if (!reloadObservationEvidenceReady() || !output) return 0;
-        const auto count=std::min(capacity,rock::api::weaponparts::kMaxEvidencePoints);
-        std::uint32_t total=0;
-        return _parts->copyEvidencePoints(_ownerToken,kRockWeaponSlot,body,output,count,&total)==rock::api::Status::Ok?std::min(total,count):0;
-    }
-
     bool RockApiClient::setHandVisualAuthority(
         const rock::api::animation::HandVisualAuthorityRequest& request) const
     {

@@ -1,13 +1,8 @@
 #include "api/PAPERProvider.h"
 
 #include "animation/NativeAnimationAuthority.h"
-#include "animation_evidence/AnimationEvidence.h"
 #include "api/ApiTransform.h"
-#include "development/DevelopmentCapturePolicy.h"
 #include "PaperLog.h"
-#include "reload_observation/ReloadObservation.h"
-#include "reload_stages/ReloadStages.h"
-#include "weapon_motion/WeaponMotion.h"
 #include "reload_control/PhysicalReloadLease.h"
 #include "reload_control/ManualReloadOnly.h"
 #include "api/InterfaceNegotiation.h"
@@ -38,10 +33,6 @@ namespace paper::provider
             std::uint32_t remainingFrames{ 0 };
             std::uint64_t authorityUpdatedFrame{ 0 };
             bool persistentAuthority{ false };
-            std::uint32_t captureScopes{ 0 };
-            std::uint32_t captureDeniedScopes{ 0 };
-            std::uint32_t captureRemainingFrames{ 0 };
-            std::uint64_t captureUpdatedFrame{ 0 };
             char modName[64]{};
         };
 
@@ -55,11 +46,6 @@ namespace paper::provider
 
         constexpr std::uint32_t kAllCapabilities =
             static_cast<std::uint32_t>(ConsumerCapability::All);
-        constexpr std::uint32_t kReloadAnimationReadCapabilities =
-            static_cast<std::uint32_t>(
-                ConsumerCapability::ReloadAnimationEvidence) |
-            static_cast<std::uint32_t>(
-                ConsumerCapability::ReloadAnimationTelemetry);
         constexpr std::uint32_t kAllAuthorityFlags =
             static_cast<std::uint32_t>(
                 NativeAnimationAuthorityFlag::ReloadPose);
@@ -71,18 +57,6 @@ namespace paper::provider
         DWORD s_ownerThread{ 0 };
         std::uint64_t s_currentFrame{ 0 };
         std::uint32_t s_providerGeneration{ 0 };
-        DevelopmentCaptureMode s_captureMode{
-            DevelopmentCaptureMode::User
-        };
-        WeaponMotionCacheAccess s_cacheAccess{
-            WeaponMotionCacheAccess::Off
-        };
-        std::uint32_t s_captureConfigFlags{ 0 };
-        std::uint32_t s_captureAllowedScopes{ 0 };
-        std::uint32_t s_captureAutoStartScopes{ 0 };
-        std::uint32_t s_captureLegacyScopes{ 0 };
-        std::uint32_t s_captureActiveScopes{ 0 };
-        std::uint64_t s_captureConfigRevision{ 0 };
 
         RuntimeState s_runtimeState{};
         paper::physical_reload::Lease s_physicalReload;
@@ -145,24 +119,6 @@ namespace paper::provider
         {
             return (consumer.capabilities &
                        static_cast<std::uint32_t>(capability)) != 0;
-        }
-
-        [[nodiscard]] bool hasCaptureConfigFlag(
-            const DevelopmentCaptureConfigFlag flag)
-        {
-            return (s_captureConfigFlags &
-                       static_cast<std::uint32_t>(flag)) != 0;
-        }
-
-        [[nodiscard]] std::uint32_t aggregateCaptureScopes()
-        {
-            std::uint32_t scopes = 0;
-            for (const auto& consumer : s_consumers) {
-                if (consumer.ownerToken != 0) {
-                    scopes |= consumer.captureScopes;
-                }
-            }
-            return scopes & development_capture_policy::kAllScopes;
         }
 
         void removeCallbacksForOwner(const std::uint64_t ownerToken)
@@ -528,194 +484,6 @@ namespace paper::provider
             return Status::Ok;
         }
 
-        Status PAPER_CALL setDevelopmentCapture(
-            const std::uint64_t ownerToken,
-            const DevelopmentCaptureRequest* request)
-        {
-            if (!request) {
-                return Status::InvalidArgument;
-            }
-            if (request->size < sizeof(DevelopmentCaptureRequest)) {
-                return Status::InvalidSize;
-            }
-            if (request->version != kRecordVersion) {
-                return Status::UnsupportedVersion;
-            }
-            if (!onOwnerThread()) {
-                return Status::WrongThread;
-            }
-            auto* consumer = findConsumer(ownerToken);
-            if (!consumer) {
-                return Status::UnknownOwner;
-            }
-            if (!hasCapability(
-                    *consumer,
-                    ConsumerCapability::DevelopmentCaptureControl)) {
-                return Status::PermissionDenied;
-            }
-            if (request->scopes == 0 ||
-                (request->scopes & ~development_capture_policy::kAllScopes) != 0 ||
-                request->leaseFrames == 0 ||
-                request->leaseFrames >
-                    kMaxDevelopmentCaptureLeaseFrames) {
-                return Status::InvalidArgument;
-            }
-
-            const auto requested =
-                development_capture_policy::expandDependencies(request->scopes);
-            const auto denied = requested & ~s_captureAllowedScopes;
-            if (!hasCaptureConfigFlag(
-                    DevelopmentCaptureConfigFlag::
-                        AllowApiActivation) ||
-                denied != 0) {
-                consumer->captureDeniedScopes = hasCaptureConfigFlag(
-                        DevelopmentCaptureConfigFlag::
-                            AllowApiActivation) ?
-                    denied : requested;
-                return Status::PermissionDenied;
-            }
-
-            consumer->captureScopes = requested;
-            consumer->captureDeniedScopes = 0;
-            consumer->captureRemainingFrames = request->leaseFrames;
-            consumer->captureUpdatedFrame = s_currentFrame;
-            return Status::Ok;
-        }
-
-        Status PAPER_CALL clearDevelopmentCapture(
-            const std::uint64_t ownerToken)
-        {
-            if (!onOwnerThread()) {
-                return Status::WrongThread;
-            }
-            auto* consumer = findConsumer(ownerToken);
-            if (!consumer) {
-                return Status::UnknownOwner;
-            }
-            if (!hasCapability(
-                    *consumer,
-                    ConsumerCapability::DevelopmentCaptureControl)) {
-                return Status::PermissionDenied;
-            }
-            consumer->captureScopes = 0;
-            consumer->captureDeniedScopes = 0;
-            consumer->captureRemainingFrames = 0;
-            return Status::Ok;
-        }
-
-        Status PAPER_CALL getDevelopmentCaptureState(
-            const std::uint64_t ownerToken,
-            DevelopmentCaptureState* outState)
-        {
-            if (!outState) {
-                return Status::InvalidArgument;
-            }
-            if (outState->size < sizeof(DevelopmentCaptureState)) {
-                return Status::InvalidSize;
-            }
-            if (outState->version != kRecordVersion) {
-                return Status::UnsupportedVersion;
-            }
-            if (!onOwnerThread()) {
-                return Status::WrongThread;
-            }
-            const auto* consumer = findConsumerConst(ownerToken);
-            if (!consumer) {
-                return Status::UnknownOwner;
-            }
-            if (!hasCapability(
-                    *consumer,
-                    ConsumerCapability::DevelopmentCaptureControl)) {
-                return Status::PermissionDenied;
-            }
-            DevelopmentCaptureState state{};
-            state.mode = s_captureMode;
-            state.cacheAccess = s_cacheAccess;
-            state.allowedScopes = s_captureAllowedScopes;
-            state.autoStartScopes = s_captureAutoStartScopes;
-            state.ownerRequestedScopes = consumer->captureScopes;
-            state.aggregateRequestedScopes = aggregateCaptureScopes();
-            state.activeScopes = s_captureActiveScopes;
-            state.deniedScopes = consumer->captureDeniedScopes;
-            state.remainingLeaseFrames = consumer->captureRemainingFrames;
-            state.configRevision = s_captureConfigRevision;
-            if (s_captureAutoStartScopes != 0) {
-                state.stateFlags |= static_cast<std::uint32_t>(
-                    DevelopmentCaptureStateFlag::AutoStartActive);
-            }
-            if (hasCaptureConfigFlag(
-                    DevelopmentCaptureConfigFlag::
-                        AllowApiActivation)) {
-                state.stateFlags |= static_cast<std::uint32_t>(
-                    DevelopmentCaptureStateFlag::ApiActivationAllowed);
-            }
-            if (consumer->captureScopes != 0) {
-                state.stateFlags |= static_cast<std::uint32_t>(
-                    DevelopmentCaptureStateFlag::OwnerLeaseActive);
-            }
-            if (state.aggregateRequestedScopes != 0) {
-                state.stateFlags |= static_cast<std::uint32_t>(
-                    DevelopmentCaptureStateFlag::AggregateLeaseActive);
-            }
-
-            ReloadAnimationCatalogState animation{};
-            if (animation_evidence::getCatalogState(animation) ==
-                Status::Ok) {
-                state.weaponFormId = animation.weaponFormId;
-                state.weaponGenerationKey = animation.weaponGenerationKey;
-                state.storedSampleBytes = animation.storedSampleBytes;
-                state.sampleStorageBudgetBytes =
-                    animation.sampleStorageBudgetBytes;
-                state.exactPreharvestState = animation.exactPreharvestState;
-                state.animationStatusFlags = animation.statusFlags;
-                state.animationClipCount = animation.clipCount;
-                state.exactAnimationClipCount = animation.exactClipCount;
-                state.exactClipsSampled = animation.exactClipsSampled;
-                state.exactClipsRejected = animation.exactClipsRejected;
-                if (animation.exactPreharvestState ==
-                    ReloadAnimationPreharvestState::Completed) {
-                    state.stateFlags |= static_cast<std::uint32_t>(
-                        DevelopmentCaptureStateFlag::HarvestCompleted);
-                } else if (animation.exactPreharvestState ==
-                           ReloadAnimationPreharvestState::Failed) {
-                    state.stateFlags |= static_cast<std::uint32_t>(
-                        DevelopmentCaptureStateFlag::HarvestFailed);
-                }
-            }
-
-            WeaponMotionStoreState store{};
-            if (weapon_motion::getStoreState(store) == Status::Ok) {
-                state.motionStoreFlags = store.flags;
-                state.motionPartCount = store.inMemoryPartCount;
-                state.motionStageCount = store.inMemoryStageCount;
-                state.persistentRecordCount = store.persistentRecordCount;
-                state.pendingWriteCount = store.pendingWriteCount;
-                const auto hasStoreFlag = [&store](
-                    const WeaponMotionStoreFlag flag) {
-                    return (store.flags & static_cast<std::uint32_t>(flag)) != 0;
-                };
-                if (hasStoreFlag(
-                        WeaponMotionStoreFlag::CacheLookupPending)) {
-                    state.stateFlags |= static_cast<std::uint32_t>(
-                        DevelopmentCaptureStateFlag::
-                            CacheLookupPending);
-                }
-                if (hasStoreFlag(
-                        WeaponMotionStoreFlag::SessionCacheHit)) {
-                    state.stateFlags |= static_cast<std::uint32_t>(
-                        DevelopmentCaptureStateFlag::SessionCacheHit);
-                }
-                if (hasStoreFlag(
-                        WeaponMotionStoreFlag::PersistentCacheHit)) {
-                    state.stateFlags |= static_cast<std::uint32_t>(
-                        DevelopmentCaptureStateFlag::
-                            PersistentCacheHit);
-                }
-            }
-            *outState = state;
-            return Status::Ok;
-        }
-
         Status PAPER_CALL registerEventCallback(
             const std::uint64_t ownerToken,
             const EventCallback callback,
@@ -773,36 +541,9 @@ namespace paper::provider
             return Status::NotFound;
         }
 
-        [[nodiscard]] Status validateReloadConsumerAny(
-            const std::uint64_t ownerToken,
-            const std::uint32_t capabilityMask)
-        {
-            if (!isReady()) {
-                return Status::NotReady;
-            }
-            if (!onOwnerThread()) {
-                return Status::WrongThread;
-            }
-            const auto* consumer = findConsumerConst(ownerToken);
-            if (!consumer) {
-                return Status::UnknownOwner;
-            }
-            return (consumer->capabilities & capabilityMask) != 0 ?
-                Status::Ok :
-                Status::PermissionDenied;
-        }
-
-        [[nodiscard]] Status validateReloadConsumer(
-            const std::uint64_t ownerToken,
-            const ConsumerCapability capability)
-        {
-            return validateReloadConsumerAny(
-                ownerToken,
-                static_cast<std::uint32_t>(capability));
-        }
-
+        // Validates the caller's output record, then the owner and capability.
         template <class State>
-        [[nodiscard]] Status validateReloadOutput(
+        [[nodiscard]] Status validateOutput(
             const std::uint64_t ownerToken,
             const ConsumerCapability capability,
             const State* output)
@@ -816,412 +557,26 @@ namespace paper::provider
             if (output->version != kRecordVersion) {
                 return Status::UnsupportedVersion;
             }
-            return validateReloadConsumer(ownerToken, capability);
-        }
-
-        template <class State>
-        [[nodiscard]] Status validateReloadOutputAny(
-            const std::uint64_t ownerToken,
-            const std::uint32_t capabilityMask,
-            const State* output)
-        {
-            if (!output) {
-                return Status::InvalidArgument;
+            if (!isReady()) {
+                return Status::NotReady;
             }
-            if (output->size < sizeof(State)) {
-                return Status::InvalidSize;
+            if (!onOwnerThread()) {
+                return Status::WrongThread;
             }
-            if (output->version != kRecordVersion) {
-                return Status::UnsupportedVersion;
+            const auto* consumer = findConsumerConst(ownerToken);
+            if (!consumer) {
+                return Status::UnknownOwner;
             }
-            return validateReloadConsumerAny(ownerToken, capabilityMask);
-        }
-
-        Status PAPER_CALL getReloadObservationLimits(
-            const std::uint64_t ownerToken,
-            ReloadObservationLimits* outLimits)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::ReloadObservations,
-                outLimits);
-            return validation == Status::Ok ?
-                reload_observation::getLimits(*outLimits) :
-                validation;
-        }
-
-        Status PAPER_CALL getReloadCatalogState(
-            const std::uint64_t ownerToken,
-            ReloadCatalogState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::ReloadObservations,
-                outState);
-            return validation == Status::Ok ?
-                reload_observation::getCatalogState(*outState) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadCatalogNodes(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t firstNode,
-            ReloadNodeCatalogEntry* outNodes,
-            const std::uint32_t maxNodes,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::ReloadObservations);
-            return validation == Status::Ok ?
-                reload_observation::copyCatalogNodes(
-                    catalogSequence,
-                    firstNode,
-                    outNodes,
-                    maxNodes,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadEvidence(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t firstEvidence,
-            ReloadEvidence* outEvidence,
-            const std::uint32_t maxEvidence,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::ReloadObservations);
-            return validation == Status::Ok ?
-                reload_observation::copyEvidence(
-                    catalogSequence,
-                    firstEvidence,
-                    outEvidence,
-                    maxEvidence,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadEvidencePoints(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t evidenceId,
-            const std::uint32_t firstPoint,
-            Point3* outPoints,
-            const std::uint32_t maxPoints,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::ReloadEvidenceGeometry);
-            return validation == Status::Ok ?
-                reload_observation::copyEvidencePoints(
-                    catalogSequence,
-                    evidenceId,
-                    firstPoint,
-                    outPoints,
-                    maxPoints,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL getReloadFrameState(
-            const std::uint64_t ownerToken,
-            ReloadFrameState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::ReloadObservations,
-                outState);
-            return validation == Status::Ok ?
-                reload_observation::getFrameState(*outState) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadNodeObservations(
-            const std::uint64_t ownerToken,
-            const std::uint64_t snapshotSequence,
-            const std::uint32_t firstObservation,
-            ReloadNodeObservation* outObservations,
-            const std::uint32_t maxObservations,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::ReloadObservations);
-            return validation == Status::Ok ?
-                reload_observation::copyNodeObservations(
-                    snapshotSequence,
-                    firstObservation,
-                    outObservations,
-                    maxObservations,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL getReloadAnimationLimits(
-            const std::uint64_t ownerToken,
-            ReloadAnimationLimits* outLimits)
-        {
-            const auto validation = validateReloadOutputAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities,
-                outLimits);
-            return validation == Status::Ok ?
-                animation_evidence::getLimits(*outLimits) :
-                validation;
-        }
-
-        Status PAPER_CALL getReloadAnimationCatalogState(
-            const std::uint64_t ownerToken,
-            ReloadAnimationCatalogState* outState)
-        {
-            const auto validation = validateReloadOutputAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities,
-                outState);
-            return validation == Status::Ok ?
-                animation_evidence::getCatalogState(*outState) :
-                validation;
-        }
-
-        Status PAPER_CALL getReloadAnimationLiveState(
-            const std::uint64_t ownerToken,
-            ReloadAnimationLiveState* outState)
-        {
-            const auto validation = validateReloadOutputAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities,
-                outState);
-            return validation == Status::Ok ?
-                animation_evidence::getLiveState(*outState) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadAnimationClips(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t firstClip,
-            ReloadAnimationClip* outClips,
-            const std::uint32_t maxClips,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumerAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities);
-            return validation == Status::Ok ?
-                animation_evidence::copyClips(
-                    catalogSequence,
-                    firstClip,
-                    outClips,
-                    maxClips,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadAnimationTracks(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t clipId,
-            const std::uint32_t firstTrack,
-            ReloadAnimationTrack* outTracks,
-            const std::uint32_t maxTracks,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumerAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities);
-            return validation == Status::Ok ?
-                animation_evidence::copyTracks(
-                    catalogSequence,
-                    clipId,
-                    firstTrack,
-                    outTracks,
-                    maxTracks,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadAnimationSamples(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t clipId,
-            const std::uint32_t trackId,
-            const std::uint32_t firstSample,
-            ReloadAnimationSample* outSamples,
-            const std::uint32_t maxSamples,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumerAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities);
-            return validation == Status::Ok ?
-                animation_evidence::copySamples(
-                    catalogSequence,
-                    clipId,
-                    trackId,
-                    firstSample,
-                    outSamples,
-                    maxSamples,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadAnimationAnnotations(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t clipId,
-            const std::uint32_t firstAnnotation,
-            ReloadAnimationAnnotation* outAnnotations,
-            const std::uint32_t maxAnnotations,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumerAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities);
-            return validation == Status::Ok ?
-                animation_evidence::copyAnnotations(
-                    catalogSequence,
-                    clipId,
-                    firstAnnotation,
-                    outAnnotations,
-                    maxAnnotations,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadAnimationTriggers(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t clipId,
-            const std::uint32_t firstTrigger,
-            ReloadAnimationTrigger* outTriggers,
-            const std::uint32_t maxTriggers,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumerAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities);
-            return validation == Status::Ok ?
-                animation_evidence::copyTriggers(
-                    catalogSequence,
-                    clipId,
-                    firstTrigger,
-                    outTriggers,
-                    maxTriggers,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadAnimationSkeleton(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t firstBone,
-            ReloadAnimationSkeletonBone* outBones,
-            const std::uint32_t maxBones,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumerAny(
-                ownerToken,
-                kReloadAnimationReadCapabilities);
-            return validation == Status::Ok ?
-                animation_evidence::copySkeleton(
-                    catalogSequence,
-                    firstBone,
-                    outBones,
-                    maxBones,
-                    *outCopied) :
-                validation;
-        }
-
-        Status PAPER_CALL getReloadStageState(
-            const std::uint64_t ownerToken,
-            ReloadStageState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::
-                    ReloadStageIdentification,
-                outState);
-            return validation == Status::Ok ?
-                reload_stages::getState(*outState) :
-                validation;
-        }
-
-        Status PAPER_CALL copyReloadStageParts(
-            const std::uint64_t ownerToken,
-            const std::uint64_t snapshotSequence,
-            const std::uint32_t firstPart,
-            ReloadStagePart* outParts,
-            const std::uint32_t maxParts,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::
-                    ReloadStageIdentification);
-            return validation == Status::Ok ?
-                reload_stages::copyParts(
-                    snapshotSequence,
-                    firstPart,
-                    outParts,
-                    maxParts,
-                    *outCopied) :
-                validation;
+            return hasCapability(*consumer, capability) ?
+                Status::Ok :
+                Status::PermissionDenied;
         }
 
         Status PAPER_CALL getNativePoseFrameState(
             const std::uint64_t ownerToken,
             NativePoseFrameState* outState)
         {
-            const auto validation = validateReloadOutput(
+            const auto validation = validateOutput(
                 ownerToken,
                 ConsumerCapability::NativePosePipeline,
                 outState);
@@ -1245,7 +600,7 @@ namespace paper::provider
             const Hand hand,
             NativeHandSolution* outSolution)
         {
-            const auto validation = validateReloadOutput(
+            const auto validation = validateOutput(
                 ownerToken,
                 ConsumerCapability::NativePosePipeline,
                 outSolution);
@@ -1269,233 +624,6 @@ namespace paper::provider
             return Status::Ok;
         }
 
-        Status PAPER_CALL getWeaponMotionLimits(
-            const std::uint64_t ownerToken,
-            WeaponMotionLimits* outLimits)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog,
-                outLimits);
-            return validation == Status::Ok ?
-                weapon_motion::getLimits(*outLimits) : validation;
-        }
-
-        Status PAPER_CALL getWeaponMotionCatalogState(
-            const std::uint64_t ownerToken,
-            WeaponMotionCatalogState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog,
-                outState);
-            return validation == Status::Ok ?
-                weapon_motion::getCatalogState(*outState) : validation;
-        }
-
-        Status PAPER_CALL copyWeaponMotionParts(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t firstPart,
-            WeaponMotionPart* outParts,
-            const std::uint32_t maxParts,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog);
-            return validation == Status::Ok ?
-                weapon_motion::copyParts(
-                    catalogSequence,
-                    firstPart,
-                    outParts,
-                    maxParts,
-                    *outCopied) : validation;
-        }
-
-        Status PAPER_CALL copyWeaponMotionStages(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t firstStage,
-            WeaponMotionStage* outStages,
-            const std::uint32_t maxStages,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog);
-            return validation == Status::Ok ?
-                weapon_motion::copyStages(
-                    catalogSequence,
-                    firstStage,
-                    outStages,
-                    maxStages,
-                    *outCopied) : validation;
-        }
-
-        Status PAPER_CALL copyWeaponMotionStageKeys(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t stageId,
-            const std::uint32_t firstKey,
-            ReloadQsTransform* outKeys,
-            const std::uint32_t maxKeys,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog);
-            return validation == Status::Ok ?
-                weapon_motion::copyStageKeys(
-                    catalogSequence,
-                    stageId,
-                    firstKey,
-                    outKeys,
-                    maxKeys,
-                    *outCopied) : validation;
-        }
-
-        Status PAPER_CALL copyWeaponMotionFollowers(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t stageId,
-            const std::uint32_t firstFollower,
-            WeaponMotionFollower* outFollowers,
-            const std::uint32_t maxFollowers,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog);
-            return validation == Status::Ok ?
-                weapon_motion::copyFollowers(
-                    catalogSequence,
-                    stageId,
-                    firstFollower,
-                    outFollowers,
-                    maxFollowers,
-                    *outCopied) : validation;
-        }
-
-        Status PAPER_CALL copyWeaponMotionFollowerKeys(
-            const std::uint64_t ownerToken,
-            const std::uint64_t catalogSequence,
-            const std::uint32_t stageId,
-            const std::uint32_t followerIndex,
-            const std::uint32_t firstKey,
-            ReloadQsTransform* outKeys,
-            const std::uint32_t maxKeys,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::WeaponMotionCatalog);
-            return validation == Status::Ok ?
-                weapon_motion::copyFollowerKeys(
-                    catalogSequence,
-                    stageId,
-                    followerIndex,
-                    firstKey,
-                    outKeys,
-                    maxKeys,
-                    *outCopied) : validation;
-        }
-
-        Status PAPER_CALL getWeaponMotionLearningState(
-            const std::uint64_t ownerToken,
-            WeaponMotionLearningState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::WeaponMotionDiagnostics,
-                outState);
-            return validation == Status::Ok ?
-                weapon_motion::getLearningState(*outState) : validation;
-        }
-
-        Status PAPER_CALL copyWeaponMotionRecorders(
-            const std::uint64_t ownerToken,
-            const std::uint64_t snapshotSequence,
-            const std::uint32_t firstRecorder,
-            WeaponMotionRecorder* outRecorders,
-            const std::uint32_t maxRecorders,
-            std::uint32_t* outCopied)
-        {
-            if (!outCopied) {
-                return Status::InvalidArgument;
-            }
-            *outCopied = 0;
-            const auto validation = validateReloadConsumer(
-                ownerToken,
-                ConsumerCapability::WeaponMotionDiagnostics);
-            return validation == Status::Ok ?
-                weapon_motion::copyRecorders(
-                    snapshotSequence,
-                    firstRecorder,
-                    outRecorders,
-                    maxRecorders,
-                    *outCopied) : validation;
-        }
-
-        Status PAPER_CALL getWeaponManipulationFrameState(
-            const std::uint64_t ownerToken,
-            WeaponManipulationFrameState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::WeaponManipulationTelemetry,
-                outState);
-            return validation == Status::Ok ?
-                weapon_motion::getManipulationFrameState(*outState) :
-                validation;
-        }
-
-        Status PAPER_CALL getWeaponManipulationHandState(
-            const std::uint64_t ownerToken,
-            const Hand hand,
-            WeaponManipulationHandState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::WeaponManipulationTelemetry,
-                outState);
-            return validation == Status::Ok ?
-                weapon_motion::getManipulationHandState(hand, *outState) :
-                validation;
-        }
-
-        Status PAPER_CALL getWeaponMotionStoreState(
-            const std::uint64_t ownerToken,
-            WeaponMotionStoreState* outState)
-        {
-            const auto validation = validateReloadOutput(
-                ownerToken,
-                ConsumerCapability::WeaponMotionDiagnostics,
-                outState);
-            return validation == Status::Ok ?
-                weapon_motion::getStoreState(*outState) : validation;
-        }
-
         const api::provider::Api s_api{
             &getModVersion,
             &apiIsReady,
@@ -1511,41 +639,8 @@ namespace paper::provider
             &clearAnimationAuthority,
             &registerEventCallback,
             &unregisterEventCallback,
-            &getReloadObservationLimits,
-            &getReloadCatalogState,
-            &copyReloadCatalogNodes,
-            &copyReloadEvidence,
-            &copyReloadEvidencePoints,
-            &getReloadFrameState,
-            &copyReloadNodeObservations,
-            &getReloadAnimationLimits,
-            &getReloadAnimationCatalogState,
-            &getReloadAnimationLiveState,
-            &copyReloadAnimationClips,
-            &copyReloadAnimationTracks,
-            &copyReloadAnimationSamples,
-            &copyReloadAnimationAnnotations,
-            &copyReloadAnimationTriggers,
-            &copyReloadAnimationSkeleton,
-            &getReloadStageState,
-            &copyReloadStageParts,
             &getNativePoseFrameState,
             &getNativeHandSolution,
-            &getWeaponMotionLimits,
-            &getWeaponMotionCatalogState,
-            &copyWeaponMotionParts,
-            &copyWeaponMotionStages,
-            &copyWeaponMotionStageKeys,
-            &copyWeaponMotionFollowers,
-            &copyWeaponMotionFollowerKeys,
-            &getWeaponMotionLearningState,
-            &copyWeaponMotionRecorders,
-            &getWeaponManipulationFrameState,
-            &getWeaponManipulationHandState,
-            &getWeaponMotionStoreState,
-            &setDevelopmentCapture,
-            &clearDevelopmentCapture,
-            &getDevelopmentCaptureState,
         };
     }
 
@@ -1556,24 +651,12 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
-        s_captureMode = DevelopmentCaptureMode::User;
-        s_cacheAccess = WeaponMotionCacheAccess::Off;
-        s_captureConfigFlags = 0;
-        s_captureAllowedScopes = 0;
-        s_captureAutoStartScopes = 0;
-        s_captureLegacyScopes = 0;
-        s_captureActiveScopes = 0;
-        s_captureConfigRevision = 0;
         s_nativePosePipeline = {};
         s_nativePosePipelineSequence.store(0, std::memory_order_release);
         s_nativePosePublicationSequence = 0;
         if (++s_providerGeneration == 0) {
             s_providerGeneration = 1;
         }
-        reload_observation::reset();
-        animation_evidence::reset();
-        reload_stages::reset();
-        weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
         s_ready.store(true, std::memory_order_release);
     }
 
@@ -1584,17 +667,9 @@ namespace paper::provider
         s_consumers = {};
         s_callbacks = {};
         s_currentFrame = 0;
-        s_captureAllowedScopes = 0;
-        s_captureAutoStartScopes = 0;
-        s_captureLegacyScopes = 0;
-        s_captureActiveScopes = 0;
         s_nativePosePipeline = {};
         s_nativePosePipelineSequence.store(0, std::memory_order_release);
         s_nativePosePublicationSequence = 0;
-        reload_observation::reset();
-        animation_evidence::reset();
-        reload_stages::reset();
-        weapon_motion::reset(weapon_motion::ResetReason::ProviderShutdown);
         s_ownerThread = 0;
     }
 
@@ -1624,15 +699,6 @@ namespace paper::provider
                     consumer.authorityFlags = 0;
                 }
             }
-            if (consumer.captureScopes != 0 &&
-                consumer.captureUpdatedFrame != s_currentFrame) {
-                if (consumer.captureRemainingFrames > 0) {
-                    --consumer.captureRemainingFrames;
-                }
-                if (consumer.captureRemainingFrames == 0) {
-                    consumer.captureScopes = 0;
-                }
-            }
         }
     }
 
@@ -1646,18 +712,9 @@ namespace paper::provider
             consumer.authorityFlags = 0;
             consumer.remainingFrames = 0;
             consumer.persistentAuthority = false;
-            consumer.captureScopes = 0;
-            consumer.captureDeniedScopes = 0;
-            consumer.captureRemainingFrames = 0;
         }
         RuntimeState state{};
         state.paperProviderGeneration = s_providerGeneration;
-        reload_observation::reset();
-        animation_evidence::reset();
-        reload_stages::reset();
-        weapon_motion::reset(weapon_motion::ResetReason::RuntimeReset);
-        s_captureLegacyScopes = 0;
-        s_captureActiveScopes = 0;
         clearNativePosePipeline();
         publishRuntime(state);
         dispatchEvent(EventKind::RuntimeReset);
@@ -1666,79 +723,6 @@ namespace paper::provider
     void publishConfig(const ConfigState& state)
     {
         publishSeqlocked(s_configState, s_configSequence, state);
-    }
-
-    void configureDevelopmentCapture(
-        const DevelopmentCaptureMode mode,
-        const WeaponMotionCacheAccess cacheAccess,
-        const std::uint32_t configFlags,
-        const std::uint64_t configRevision)
-    {
-        if (!onOwnerThread()) {
-            return;
-        }
-        s_captureMode = development_capture_policy::validMode(mode) ?
-            mode : DevelopmentCaptureMode::User;
-        s_cacheAccess = development_capture_policy::validCacheAccess(cacheAccess) ?
-            cacheAccess : WeaponMotionCacheAccess::Off;
-        constexpr auto allConfigFlags =
-            static_cast<std::uint32_t>(
-                DevelopmentCaptureConfigFlag::AutoStart) |
-            static_cast<std::uint32_t>(
-                DevelopmentCaptureConfigFlag::AllowApiActivation) |
-            static_cast<std::uint32_t>(
-                DevelopmentCaptureConfigFlag::HotReloadEnabled);
-        s_captureConfigFlags = configFlags & allConfigFlags;
-        s_captureConfigRevision = configRevision;
-        s_captureAllowedScopes = development_capture_policy::allowedScopes(
-            s_captureMode, s_cacheAccess);
-        s_captureAutoStartScopes =
-            development_capture_policy::autoStartScopes(
-                s_captureMode,
-                s_cacheAccess,
-                hasCaptureConfigFlag(
-                    DevelopmentCaptureConfigFlag::AutoStart));
-        s_captureLegacyScopes &= s_captureAllowedScopes;
-        s_captureActiveScopes &= s_captureAllowedScopes;
-        const bool apiAllowed = hasCaptureConfigFlag(
-            DevelopmentCaptureConfigFlag::AllowApiActivation);
-        for (auto& consumer : s_consumers) {
-            if (!apiAllowed ||
-                (consumer.captureScopes & ~s_captureAllowedScopes) != 0) {
-                consumer.captureScopes = 0;
-                consumer.captureRemainingFrames = 0;
-            }
-        }
-    }
-
-    std::uint32_t refreshDevelopmentCaptureDemand(
-        const std::uint32_t legacyRequestedScopes)
-    {
-        if (!onOwnerThread()) {
-            return 0;
-        }
-        s_captureLegacyScopes = hasCaptureConfigFlag(
-                DevelopmentCaptureConfigFlag::AllowApiActivation) ?
-            development_capture_policy::expandDependencies(
-                legacyRequestedScopes) &
-                s_captureAllowedScopes :
-            0;
-        return (s_captureAutoStartScopes | s_captureLegacyScopes |
-                   aggregateCaptureScopes()) &
-            s_captureAllowedScopes;
-    }
-
-    void publishDevelopmentCaptureScopes(const std::uint32_t activeScopes)
-    {
-        if (onOwnerThread()) {
-            s_captureActiveScopes =
-                activeScopes & s_captureAllowedScopes;
-        }
-    }
-
-    std::uint32_t allowedDevelopmentCaptureScopes()
-    {
-        return onOwnerThread() ? s_captureAllowedScopes : 0;
     }
 
     void publishRuntime(const RuntimeState& state)
@@ -1782,17 +766,16 @@ namespace paper::provider
             NativePosePipelineSnapshot{});
     }
 
-    void dispatchEvent(const Event& sourceEvent)
+    void dispatchEvent(const EventKind kind)
     {
         if (!onOwnerThread()) {
             return;
         }
-        RuntimeState runtime{};
-        if (!copySeqlocked(s_runtimeState, s_runtimeSequence, runtime)) {
+        Event eventData{};
+        eventData.kind = kind;
+        if (!copySeqlocked(s_runtimeState, s_runtimeSequence, eventData.runtime)) {
             return;
         }
-        auto eventData = sourceEvent;
-        eventData.runtime = runtime;
 
         for (auto& slot : s_callbacks) {
             if (slot.token == 0 || !slot.callback) {
@@ -1805,31 +788,6 @@ namespace paper::provider
             }
             if (eventData.kind == EventKind::PresentationComplete &&
                 !hasCapability(*consumer, ConsumerCapability::NativePosePipeline)) {
-                continue;
-            }
-            const auto manipulationEvent =
-                eventData.kind >=
-                    EventKind::WeaponManipulationStarted &&
-                eventData.kind <=
-                    EventKind::WeaponManipulationEnded;
-            if (manipulationEvent && !hasCapability(
-                    *consumer,
-                    ConsumerCapability::
-                        WeaponManipulationTelemetry)) {
-                continue;
-            }
-            if (eventData.kind ==
-                    EventKind::WeaponMotionCatalogChanged &&
-                !hasCapability(
-                    *consumer,
-                    ConsumerCapability::WeaponMotionCatalog)) {
-                continue;
-            }
-            if (eventData.kind ==
-                    EventKind::WeaponMotionCandidateCompleted &&
-                !hasCapability(
-                    *consumer,
-                    ConsumerCapability::WeaponMotionDiagnostics)) {
                 continue;
             }
             const auto callback = slot.callback;
@@ -1848,13 +806,6 @@ namespace paper::provider
             callback(&eventData, userData);
 #endif
         }
-    }
-
-    void dispatchEvent(const EventKind kind)
-    {
-        Event eventData{};
-        eventData.kind = kind;
-        dispatchEvent(eventData);
     }
 
     bool hasConsumerCapability(const ConsumerCapability capability)

@@ -38,10 +38,8 @@ namespace paper::native_animation_authority
         std::uint64_t reloadStartSequence{ 0 };
         std::uint64_t reloadEndSequence{ 0 };
         std::uint64_t fireSequence{ 0 };
-        std::uint64_t fireActivityOrderAtEvent{ 0 };
         bool reloadEventActive{ false };
         bool localManualCycleLeaseActive{ false };
-        bool weaponFireHookReady{ false };
     };
 
     struct ManualCycleRockGripSnapshot

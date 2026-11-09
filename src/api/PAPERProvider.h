@@ -12,16 +12,6 @@ namespace paper::provider
     void completeFrame();
     void resetRuntime();
 
-    void configureDevelopmentCapture(
-        api::DevelopmentCaptureMode mode,
-        api::WeaponMotionCacheAccess cacheAccess,
-        std::uint32_t configFlags,
-        std::uint64_t configRevision);
-    [[nodiscard]] std::uint32_t refreshDevelopmentCaptureDemand(
-        std::uint32_t legacyRequestedScopes);
-    void publishDevelopmentCaptureScopes(std::uint32_t activeScopes);
-    [[nodiscard]] std::uint32_t allowedDevelopmentCaptureScopes();
-
     void publishConfig(const api::ConfigState& state);
     void publishRuntime(const api::RuntimeState& state);
     void publishNativePosePipeline(
@@ -30,7 +20,6 @@ namespace paper::provider
         const api::NativeHandSolution& leftHand);
     void clearNativePosePipeline();
     void dispatchEvent(api::EventKind kind);
-    void dispatchEvent(const api::Event& eventData);
 
     [[nodiscard]] bool hasConsumerCapability(
         api::ConsumerCapability capability);

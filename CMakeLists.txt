@@ -251,31 +251,6 @@ if(BUILD_PAPER_TESTS)
   target_link_libraries(PAPERSettingsTests PRIVATE RPS::Settings)
   add_test(NAME PAPERSettingsTests COMMAND "$<TARGET_FILE:PAPERSettingsTests>"
     "${ROOT_DIR}/data/config")
-
-  add_executable(PAPERWeaponMotionCacheTests
-    "${ROOT_DIR}/tests/PAPERWeaponMotionCacheTests.cpp"
-    "${SOURCE_DIR}/weapon_motion/WeaponMotionCache.cpp"
-  )
-  target_compile_features(PAPERWeaponMotionCacheTests PRIVATE cxx_std_23)
-  target_compile_definitions(PAPERWeaponMotionCacheTests PRIVATE
-    UNICODE
-    _UNICODE
-    WIN32_LEAN_AND_MEAN
-    NOMINMAX
-  )
-  target_compile_options(PAPERWeaponMotionCacheTests PRIVATE
-    /sdl
-    /utf-8
-    /permissive-
-    /Zc:__cplusplus
-    /Zc:preprocessor
-    /W4
-  )
-  target_include_directories(PAPERWeaponMotionCacheTests PRIVATE "${SOURCE_DIR}")
-  add_test(
-    NAME PAPERWeaponMotionCacheTests
-    COMMAND "$<TARGET_FILE:PAPERWeaponMotionCacheTests>"
-  )
 endif()
 
 # Tests share build-fast but stay out of the default build, so building and deploying the

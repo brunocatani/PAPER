@@ -50,15 +50,7 @@ namespace
                a.debugDrawNativeAnimation == b.debugDrawNativeAnimation &&
                a.debugDrawNativeAnimationText == b.debugDrawNativeAnimationText &&
                a.debugNativeAnimationAxisLength == b.debugNativeAnimationAxisLength &&
-               a.debugNativeAnimationMarkerSize == b.debugNativeAnimationMarkerSize &&
-               a.developmentCaptureMode == b.developmentCaptureMode &&
-               a.developmentCaptureAutoStart == b.developmentCaptureAutoStart &&
-               a.developmentCaptureAllowApiActivation == b.developmentCaptureAllowApiActivation &&
-               a.weaponMotionCacheAccess == b.weaponMotionCacheAccess &&
-               a.weaponMotionSessionCacheMiB == b.weaponMotionSessionCacheMiB &&
-               a.weaponMotionDiskCacheMiB == b.weaponMotionDiskCacheMiB &&
-               a.weaponMotionMaximumFileMiB == b.weaponMotionMaximumFileMiB &&
-               a.weaponMotionMaximumEntries == b.weaponMotionMaximumEntries;
+               a.debugNativeAnimationMarkerSize == b.debugNativeAnimationMarkerSize;
     }
 }
 
@@ -89,20 +81,15 @@ int main(int argc, char** argv)
     assert(sameValues(loaded, paper::PaperConfig{}));
     assert(fs::path(loaded.activePath) == fresh / "PAPER.toml");
 
-    // Values are clamped to their documented ranges; enumerations ignore case.
-    write(fresh / "PAPER.toml",
-        "[Reload]\nHandBlendSeconds = 4.0\nBoltPullDistance = 1\n[DevelopmentCapture]\nMaximumMode = 'harvest'\n"
-        "[WeaponMotionCache]\nAccess = 'read-write'\nDiskCacheMiB = 40\nMaximumFileMiB = 64\nMaximumEntries = 1\n");
+    // Values are clamped to their documented ranges.
+    write(fresh / "PAPER.toml", "[Reload]\nHandBlendSeconds = 4.0\nBoltPullDistance = 1\n");
     store->load(false);
     assert(store->messages().empty());
     loaded = paper::settings::fromStore(*store);
     assert(loaded.handBlendSeconds == 1.0f && loaded.boltPullDistance == 2.0f);
-    assert(loaded.developmentCaptureMode == paper::api::DevelopmentCaptureMode::Harvest);
-    assert(loaded.weaponMotionCacheAccess == paper::api::WeaponMotionCacheAccess::ReadWrite);
-    assert(loaded.weaponMotionDiskCacheMiB == 40 && loaded.weaponMotionMaximumFileMiB == 40);
-    assert(loaded.weaponMotionMaximumEntries == 16);
 
-    // An upgrade from PAPER.ini keeps the options the player changed and deletes the INI.
+    // An upgrade from PAPER.ini keeps the options the player changed, drops retired
+    // options and deletes the INI.
     const auto upgrade = root / "upgrade";
     fs::create_directories(upgrade);
     write(upgrade / "PAPER.ini",
@@ -115,11 +102,8 @@ int main(int argc, char** argv)
     assert(!fs::exists(upgrade / "PAPER.ini"));
     loaded = paper::settings::fromStore(*store);
     assert(loaded.logLevel == 1 && loaded.manualReloadOnly && loaded.chamberRound && loaded.boltAppreciation);
-    assert(loaded.boltPullDistance == 9.5f && loaded.weaponMotionDiskCacheMiB == 512);
-    assert(loaded.weaponMotionCacheAccess == paper::api::WeaponMotionCacheAccess::ReadOnly);
-    const auto toml = read(upgrade / "PAPER.toml");
-    assert(toml.find("ChamberRound = true\n") != std::string::npos);
-    assert(toml.find("Access = 'ReadOnly'\n") != std::string::npos || toml.find("Access = \"ReadOnly\"\n") != std::string::npos);
+    assert(loaded.boltPullDistance == 9.5f);
+    assert(read(upgrade / "PAPER.toml").find("ChamberRound = true\n") != std::string::npos);
 
     fs::remove_all(root, ignored);
     return 0;

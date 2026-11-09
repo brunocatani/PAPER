@@ -25,8 +25,6 @@ namespace paper::bolt_hold
         bool playerReloadActive{ false };
         // A PhysicalReload consumer owns slot 0's bolt.
         bool physicalReloadActive{ false };
-        // The clip sampler runs one job at a time, and an exact harvest has it.
-        bool clipSamplerAvailable{ false };
     };
 
     /*

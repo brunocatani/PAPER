@@ -10,7 +10,7 @@ Enabled = true
 ## Log file: Documents\My Games\Fallout4VR\F4SE\PAPER.log.
 ## 0=Trace, 1=Debug, 2=Info (normal play), 3=Warning, 4=Error, 5=Critical, 6=Off.
 ## Includes the selected level and all more severe messages. Info includes startup, hook validation and
-## reload diagnostics; Trace and Debug are more verbose. This does not enable capture or debug drawings.
+## reload diagnostics; Trace and Debug are more verbose. This does not enable debug drawings.
 LogLevel = 2
 
 ## === 02. Reload ===
@@ -79,42 +79,3 @@ DebugNativeAnimationAxisLength = 5.0
 
 ## World-space size in game units of cross markers. Range: 0.25 to 5.
 DebugNativeAnimationMarkerSize = 1.5
-
-## === 04. Development Capture ===
-[DevelopmentCapture]
-## User, Observe, Harvest or Capture. User keeps all observation, exact animation harvesting, motion
-## compilation, learning and cache work dormant. Observe permits passive telemetry, Harvest additionally
-## permits exact off-screen clip sampling, and Capture also permits live part-motion learning. This is a hard
-## ceiling for API requests.
-MaximumMode = "User"
-
-## Starts the permitted development scopes without a consumer lease. Exact harvesting still waits for a
-## compiled-cache miss when cache reads are active.
-AutoStart = false
-
-## Allows other mods to wake permitted work, both by registering the read capabilities that need it and
-## through bounded DevelopmentCaptureControl leases. Work can never exceed MaximumMode.
-AllowApiActivation = false
-
-## === 05. Weapon Motion Cache ===
-[WeaponMotionCache]
-## Off, ReadOnly or ReadWrite. Stores only compact, value-only compiled authored paths; native animation
-## graphs and raw sampled clips are never retained. Off performs no cache I/O, ReadOnly never creates,
-## touches, prunes or writes files, and ReadWrite enables bounded persistence. User mode keeps the worker
-## dormant regardless.
-Access = "Off"
-
-## In-process LRU cache for fast re-equips during this game session, in MiB. Range: 8 to 256. Applies at the
-## next game session.
-SessionCacheMiB = 64
-
-## Persistent LRU bound for the cache under Mods_Config\PAPER\MotionCache\v1, in MiB. Range: 32 to 2048.
-## Applies at the next game session.
-DiskCacheMiB = 256
-
-## Largest cache file, in MiB. Range: 1 to 64, and never more than DiskCacheMiB. Applies at the next game
-## session.
-MaximumFileMiB = 16
-
-## Most cache entries. Range: 16 to 2048. Applies at the next game session.
-MaximumEntries = 256
