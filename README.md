@@ -50,7 +50,7 @@ The PAPER 1.2 download on Nexus Mods is built for ROCK 0.92. This README describ
 
 ### Recommended install
 
-Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) or the `.7z` asset on [GitHub Releases](https://github.com/brunocatani/PAPER/releases/latest) with your mod manager. `PAPER.dll` goes to `Data/F4SE/Plugins`. GitHub's automatic source archives are for development.
+Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/108883) or the `.zip` asset on [GitHub Releases](https://github.com/brunocatani/PAPER/releases/latest) with your mod manager. `PAPER.dll` goes to `Data/F4SE/Plugins`. GitHub's automatic source archives are for development.
 
 ### Compatibility
 

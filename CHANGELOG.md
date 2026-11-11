@@ -21,10 +21,9 @@
 - An empty gun's bolt or slide stays open, in either hand, until a reload starts or rounds arrive, with parts that move with it such as a tilting barrel (`[Reload] BoltHoldOpen`, `BoltHoldCloseSeconds`). PAPER reads the open position off screen from the gun's own animations the first time it is equipped each session. Bolt, lever, pump and double-barrel guns and revolvers never hold.
 - `[Reload] HandBlendSeconds` blends the left hand onto a reload, pump stroke or cycle animation and back; 0 moves it instantly.
 - `[Reload] ChamberRound` keeps a round in the chamber of every gun that fires cartridges, in either hand: it stays through a reload on top of the full magazine, except on revolvers, double-barrels and miniguns, shows on the ammo counter, and each gun keeps its rounds when unequipped and in saves.
-- `[Reload] BoltAppreciation` lets you work the bolt of a bolt-action rifle by hand after each shot, and leave it open, with `BoltPullDistance` and `BoltHandFromAnimation`.
-
+- `[Reload] BoltAppreciation` lets you work the bolt of a bolt-action rifle by hand after each shot, and leave it open, with `BoltPullDistance` and `BoltHandFromAnimation`. The bolt plays the rifle's own clip sounds as it moves, throws spent cases out of the visible ejection port as world debris, and throws a live round you cycle out as a real round you can pick up.
+- With `ManualReloadOnly`, each trigger pull on an empty gun plays one dry-fire click instead of starting a reload.
 - Mods that drive a reload or manual cycle with the player's own hands can take the weapon away from PAPER's animation through a renewed lease, including taking over early and owning the bolt cycle, chambering, casing ejection and their sounds. PAPER keeps that ownership after firing.
-- Release packaging: the `custom-release` preset builds a `.zip` holding only `PAPER.dll`, with the readme beside it.
 
 ### Removed
 
@@ -33,6 +32,8 @@
 ### Fixed
 
 - Missing native node remaps of weapon attachments are repaired.
+- PAPER's hooks chain behind another plugin's patch of the same game code instead of refusing to install.
+- The game closes normally on exit; PAPER no longer raises R6025 during shutdown.
 - `ManualReloadOnly` keeps working when another plugin routes the game's action-dispatcher jump.
 - A pump shotgun that shares a double-barrel's fire sound keyword is no longer taken for a double-barrel, and two revolvers with unusual keywords are now recognized as revolvers.
 - Guarded native memory reads no longer query page protection first, which lowers their per-frame cost.
