@@ -72,16 +72,14 @@ namespace paper::settings
         // INI key of PAPER 1.2 and earlier, by option. Only values that differ
         // from that version's default carry over.
         constexpr std::array kOldKeys{
-            Old{ "bEnabled", "Main", "Enabled" },
             Old{ "iLogLevel", "Main", "LogLevel" },
             Old{ "bManualReloadOnly", "Reload", "ManualReloadOnly", "false" },
             Old{ "fHandBlendSeconds", "Reload", "HandBlendSeconds" },
-            Old{ "bBoltHoldOpen", "BoltAppreciation", "BoltHoldOpen" },
-            Old{ "fBoltHoldCloseSeconds", "BoltAppreciation", "BoltHoldCloseSeconds" },
-            Old{ "bChamberRound", "BoltAppreciation", "ChamberRound", "false" },
+            Old{ "bBoltHoldOpen", "Reload", "SlideOpenOnEmpty" },
+            Old{ "fBoltHoldCloseSeconds", "Reload", "SlideCloseSeconds" },
+            Old{ "bChamberRound", "Reload", "ChamberRound", "false" },
             Old{ "bBoltAppreciation", "BoltAppreciation", "BoltAppreciation" },
             Old{ "fBoltPullDistance", "BoltAppreciation", "BoltPullDistance" },
-            Old{ "bBoltHandFromAnimation", "BoltAppreciation", "BoltHandFromAnimation" },
             Old{ "bDebugDrawNativeAnimation", "Debug", "DebugDrawNativeAnimation" },
             Old{ "bDebugDrawNativeAnimationText", "Debug", "DebugDrawNativeAnimationText" },
             Old{ "fDebugNativeAnimationAxisLength", "Debug", "DebugNativeAnimationAxisLength" },
@@ -99,11 +97,8 @@ namespace paper::settings
         const auto player = Group::Player;
         // The settings menu shows the first help line as the title and builds choices from
         // "N = label" pairs; a "label: line" explains each choice.
+        // PAPER has no switch of its own: installed, it runs.
         return {
-            { "Main", "Enabled", general,
-                "PAPER\nPlays reload and weapon-cycle animations with your hands and runs the options below.\n"
-                "False: PAPER stays idle.",
-                player, ValueType::Boolean, text(d.enabled) },
             { "Main", "LogLevel", general,
                 "Log Level\nHow much PAPER writes to Documents\\My Games\\Fallout4VR\\F4SE\\PAPER.log.\n"
                 "0 = Trace. 1 = Debug. 2 = Info. 3 = Warning. 4 = Error. 5 = Critical. 6 = Off.\n"
@@ -118,16 +113,41 @@ namespace paper::settings
                 "dry-fire click, except on a charging-reload gun such as the laser musket.\n"
                 "False: the game reloads by itself as usual.",
                 player, ValueType::Boolean, text(d.manualReloadOnly) },
+            { "Reload", "SlideOpenOnEmpty", reload,
+                "Slide Open on Empty\nWhen a gun runs empty, its slide or bolt locks back and stays open, in either "
+                "hand, until a reload starts or rounds arrive, with the parts that move with it such as a tilting "
+                "barrel.\nWorks with Manual Reload Only: without it the game reloads an empty gun by itself, which "
+                "closes it again.\nThe open position comes from the gun's own animations, read the first time it is "
+                "equipped each session, so a gun whose animations never open its slide or bolt stays closed. Bolt, "
+                "lever, pump and double-barrel guns and revolvers are not affected.\nFalse: the slide and bolt follow "
+                "the animation.",
+                player, ValueType::Boolean, text(d.slideOpenOnEmpty) },
+            { "Reload", "ChamberRound", reload,
+                "Round in the Chamber\nEvery gun that fires cartridges keeps a round in the chamber, in either hand: "
+                "pistols, rifles, shotguns and machine guns.\nA round in the chamber when you reload stays there on "
+                "top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and "
+                "miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it "
+                "sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid with a "
+                "round in it, dim without.\nEnergy weapons, the Gauss rifle, launchers and other guns with no case "
+                "to throw out are left alone, and so is a gun a weapon mod has changed to such ammo.\nFalse: the "
+                "game's own magazine count.",
+                player, ValueType::Boolean, text(d.chamberRound) },
             { "Reload", "HandBlendSeconds", reload,
                 "Hand Blend Time\nSeconds the left hand takes to move from your controller or grip onto the animation "
                 "when a reload, pump stroke or cycle takes it, and back when that ends. 0 moves it instantly. "
                 "Range: 0 to 1.",
                 player, ValueType::Float, text(d.handBlendSeconds) },
+            { "Reload", "SlideCloseSeconds", reload,
+                "Slide Close Time\nSeconds an open slide or bolt takes to close when a reload starts. 0 closes it "
+                "instantly. Range: 0 to 1.",
+                player, ValueType::Float, text(d.slideCloseSeconds) },
 
             { "BoltAppreciation", "BoltAppreciation", bolt,
                 "Bolt Appreciation\nWork the bolt of a bolt-action rifle by hand after each shot.\nUse the hand the "
                 "rifle's own cycle animation uses, usually the firing hand: hold the gun with your other hand, let go "
-                "of the firing grip and grip the bolt where the small white marker shows. Pull it all the way back to "
+                "of the firing grip and grip the bolt where the small white marker shows. That hand takes the bolt "
+                "the way the animation does from the moment the rifle is drawn; your other hand can take it too, once "
+                "the weapon's collision is built. Pull it all the way back to "
                 "throw out the case and push it home to chamber the next round. The trigger does nothing until you "
                 "have, and clicks if you pull it. The reload stays as it was.\nThese rifles keep a chamber whatever "
                 "Round in the Chamber says. A rifle whose cycle animation shows no hand on the bolt keeps its usual "
@@ -138,34 +158,6 @@ namespace paper::settings
                 "about 9 cm.\nMoving your hand past half of it takes the bolt all the way, at the speed of the "
                 "rifle's own animation. Let go and the bolt stays where it is, open or closed. Range: 2 to 30.",
                 player, ValueType::Float, text(d.boltPullDistance) },
-            { "BoltAppreciation", "BoltHandFromAnimation", bolt,
-                "Bolt Hand From Animation\nThe hand the rifle's cycle animation uses takes the bolt the moment the "
-                "rifle is drawn, placed and posed the way the animation does as the bolt moves.\nYour other hand "
-                "takes it where your grip puts it, with the fingers closed on the bolt, once the weapon's collision "
-                "is built, about a second after equipping.\nFalse: both hands take it that way.",
-                player, ValueType::Boolean, text(d.boltHandFromAnimation) },
-            { "BoltAppreciation", "BoltHoldOpen", bolt,
-                "Bolt Hold Open\nAn empty gun's bolt or slide stays open, in either hand, until a reload starts or "
-                "rounds arrive, with the parts that move with it such as a tilting barrel.\nIt needs a bolt on the "
-                "game's standard WeaponBolt bone. The open position is read off screen from the weapon's own clips "
-                "the first time it is equipped each session, so a gun none of whose clips open its bolt never holds. "
-                "Bolt, lever, pump and double-barrel guns and revolvers never hold.\nFalse: the bolt follows the "
-                "animation.",
-                player, ValueType::Boolean, text(d.boltHoldOpen) },
-            { "BoltAppreciation", "BoltHoldCloseSeconds", bolt,
-                "Bolt Close Time\nSeconds the open bolt takes to return to the animation when a reload starts. "
-                "0 moves it instantly. Range: 0 to 1.",
-                player, ValueType::Float, text(d.boltHoldCloseSeconds) },
-            { "BoltAppreciation", "ChamberRound", bolt,
-                "Round in the Chamber\nEvery gun that fires cartridges keeps a round in the chamber, in either hand: "
-                "pistols, rifles, shotguns and machine guns.\nA round in the chamber when you reload stays there on "
-                "top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and "
-                "miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it "
-                "sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid with a "
-                "round in it, dim without.\nEnergy weapons, the Gauss rifle, launchers and other guns with no case "
-                "to throw out are left alone, and so is a gun a weapon mod has changed to such ammo.\nFalse: the "
-                "game's own magazine count.",
-                player, ValueType::Boolean, text(d.chamberRound) },
 
             { "Debug", "DebugDrawNativeAnimation", debug,
                 "Draw Native Animation\nDraws PAPER's native weapon frame, native hand targets, ROCK's live grip "
@@ -218,8 +210,8 @@ namespace paper::settings
         return std::make_unique<RPS::Settings::Store>(
             RPS::Settings::Files{ directory, "PAPER", std::string(kFileName), {},
                 "## PAPER.toml - PAPER options\n"
-                "## Change these in game in the RobCo PALM wheel menu, or edit this file. Changes apply while the game\n"
-                "## runs.\n"
+                "## Change these in game in the RPS UI settings menu (its holotape, or RobCo PALM's Config), or edit\n"
+                "## this file. Changes apply while the game runs.\n"
                 "## Each option has its help above it. When PAPER starts it adds new options with their defaults and\n"
                 "## rewrites its help lines (##). Your own notes are kept when they start with a single # on the lines\n"
                 "## above an option.\n",
@@ -232,19 +224,17 @@ namespace paper::settings
         const PaperConfig d{};
         PaperConfig config{};
         config.activePath = store.path(Group::Player).string();
-        config.enabled = boolean(store, "Main", "Enabled");
         config.logLevel = static_cast<int>(integer(store, "Main", "LogLevel", d.logLevel));
         config.manualReloadOnly = boolean(store, "Reload", "ManualReloadOnly");
         config.handBlendSeconds =
             std::clamp(number(store, "Reload", "HandBlendSeconds", d.handBlendSeconds), 0.0f, kHandBlendMax);
-        config.boltHoldOpen = boolean(store, "BoltAppreciation", "BoltHoldOpen");
-        config.boltHoldCloseSeconds =
-            std::clamp(number(store, "BoltAppreciation", "BoltHoldCloseSeconds", d.boltHoldCloseSeconds), 0.0f, kBoltHoldCloseMax);
-        config.chamberRound = boolean(store, "BoltAppreciation", "ChamberRound");
+        config.slideOpenOnEmpty = boolean(store, "Reload", "SlideOpenOnEmpty");
+        config.slideCloseSeconds =
+            std::clamp(number(store, "Reload", "SlideCloseSeconds", d.slideCloseSeconds), 0.0f, kBoltHoldCloseMax);
+        config.chamberRound = boolean(store, "Reload", "ChamberRound");
         config.boltAppreciation = boolean(store, "BoltAppreciation", "BoltAppreciation");
         config.boltPullDistance =
             std::clamp(number(store, "BoltAppreciation", "BoltPullDistance", d.boltPullDistance), kBoltPullMin, kBoltPullMax);
-        config.boltHandFromAnimation = boolean(store, "BoltAppreciation", "BoltHandFromAnimation");
         config.debugDrawNativeAnimation = boolean(store, "Debug", "DebugDrawNativeAnimation");
         config.debugDrawNativeAnimationText = boolean(store, "Debug", "DebugDrawNativeAnimationText");
         config.debugNativeAnimationAxisLength = std::clamp(

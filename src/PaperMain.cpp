@@ -389,7 +389,7 @@ namespace
     void publishConfigState()
     {
         api::ConfigState state{};
-        state.enabled = g_config.enabled ? 1u : 0u;
+        state.enabled = 1u; // PAPER has no switch of its own: loaded, it runs.
         state.nativeReloadAuthorityEnabled = 1u;
         state.partialReloadAuthorityEnabled = 1u;
         state.logLevel = g_config.logLevel;
@@ -400,7 +400,7 @@ namespace
 
     void configureManualReloadOnlyForSession()
     {
-        const bool requested = g_config.enabled && g_config.manualReloadOnly;
+        const bool requested = g_config.manualReloadOnly;
         const bool hookReady = manual_reload_only::installHook();
         (void)manual_reload_only::installPhysicalCycleHook();
         manual_reload_only::setRuntimeEnabled(requested && hookReady);
@@ -840,7 +840,7 @@ namespace
         frik_visual_authority::setSkeletonReadyHint(skeletonReady);
 
         const bool operational =
-            g_config.enabled && rockEnabled && rockReady && skeletonReady;
+            rockEnabled && rockReady && skeletonReady;
         const bool nativePosePipelineDemand = refreshNativePosePipelineDemand();
         switch (context->phase) {
         case rock::api::animation::AnimationPhase::NativeGraphOutput: {
@@ -899,8 +899,8 @@ namespace
                 rockApiClient(),
                 bolt_hold::FrameInput{
                     .deltaSeconds = context->deltaSeconds,
-                    .closeSeconds = g_config.boltHoldCloseSeconds,
-                    .enabled = operational && g_config.boltHoldOpen,
+                    .closeSeconds = g_config.slideCloseSeconds,
+                    .enabled = operational && g_config.slideOpenOnEmpty,
                     .manualBoltEnabled = operational && g_config.boltAppreciation,
                     .playerReloadActive = native_animation_authority::playerReloadActive(),
                     .physicalReloadActive = provider::physicalReloadActive(),
@@ -911,7 +911,6 @@ namespace
                     .chamberEnabled = operational && g_config.chamberRound,
                     .boltEnabled = operational && g_config.boltAppreciation,
                     .pullDistance = g_config.boltPullDistance,
-                    .handFromAnimation = g_config.boltHandFromAnimation,
                     .cycleAllowed = !climbingAnimationSuppressed &&
                         native_animation_authority_policy::canWorkBoltByHand(weaponObservation),
                     .playerReloadActive = native_animation_authority::playerReloadActive(),

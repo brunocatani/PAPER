@@ -17,9 +17,6 @@ namespace paper::manual_bolt
         // Game units of a full pull, the same on every rifle. Crossing half of it
         // commits the stroke.
         float pullDistance{ 7.0f };
-        // The clip's hand takes the bolt at once, at the clip's point and in its pose.
-        // Off, it takes ROCK's dynamic grip like any other hand, which needs colliders.
-        bool handFromAnimation{ true };
         // The rifles PAPER animates the cycle of are the rifles this feature serves.
         bool cycleAllowed{ false };
         bool playerReloadActive{ false };

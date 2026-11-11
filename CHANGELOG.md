@@ -10,7 +10,7 @@
 ### Changed
 
 - Settings move to `PAPER.toml`, with each option's help above it, and are kept organized and up to date at every start. The first start carries every option you changed in `PAPER.ini` into `PAPER.toml` and deletes the INI; nothing to do by hand. Keys lose their type letters (`bChamberRound` is now `ChamberRound`).
-- Every bolt option is in its own section, Bolt Appreciation (`[BoltAppreciation]`): the hand-worked bolt, its pull distance and hand, the empty-gun bolt hold and the round in the chamber. Each option has a title and a plain explanation.
+- PAPER has no on/off switch: installed, it runs. The hand-worked bolt has its own section, Bolt Appreciation (`[BoltAppreciation]`); the slide held open on empty and the round in the chamber are with the reload options. Each option has a title and a plain explanation.
 - Weapons ROCK seats from a FRIK user weapon offset keep the game's own reload and cycling.
 - PAPER takes the hands only for a native reload or cycle action; firing alone no longer does.
 - Two copies of the same weapon equipped in both hands are now recognized as dual wielding.
@@ -19,10 +19,10 @@
 
 ### Added
 
-- An empty gun's bolt or slide stays open, in either hand, until a reload starts or rounds arrive, with parts that move with it such as a tilting barrel (`[BoltAppreciation] BoltHoldOpen`, `BoltHoldCloseSeconds`). PAPER reads the open position off screen from the gun's own animations the first time it is equipped each session. Bolt, lever, pump and double-barrel guns and revolvers never hold.
+- An empty gun's bolt or slide stays open, in either hand, until a reload starts or rounds arrive, with parts that move with it such as a tilting barrel (`[Reload] SlideOpenOnEmpty`, `SlideCloseSeconds`), with `ManualReloadOnly`. PAPER reads the open position off screen from the gun's own animations the first time it is equipped each session. Bolt, lever, pump and double-barrel guns and revolvers never hold.
 - `[Reload] HandBlendSeconds` blends the left hand onto a reload, pump stroke or cycle animation and back; 0 moves it instantly.
-- `[BoltAppreciation] ChamberRound` keeps a round in the chamber of every gun that fires cartridges, in either hand: it stays through a reload on top of the full magazine, except on revolvers, double-barrels and miniguns, shows on the ammo counter, and each gun keeps its rounds when unequipped and in saves.
-- `[BoltAppreciation] BoltAppreciation` lets you work the bolt of a bolt-action rifle by hand after each shot, and leave it open, with `BoltPullDistance` and `BoltHandFromAnimation`. The bolt plays the rifle's own clip sounds as it moves, throws spent cases out of the visible ejection port as world debris, and throws a live round you cycle out as a real round you can pick up.
+- `[Reload] ChamberRound` keeps a round in the chamber of every gun that fires cartridges, in either hand: it stays through a reload on top of the full magazine, except on revolvers, double-barrels and miniguns, shows on the ammo counter, and each gun keeps its rounds when unequipped and in saves.
+- `[BoltAppreciation] BoltAppreciation` lets you work the bolt of a bolt-action rifle by hand after each shot, and leave it open, with `BoltPullDistance`. The hand the rifle's cycle animation uses takes the bolt from the moment the rifle is drawn. The bolt plays the rifle's own clip sounds as it moves, throws spent cases out of the visible ejection port as world debris, and throws a live round you cycle out as a real round you can pick up.
 - With `ManualReloadOnly`, each trigger pull on an empty gun plays one dry-fire click instead of starting a reload.
 - Mods that drive a reload or manual cycle with the player's own hands can take the weapon away from PAPER's animation through a renewed lease, including taking over early and owning the bolt cycle, chambering, casing ejection and their sounds. PAPER keeps that ownership after firing.
 

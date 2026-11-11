@@ -42,11 +42,10 @@ namespace
 
     bool sameValues(const paper::PaperConfig& a, const paper::PaperConfig& b)
     {
-        return a.enabled == b.enabled && a.logLevel == b.logLevel && a.manualReloadOnly == b.manualReloadOnly &&
-               a.handBlendSeconds == b.handBlendSeconds && a.boltHoldOpen == b.boltHoldOpen &&
-               a.boltHoldCloseSeconds == b.boltHoldCloseSeconds && a.chamberRound == b.chamberRound &&
+        return a.logLevel == b.logLevel && a.manualReloadOnly == b.manualReloadOnly &&
+               a.handBlendSeconds == b.handBlendSeconds && a.slideOpenOnEmpty == b.slideOpenOnEmpty &&
+               a.slideCloseSeconds == b.slideCloseSeconds && a.chamberRound == b.chamberRound &&
                a.boltAppreciation == b.boltAppreciation && a.boltPullDistance == b.boltPullDistance &&
-               a.boltHandFromAnimation == b.boltHandFromAnimation &&
                a.debugDrawNativeAnimation == b.debugDrawNativeAnimation &&
                a.debugDrawNativeAnimationText == b.debugDrawNativeAnimationText &&
                a.debugNativeAnimationAxisLength == b.debugNativeAnimationAxisLength &&
@@ -94,7 +93,7 @@ int main(int argc, char** argv)
     fs::create_directories(upgrade);
     write(upgrade / "PAPER.ini",
         "; PAPER created this file from compiled defaults because it was missing.\r\n[Main]\r\nbEnabled = true\r\n"
-        "iLogLevel = 1\r\n[Reload]\r\nbManualReloadOnly = true\r\nfHandBlendSeconds = 0.15\r\nbChamberRound = true\r\n"
+        "iLogLevel = 1\r\n[Reload]\r\nbManualReloadOnly = true\r\nfHandBlendSeconds = 0.15\r\nbChamberRound = true\r\nbBoltHoldOpen = false\r\n"
         "bBoltAppreciation = true\r\nfBoltPullDistance = 9.5\r\n[DevelopmentCapture]\r\nsMaximumMode = User\r\n"
         "[WeaponMotionCache]\r\nsAccess = ReadOnly\r\niDiskCacheMiB = 512\r\n");
     store = paper::settings::makeStore(upgrade);
@@ -102,7 +101,7 @@ int main(int argc, char** argv)
     assert(!fs::exists(upgrade / "PAPER.ini"));
     loaded = paper::settings::fromStore(*store);
     assert(loaded.logLevel == 1 && loaded.manualReloadOnly && loaded.chamberRound && loaded.boltAppreciation);
-    assert(loaded.boltPullDistance == 9.5f);
+    assert(loaded.boltPullDistance == 9.5f && !loaded.slideOpenOnEmpty);
     assert(read(upgrade / "PAPER.toml").find("ChamberRound = true\n") != std::string::npos);
 
     // An INI holding PAPER 1.2's defaults for options whose default has changed

@@ -70,18 +70,16 @@ namespace paper
         {
             PAPER_LOG_INFO(
                 Config,
-                "{} '{}' enabled={} manualReloadOnly={} handBlendSeconds={:.2f} boltHoldOpen={} boltHoldCloseSeconds={:.2f} chamberRound={} boltAppreciation={} boltPullDistance={:.1f} boltHandFromAnimation={}",
+                "{} '{}' manualReloadOnly={} handBlendSeconds={:.2f} slideOpenOnEmpty={} slideCloseSeconds={:.2f} chamberRound={} boltAppreciation={} boltPullDistance={:.1f}",
                 hotReload ? "Hot-reloaded" : "Loaded",
                 config.activePath,
-                config.enabled,
                 config.manualReloadOnly,
                 config.handBlendSeconds,
-                config.boltHoldOpen,
-                config.boltHoldCloseSeconds,
+                config.slideOpenOnEmpty,
+                config.slideCloseSeconds,
                 config.chamberRound,
                 config.boltAppreciation,
-                config.boltPullDistance,
-                config.boltHandFromAnimation);
+                config.boltPullDistance);
         }
     }
 

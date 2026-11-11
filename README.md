@@ -32,7 +32,7 @@ What it provides:
 - **Bolt hold-open** - an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
 - **Round in the chamber** - optional: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
 - **Hand-worked bolts** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want.
-- **Live settings** - TOML settings that reload while the game runs, with in-game pages in RobCo PALM.
+- **Live settings** - TOML settings that reload while the game runs, with an in-game page in RPS UI Framework's settings menu.
 - **Provider API** - 2 interfaces: runtime, animation and hand-pose data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
 PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocatani/ROCK). Mods that make reloads physical take over from PAPER through its PhysicalReload interface.
@@ -70,22 +70,20 @@ PAPER reads one file under your Windows Documents folder:
 My Games/Fallout4VR/Mods_Config/PAPER/PAPER.toml
 ```
 
-PAPER creates the file from its compiled defaults when it is missing, and at every start adds options a new version brings, with their defaults. Each option has its help above it as `##` lines, which PAPER rewrites; your own notes on single-`#` lines above an option stay with it. An option PAPER no longer reads moves to a commented block at the end of the file. A value of the wrong type is logged with its line and that option keeps its last value. The file reloads while the game runs. RobCo PALM's PAPER page edits it in game.
+PAPER creates the file from its compiled defaults when it is missing, and at every start adds options a new version brings, with their defaults. Each option has its help above it as `##` lines, which PAPER rewrites; your own notes on single-`#` lines above an option stay with it. An option PAPER no longer reads moves to a commented block at the end of the file. A value of the wrong type is logged with its line and that option keeps its last value. The file reloads while the game runs. Its page in RPS UI Framework's settings menu edits it in game.
 
 Upgrading from a PAPER that used `PAPER.ini`: the first start carries every option you changed into `PAPER.toml` and deletes `PAPER.ini` once `PAPER.toml` is written and read back. Nothing to do by hand.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `[Main] Enabled` | `true` | Reload coordination and the manual-reload-only option. |
 | `[Main] LogLevel` | `2` | Log level; 2 is normal information logging. |
 | `[Reload] ManualReloadOnly` | `true` | `true` stops automatic reloads when ammunition runs out. Manual reload input still works. |
+| `[Reload] SlideOpenOnEmpty` | `true` | `true` keeps an empty gun's slide or bolt open, in either hand, until a reload starts or rounds arrive. Works with `ManualReloadOnly`; without it the game reloads an empty gun at once. A gun none of whose animations open its slide or bolt stays closed. Bolt, lever, pump and double-barrel guns and revolvers are not affected. |
+| `[Reload] ChamberRound` | `true` | `true` keeps a round in the chamber of every gun that fires cartridges, in either hand. A round in the chamber when you reload stays on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber. Energy weapons, the Gauss rifle and launchers are left alone. |
 | `[Reload] HandBlendSeconds` | `0.15` | Seconds the left hand takes to move onto a reload, pump stroke or cycle animation, and back when it ends. `0` moves it instantly. |
-| `[BoltAppreciation] BoltHoldOpen` | `true` | `true` leaves an empty gun's bolt or slide open, in either hand, until a reload starts or rounds arrive. It needs a bolt on the game's `WeaponBolt` bone, and a gun none of whose animations open its bolt never holds. Bolt, lever, pump and double-barrel guns and revolvers never hold. |
-| `[BoltAppreciation] BoltHoldCloseSeconds` | `0.15` | Seconds the open bolt takes to return to the animation when a reload starts. `0` moves it instantly. |
-| `[BoltAppreciation] ChamberRound` | `true` | `true` keeps a round in the chamber of every gun that fires cartridges, in either hand. A round in the chamber when you reload stays on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber. Energy weapons, the Gauss rifle and launchers are left alone. |
-| `[BoltAppreciation] BoltAppreciation` | `false` | `true` makes you work the bolt of a bolt-action rifle by hand after each shot, with its own chamber whatever `ChamberRound` says. Lever guns, pumps and revolvers are not affected. |
+| `[Reload] SlideCloseSeconds` | `0.15` | Seconds an open slide or bolt takes to close when a reload starts. `0` closes it instantly. |
+| `[BoltAppreciation] BoltAppreciation` | `false` | `true` makes you work the bolt of a bolt-action rifle by hand after each shot, with its own chamber whatever `ChamberRound` says. The hand the rifle's cycle animation uses takes the bolt from the moment the rifle is drawn; the other hand can take it once the weapon's collision is built. Lever guns, pumps and revolvers are not affected. |
 | `[BoltAppreciation] BoltPullDistance` | `7.0` | Game units of a full bolt pull, the same on every rifle. Moving your hand past half of it takes the bolt all the way. |
-| `[BoltAppreciation] BoltHandFromAnimation` | `true` | `true` lets the hand the rifle's cycle animation uses take the bolt the moment the rifle is drawn. `false` makes both hands wait for the weapon's collision. |
 | `[Debug] DebugDrawNativeAnimation` | `false` | Draws PAPER's animation targets for diagnosis (needs RPS UI Framework). |
 
 [PAPER_example.toml](data/config/PAPER_example.toml) documents every option. It is a reference only, never a file to install.

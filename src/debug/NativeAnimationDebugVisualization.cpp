@@ -401,7 +401,7 @@ namespace paper::debug_visualization
         const rock::api::animation::AnimationPhaseContext& context,
         const paper::RockWeaponGripState& gripState)
     {
-        if (!g_config.enabled || !g_config.debugDrawNativeAnimation ||
+        if (!g_config.debugDrawNativeAnimation ||
             !rockApiClient().ready()) {
             clear();
             return;

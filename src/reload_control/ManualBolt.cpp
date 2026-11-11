@@ -115,10 +115,9 @@ namespace paper::manual_bolt
             bool handCycle{ false };
             bool handCycleRefused{ false };
             std::uint32_t boltColliderWaitFrames{ 0 };
-            // What ROCK was last told a hand can take: the key it is on, whether the
-            // clip's hand has its point, and how many bolt colliders are on offer.
+            // What ROCK was last told a hand can take: the key the clip hand's point is on
+            // and how many bolt colliders are on offer to the other hand.
             std::uint64_t publishedGeneration{ 0 };
-            bool publishedPoint{ false };
             std::size_t publishedBoltParts{ 0 };
             bolt_hold::ManualAction action{};
             // The hand the clip works the bolt with.
@@ -129,7 +128,6 @@ namespace paper::manual_bolt
             bool gripFromClip{ false };
             bolt_stroke::Pose pose{};
 
-            bool handFromAnimation{ false };
             float handBlendSeconds{ 0.0f };
             float deltaSeconds{ 0.0f };
             float handWeight{ 0.0f };
@@ -550,7 +548,7 @@ namespace paper::manual_bolt
             if (gun.handCycleRefused) {
                 return;
             }
-            const bool upToDate = gun.publishedGeneration == gun.generation && gun.publishedPoint == gun.handFromAnimation;
+            const bool upToDate = gun.publishedGeneration == gun.generation;
             if (upToDate && (gun.publishedBoltParts != 0 || gun.boltColliderWaitFrames >= kBoltColliderWaitFrames)) {
                 return;
             }
@@ -604,9 +602,7 @@ namespace paper::manual_bolt
                 }
                 return;
             }
-            if (gun.handFromAnimation) {
-                addTarget(gun.action.keys[policy::kBoltBone]);
-            }
+            addTarget(gun.action.keys[policy::kBoltBone]);
             if (targets.empty()) {
                 if (++gun.boltColliderWaitFrames >= kBoltColliderWaitFrames) {
                     refuseHandCycle(rock, gun, "no bolt collider to hold", 0);
@@ -619,7 +615,7 @@ namespace paper::manual_bolt
                 return;
             }
             gun.workingHand = stroke.hand == bolt_stroke::kLeftHand ? Hand::Left : Hand::Right;
-            if (gun.handFromAnimation) {
+            {
                 parts::GrabPoint point{};
                 point.pointId = 1;
                 point.groupId = kGroupId;
@@ -633,20 +629,16 @@ namespace paper::manual_bolt
                     refuseHandCycle(rock, gun, "ROCK refused the grab point", static_cast<std::uint32_t>(status));
                     return;
                 }
-            } else if (gun.publishedPoint) {
-                rock.clearWeaponGrabPoints();
             }
             gun.handCycle = true;
             gun.publishedGeneration = gun.generation;
-            gun.publishedPoint = gun.handFromAnimation;
             gun.publishedBoltParts = boltParts;
             PAPER_LOG_INFO(
                 Reload,
-                "MANUAL_BOLT hand cycle ready weapon={:08X} boltBodies={} hand={} point={} travel={:.2f}gu turn={:.1f}deg",
+                "MANUAL_BOLT hand cycle ready weapon={:08X} boltBodies={} hand={} travel={:.2f}gu turn={:.1f}deg",
                 gun.form,
                 boltParts,
                 stroke.hand == bolt_stroke::kLeftHand ? "left" : "right",
-                gun.publishedPoint,
                 stroke.travelGameUnits,
                 stroke.turnDegrees);
         }
@@ -768,7 +760,7 @@ namespace paper::manual_bolt
                 if (!gun.gripHeld || grip.gripSequence != gun.gripSequence) {
                     gun.gripSequence = grip.gripSequence;
                     gun.gripHand = holder;
-                    gun.gripFromClip = gun.handFromAnimation && holder == gun.workingHand;
+                    gun.gripFromClip = holder == gun.workingHand;
                     gun.gripStart = controller;
                     gun.gripStartPull = gun.pull;
                     if (gun.gripFromClip) {
@@ -1035,7 +1027,6 @@ namespace paper::manual_bolt
                 return;
             }
 
-            gun.handFromAnimation = input.handFromAnimation;
             gun.handBlendSeconds = input.handBlendSeconds;
             gun.deltaSeconds = input.deltaSeconds;
 
