@@ -4,78 +4,80 @@
 
 ## === 01. General ===
 [Main]
-## Enables PAPER's reload coordination and manual-reload-only behavior.
+## PAPER
+## Plays reload and weapon-cycle animations with your hands and runs the options below.
+## False: PAPER stays idle.
 Enabled = true
 
-## Log file: Documents\My Games\Fallout4VR\F4SE\PAPER.log.
-## 0=Trace, 1=Debug, 2=Info (normal play), 3=Warning, 4=Error, 5=Critical, 6=Off.
-## Includes the selected level and all more severe messages. Info includes startup, hook validation and
-## reload diagnostics; Trace and Debug are more verbose. This does not enable debug drawings.
+## Log Level
+## How much PAPER writes to Documents\My Games\Fallout4VR\F4SE\PAPER.log.
+## 0 = Trace. 1 = Debug. 2 = Info. 3 = Warning. 4 = Error. 5 = Critical. 6 = Off.
+## Info is for normal play: startup, hook checks and reload diagnostics. Trace and Debug write much more. This does not turn on debug drawing.
 LogLevel = 2
 
 ## === 02. Reload ===
 [Reload]
-## true blocks automatic reload when ammunition reaches zero, including immediate, delayed and post-fire
-## requests. false allows normal automatic reload. Manual input, ROCK reload dispatch, Tactical Reload and
-## reload resumption remain available either way. While true, each trigger pull on an empty gun with rounds
-## to load plays one dry-fire click, except on a charging-reload gun such as the laser musket.
+## Manual Reload Only
+## An empty gun does not reload by itself, whether the reload would start at once, after a delay or after a shot; you reload it.
+## Manual input, ROCK's reload, Tactical Reload and resuming a reload work either way. Each trigger pull on an empty gun with rounds to load plays one dry-fire click, except on a charging-reload gun such as the laser musket.
+## False: the game reloads by itself as usual.
 ManualReloadOnly = true
 
-## Seconds the left hand takes to move from your controller or grip onto the animation when a reload, pump
-## stroke or cycle takes it, and back when that ends. 0 moves it instantly. Range: 0 to 1.
+## Hand Blend Time
+## Seconds the left hand takes to move from your controller or grip onto the animation when a reload, pump stroke or cycle takes it, and back when that ends. 0 moves it instantly. Range: 0 to 1.
 HandBlendSeconds = 0.15
 
-## true leaves the bolt or slide open on an empty gun, in either hand, until a reload starts or rounds
-## arrive, with the parts that move with it such as a tilting barrel. It needs a bolt on the game's standard
-## WeaponBolt bone. The open position is read off screen from the weapon's own clips the first time it is
-## equipped each session, so a gun none of whose clips open its bolt never holds. Manual actions such as
-## bolt, lever, pump and double-barrel guns and revolvers never hold.
-BoltHoldOpen = true
-
-## Seconds the open bolt takes to return to the animation when a reload starts. 0 moves it instantly.
-## Range: 0 to 1.
-BoltHoldCloseSeconds = 0.15
-
-## true keeps a round in the chamber of every gun that fires cartridges, in either hand: pistols, rifles,
-## shotguns and machine guns. Energy weapons, the Gauss rifle, launchers and other guns with no case to throw
-## out are left alone, and so is a gun a weapon mod has changed to such ammo. A round in the chamber when you
-## reload stays there on top of the full magazine, as far as your reserve goes, except on revolvers,
-## double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves,
-## unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid
-## with a round in it, dim without.
-ChamberRound = true
-
-## true makes you work the bolt of a bolt-action rifle by hand after each shot. Use the hand the rifle's own
-## cycle animation uses, usually the firing hand: hold the gun with your other hand, let go of the firing
-## grip and grip the bolt where the small white marker shows. Pull it all the way back to throw out the case
-## and push it home to chamber the next round. The trigger does nothing until you have, and clicks if you
-## pull it. The reload stays as it was. These rifles keep a chamber as ChamberRound describes, whatever that
-## option says. A rifle whose cycle animation shows no hand on the bolt keeps its usual cycle. Lever guns,
-## pumps and revolvers are not affected.
+## === 03. Bolt Appreciation ===
+[BoltAppreciation]
+## Bolt Appreciation
+## Work the bolt of a bolt-action rifle by hand after each shot.
+## Use the hand the rifle's own cycle animation uses, usually the firing hand: hold the gun with your other hand, let go of the firing grip and grip the bolt where the small white marker shows. Pull it all the way back to throw out the case and push it home to chamber the next round. The trigger does nothing until you have, and clicks if you pull it. The reload stays as it was.
+## These rifles keep a chamber whatever Round in the Chamber says. A rifle whose cycle animation shows no hand on the bolt keeps its usual cycle. Lever guns, pumps and revolvers are not affected.
+## False: the rifle cycles by itself.
 BoltAppreciation = false
 
-## The length of a full pull, in game units, the same on every rifle. 7 is about 9 cm. Moving your hand past
-## half of it takes the bolt all the way, at the speed of the rifle's own animation. Let go and the bolt
-## stays where it is, open or closed. Range: 2 to 30.
+## Bolt Pull Distance
+## The length of a full bolt pull in game units, the same on every rifle; 7 is about 9 cm.
+## Moving your hand past half of it takes the bolt all the way, at the speed of the rifle's own animation. Let go and the bolt stays where it is, open or closed. Range: 2 to 30.
 BoltPullDistance = 7.0
 
-## true lets the hand the rifle's cycle animation uses take the bolt the moment the rifle is drawn, placed
-## and posed the way the animation does as the bolt moves. Your other hand takes it where your grip puts it,
-## with the fingers closed on the bolt's surface, once the weapon's collision is built, about a second after
-## equipping. false treats both hands that way.
+## Bolt Hand From Animation
+## The hand the rifle's cycle animation uses takes the bolt the moment the rifle is drawn, placed and posed the way the animation does as the bolt moves.
+## Your other hand takes it where your grip puts it, with the fingers closed on the bolt, once the weapon's collision is built, about a second after equipping.
+## False: both hands take it that way.
 BoltHandFromAnimation = true
 
-## === 03. Debug Drawing ===
+## Bolt Hold Open
+## An empty gun's bolt or slide stays open, in either hand, until a reload starts or rounds arrive, with the parts that move with it such as a tilting barrel.
+## It needs a bolt on the game's standard WeaponBolt bone. The open position is read off screen from the weapon's own clips the first time it is equipped each session, so a gun none of whose clips open its bolt never holds. Bolt, lever, pump and double-barrel guns and revolvers never hold.
+## False: the bolt follows the animation.
+BoltHoldOpen = true
+
+## Bolt Close Time
+## Seconds the open bolt takes to return to the animation when a reload starts. 0 moves it instantly. Range: 0 to 1.
+BoltHoldCloseSeconds = 0.15
+
+## Round in the Chamber
+## Every gun that fires cartridges keeps a round in the chamber, in either hand: pistols, rifles, shotguns and machine guns.
+## A round in the chamber when you reload stays there on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid with a round in it, dim without.
+## Energy weapons, the Gauss rifle, launchers and other guns with no case to throw out are left alone, and so is a gun a weapon mod has changed to such ammo.
+## False: the game's own magazine count.
+ChamberRound = true
+
+## === 04. Debug Drawing ===
 [Debug]
-## Draws PAPER's native weapon frame, native hand targets, ROCK live grip targets, applied FRIK hands and
-## their target-error lines through RPS UI Framework's world drawing. Diagnostic only; off for normal play.
+## Draw Native Animation
+## Draws PAPER's native weapon frame, native hand targets, ROCK's live grip targets, the applied FRIK hands and their target-error lines through RPS UI Framework's world drawing. Diagnostic only; off for normal play.
 DebugDrawNativeAnimation = false
 
-## Adds concise mode, capture and per-hand motion and error labels.
+## Native Animation Labels
+## Adds short mode, capture and per-hand motion and error labels.
 DebugDrawNativeAnimationText = true
 
-## World-space length in game units of transform axes. Range: 1 to 20.
+## Axis Length
+## Length of drawn transform axes in game units. Range: 1 to 20.
 DebugNativeAnimationAxisLength = 5.0
 
-## World-space size in game units of cross markers. Range: 0.25 to 5.
+## Marker Size
+## Size of drawn cross markers in game units. Range: 0.25 to 5.
 DebugNativeAnimationMarkerSize = 1.5

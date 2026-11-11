@@ -82,7 +82,7 @@ int main(int argc, char** argv)
     assert(fs::path(loaded.activePath) == fresh / "PAPER.toml");
 
     // Values are clamped to their documented ranges.
-    write(fresh / "PAPER.toml", "[Reload]\nHandBlendSeconds = 4.0\nBoltPullDistance = 1\n");
+    write(fresh / "PAPER.toml", "[Reload]\nHandBlendSeconds = 4.0\n[BoltAppreciation]\nBoltPullDistance = 1\n");
     store->load(false);
     assert(store->messages().empty());
     loaded = paper::settings::fromStore(*store);
