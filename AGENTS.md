@@ -9,6 +9,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 - PAPER publishes provider API 2.0: 2 interfaces, `Provider` and `PhysicalReload`, whose headers are in `include/PAPER/`. They include only the C++ standard library; nothing links against PAPER.
 - Add PAPER's `include/` directory through a CMake cache variable such as `PAPER_INCLUDE_DIR`, include `<PAPER/...>`, resolve `PAPERAPI_QueryInterfaceV1` from the loaded `PAPER.dll`, and connect with `paper::api::Client`. Never include headers from `src/` or copy PAPER's headers into the consumer.
 - Read `docs/api/Provider.md` first, then `docs/api/PhysicalReload.md` when the mod drives reloads with the player's hands. `tests/ConsumerExample.cpp` is the minimal consumer.
+- Updating a mod built against PAPER 1.2 (`PAPERApi.h`): `docs/api/Migration.md` maps every old call to its replacement. ROCK's `skills/rock-1.0-migration/SKILL.md` covers PAPER, ROCK, RPS UI Framework and RobCo PALM together.
 - When PAPER is absent, the consumer turns its PAPER features off and keeps running. A version mismatch never runs silently: PAPER names a consumer built for another PAPER API in an error box at the main menu and closes the game when the box is closed. Request exactly the versions your headers declare (`paper::api::Client` does); never probe for optional versions with trial queries.
 
 ## Repository map
@@ -27,7 +28,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 | `src/native/`, `src/support/` | Native offsets, guarded native memory reads, logging and runtime helpers |
 | `src/PaperSettings.cpp`, `src/PaperConfig.cpp` | Settings catalog (tables, keys, help, compiled defaults, old INI keys) on RPS Framework's settings store, and loading with hot reload |
 | `include/PAPER/` | Public provider API headers, the only copy |
-| `docs/api/` | One page per provider interface |
+| `docs/api/` | One page per provider interface, and `Migration.md` for mods built against PAPER 1.2 |
 | `data/config/PAPER_example.toml` | Example settings file, a reference only |
 | `tests/` | Tests and the consumer example |
 | `cmake/` | Version resource and release packaging |

@@ -37,7 +37,8 @@ returns `UnsupportedMajor` with no table. `UnsupportedMinor` and
 The pre-2.0 exports `PAPERAPI_GetProviderApi`,
 `PAPERAPI_GetProviderDescriptorV1` and `PAPERAPI_QueryPhysicalReloadV1/V2/V3`
 still exist only to refuse outdated consumers: each returns null. A mod built
-against them must be rebuilt against these headers.
+against them must be rebuilt against these headers; [Migration](Migration.md)
+lists where each PAPER 1.2 call went.
 
 A version mismatch stops the game. After any version refusal or a call to a
 pre-2.0 export, PAPER logs the calling DLL and, when the main menu opens (or

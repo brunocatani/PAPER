@@ -151,7 +151,7 @@ Call `paper.close()` on the game thread before your plugin's callback data goes 
 - Leases (physical reload, timed animation authority) last a set number of frames: renew them while you need them.
 - Copied state carries generations and sequences: drop cached data when they change, and restart a paged copy on `StaleSnapshot`.
 
-Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload page](docs/api/PhysicalReload.md) if you drive reloads. The [developer guide](https://devartificial.pro/docs/apis/paper) adds a first consumer, recipes and a table of where the pre-2.0 API moved.
+Start with the [Provider page](docs/api/Provider.md), then the [PhysicalReload page](docs/api/PhysicalReload.md) if you drive reloads. A mod built against PAPER 1.2's `PAPERApi.h` is updated with [Migration](docs/api/Migration.md); coding agents can follow ROCK's `rock-1.0-migration` skill, which covers PAPER too. The [developer guide](https://devartificial.pro/docs/apis/paper) adds a first consumer, recipes and a table of where the pre-2.0 API moved.
 
 ## Building PAPER from source
 
