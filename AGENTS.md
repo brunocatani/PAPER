@@ -37,7 +37,7 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 
 Requirements: Windows x64, Visual Studio 2022 (v143), CMake 4.2 or newer, vcpkg with `VCPKG_ROOT` set, and checkouts of CommonLibF4VR, ROCK and RPS UI Framework (their `include/` headers) and RPS Framework (built with its `custom-fast` preset, which stages the package PAPER links). PAPER uses C++23.
 
-Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into, under `F4SE/Plugins`); set `ROCK_INCLUDE_DIR`, `RPSUI_INCLUDE_DIR` and `RPSFramework_DIR` (the staged package's `lib/cmake/RPSFramework`) when the checkouts are not where `CMakeLists.txt` looks by default. Before building, check that the presets and the generated cache point at this checkout and PAPER's own mod folder, not an older copy. Then:
+Copy `CMakeUserPresets.json.template` to `CMakeUserPresets.json` and set `COMMON_LIB_F4VR_PATH` and `COPY_PLUGIN_BASE_PATH` (the mod folder the build copies `PAPER.dll` and `PAPER.pdb` into, under `F4SE/Plugins`); set `ROCK_INCLUDE_DIR`, `RPSUI_INCLUDE_DIR` and `RPSFramework_DIR` (the staged package's `lib/cmake/RPSFramework`) when the checkouts are not where `CMakeLists.txt` looks by default. Then:
 
 ```powershell
 cmake --preset custom-fast
@@ -45,8 +45,6 @@ cmake --build build-fast --config Release --target PAPER
 ```
 
 Tests live in `build-fast` but outside the default build. Every test target name contains `Tests`. Build and run them with `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`. `PAPERPublicHeaderTests` compiles every public header on its own plus the consumer example; `PAPERDiscoveryTests` checks discovery and refused majors; `PAPERObservationApiTests` checks the ABI layout of the published records and tables.
-
-`custom-release` builds into `build-release` and writes a release's two files to `build-release/package` (`cmake/package.cmake`): a `.zip` holding only the DLL, which installs as it is, and `README.md` beside it. The zip refuses any other file; the PDB, the license, headers and every other development file stay out of it.
 
 ## Runtime files
 
@@ -81,14 +79,12 @@ Tests live in `build-fast` but outside the default build. Every test target name
 
 - Public headers include only the C++ standard library and other `include/PAPER/` headers: never CommonLibF4VR, ROCK, engine or F4SE types.
 - Every entry point validates the caller's record `size` and `version` before reading it. Records use fixed-width types.
-- `PAPERAPI_QueryInterfaceV1` serves only the current majors. The pre-2.0 exports (`PAPERAPI_GetProviderApi`, `PAPERAPI_GetProviderDescriptorV1`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) only refuse; their names, like retired interface IDs, slots, enum values and flag bits, are never reused.
+- `PAPERAPI_QueryInterfaceV1` serves only the current majors. The pre-2.0 exports (`PAPERAPI_GetProviderApi`, `PAPERAPI_GetProviderDescriptorV1`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) only refuse.
 - Every version refusal and every call to a pre-2.0 export is logged with the calling DLL and stops the game at the main menu; so does a loaded ROCK that does not serve the ROCK API PAPER was built for (`src/api/RequiredUpdates.cpp`). A missing ROCK leaves PAPER idle and the game running.
-- A released interface version is frozen. A compatible addition goes at the end of a table; an incompatible change needs a new major.
-- A header change updates its `docs/api/` page in the same commit and passes the public header, discovery and observation API tests.
 
 ### Configuration
 
 - `src/PaperSettings.cpp` declares every option once (table, key, help, compiled default from `PaperConfig`) for RPS Framework's settings store (`RPS::Settings`). A missing `PAPER.toml` is created from those defaults; each start organizes the file (every option once under its table with its help as `##` lines, player notes on single-`#` lines kept, unread entries moved to a commented block) and writes it only when that text differs. The file reloads while the game runs.
 - At startup only, when `PAPER.toml` is missing, `PAPER.ini` of earlier versions is migrated once through the old-key table in `src/PaperSettings.cpp` (values equal to their old default are left out) and deleted after `PAPER.toml` reads back; a leftover `PAPER.ini` beside an existing `PAPER.toml` is deleted unread. Never rename a key or move it to another table without an old-key row.
-- `data/config/PAPER_example.toml` is what PAPER writes for an all-default file. Regenerate it with `PAPERSettingsTests --write-examples data/config` after any catalog change; the test fails when it differs. It is a reference only: never read, embedded, packaged, deployed or used to create runtime files. Settings files never ship in the mod package.
+- `data/config/PAPER_example.toml` is what PAPER writes for an all-default file. Regenerate it with `PAPERSettingsTests --write-examples data/config` after any catalog change; the test fails when it differs. PAPER never reads it.
 - The bolt hold's clip read runs only while `BoltHoldOpen` or `BoltAppreciation` is on. It keeps the poses it needs and stores no tracks, clips or files.
