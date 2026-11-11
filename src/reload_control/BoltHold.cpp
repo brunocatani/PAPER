@@ -75,12 +75,25 @@ namespace paper::bolt_hold
             std::uint32_t form{ 0 };
             std::uint32_t evidenceWaitFrames{ 0 };
             bool resolved{ false };
+            // Holding on what the form was last time, until this weapon's own parts
+            // decide. `eligible` and the bones are then already usable.
+            bool provisional{ false };
             bool eligible{ false };
             bool boltAction{ false };
             std::array<Bone, kBoneCount> bones{};
             float weight{ 0.0f };
             bool holding{ false };
+            // The weapon came into the hand with its action as it was put away: the
+            // first frame that knows its pose and its rounds sets the hold outright.
+            bool arrivalDecided{ false };
             bool driveRefusalLogged{ false };
+        };
+
+        // Whether a form's family holds open, as its parts last decided it.
+        struct LearnedFamily
+        {
+            std::uint32_t form{ 0 };
+            bool holdsOpen{ false };
         };
 
         struct Displacement
@@ -141,6 +154,8 @@ namespace paper::bolt_hold
         // Frame thread only. A fixed table: the oldest pose gives way.
         std::array<LearnedPose, 64> s_learned{};
         std::size_t s_learnedNext{ 0 };
+        std::array<LearnedFamily, 64> s_families{};
+        std::size_t s_familyNext{ 0 };
         std::array<Slot, rock::api::kMaxWeaponSlots> s_slots{};
         PoseRead s_read{};
         bolt_stroke::Recorder s_strokeRecorder{};
@@ -211,6 +226,28 @@ namespace paper::bolt_hold
             entry->form = form;
             entry->pose = pose;
             entry->strokeRead = strokeRead;
+        }
+
+        [[nodiscard]] const LearnedFamily* findFamily(const std::uint32_t form)
+        {
+            for (const auto& entry : s_families) {
+                if (entry.form == form && form != 0) {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
+
+        void storeFamily(const std::uint32_t form, const bool holdsOpen)
+        {
+            for (auto& entry : s_families) {
+                if (entry.form == form) {
+                    entry.holdsOpen = holdsOpen;
+                    return;
+                }
+            }
+            s_families[s_familyNext] = LearnedFamily{ .form = form, .holdsOpen = holdsOpen };
+            s_familyNext = (s_familyNext + 1) % s_families.size();
         }
 
         [[nodiscard]] bool outranks(const PoseSource source, const float travel, const OpenPose& pose)
@@ -568,6 +605,29 @@ namespace paper::bolt_hold
             });
         }
 
+        // Keys the action's bones from the copied sources and counts the parts beside
+        // the bolt. A name on two nodes is ambiguous, and an ambiguous bone is not used.
+        std::uint32_t matchBones(Slot& slot, std::array<std::uint32_t, kBoneCount>& matches)
+        {
+            for (const auto& source : s_sources) {
+                for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
+                    if (std::string_view{ policy::kActionBoneNames[bone] } == source.name) {
+                        slot.bones[bone].key = source.sourceKey;
+                        ++matches[bone];
+                    }
+                }
+            }
+            std::uint32_t parts = 0;
+            for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
+                if (matches[bone] != 1) {
+                    slot.bones[bone].key = 0;
+                } else if (bone != policy::kBoltBone) {
+                    ++parts;
+                }
+            }
+            return parts;
+        }
+
         // Finds the bones by name and decides the family. False tries again next
         // frame, for as long as the weapon stays equipped.
         [[nodiscard]] bool resolve(
@@ -610,28 +670,32 @@ namespace paper::bolt_hold
             const bool rifleAlready = manualBoltEnabled && index == 0 && !evidenceCount &&
                 policy::familyIsBoltAction(weapon_classification::classifyWeaponFamilyFlags(slot.form, classification, {})) &&
                 !sourcesCouldBeAnotherAction();
-            if (!evidenceCount && !rifleAlready && ++slot.evidenceWaitFrames < kEvidenceWaitFrames) {
-                return false;
+            if (!evidenceCount && !rifleAlready) {
+                // The colliders take about a third of a second, and until they came the
+                // bolt of a gun drawn empty sat closed. A form whose parts decided its
+                // family before holds on that at once; these parts decide again when they
+                // arrive, since that re-keys the weapon.
+                const auto* known = findFamily(slot.form);
+                if (known && !slot.provisional) {
+                    std::array<std::uint32_t, kBoneCount> matches{};
+                    (void)matchBones(slot, matches);
+                    slot.eligible = slot.bones[policy::kBoltBone].key != 0 && known->holdsOpen;
+                    slot.provisional = true;
+                    PAPER_LOG_INFO(
+                        Reload,
+                        "BOLT_HOLD weapon={:08X}/{:016X} slot={} holds on its last family until its parts arrive eligible={}",
+                        slot.form,
+                        slot.generation,
+                        index,
+                        slot.eligible);
+                }
+                if (++slot.evidenceWaitFrames < kEvidenceWaitFrames) {
+                    return false;
+                }
             }
 
-            // A name on two nodes is ambiguous, and an ambiguous bone is not used.
             std::array<std::uint32_t, kBoneCount> matches{};
-            for (const auto& source : s_sources) {
-                for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
-                    if (std::string_view{ policy::kActionBoneNames[bone] } == source.name) {
-                        slot.bones[bone].key = source.sourceKey;
-                        ++matches[bone];
-                    }
-                }
-            }
-            std::uint32_t parts = 0;
-            for (std::size_t bone = 0; bone < kBoneCount; ++bone) {
-                if (matches[bone] != 1) {
-                    slot.bones[bone].key = 0;
-                } else if (bone != policy::kBoltBone) {
-                    ++parts;
-                }
-            }
+            const std::uint32_t parts = matchBones(slot, matches);
 
             const auto family = weapon_classification::classifyWeaponFamilyFlags(
                 slot.form,
@@ -639,6 +703,8 @@ namespace paper::bolt_hold
                 std::span(s_evidence).first(evidenceCount));
             slot.eligible = slot.bones[policy::kBoltBone].key != 0 && policy::familyHoldsOpen(family);
             slot.boltAction = policy::familyIsBoltAction(family);
+            slot.provisional = false;
+            storeFamily(slot.form, policy::familyHoldsOpen(family));
             PAPER_LOG_INFO(
                 Reload,
                 "BOLT_HOLD weapon={:08X}/{:016X} slot={} boltMatches={} parts={} evidence={} family={:#x} eligible={} boltAction={}",
@@ -713,10 +779,17 @@ namespace paper::bolt_hold
             }
             if (key != slot.generation || state.weaponFormId != slot.form) {
                 // ROCK re-keys a weapon when its colliders arrive or rebuild. Clips belong
-                // to the form, so a read of them carries on across that.
-                if (state.weaponFormId == slot.form) {
-                    endHold(rock, index, slot);
-                    slot = {};
+                // to the form, so a read of them carries on across that. So does a hold:
+                // source keys stay valid and ROCK carries the drive over, and ending it
+                // here showed the bolt closed until the parts were read again. The parts
+                // decide the family again, and the rounds decide the hold outright, in
+                // case this is another gun of the same form.
+                if (state.weaponFormId == slot.form && slot.form != 0) {
+                    slot.provisional = slot.eligible;
+                    slot.resolved = false;
+                    slot.evidenceWaitFrames = 0;
+                    slot.arrivalDecided = false;
+                    slot.driveRefusalLogged = false;
                 } else {
                     forgetWeapon(rock, index, slot);
                 }
@@ -725,11 +798,12 @@ namespace paper::bolt_hold
             }
             if (!slot.resolved) {
                 slot.resolved = resolve(rock, index, slot, input.manualBoltEnabled);
-                if (!slot.resolved) {
+                if (!slot.resolved && !slot.provisional) {
                     return;
                 }
             }
             if (!slot.eligible) {
+                endHold(rock, index, slot);
                 return;
             }
             if (!readBones(rock, index, slot)) {
@@ -743,9 +817,17 @@ namespace paper::bolt_hold
 
             const auto* learned = findLearned(slot.form);
             const bool hasPose = learned && learned->pose.source != PoseSource::None;
-            const bool hold = input.enabled && hasPose && hasFlag(state.flags, WeaponStateFlag::AmmoKnown) &&
-                state.loadedRounds == 0 && !reloading && !(index == 0 && input.physicalReloadActive);
-            const float weight = policy::advanceHoldWeight(slot.weight, hold, input.deltaSeconds, input.closeSeconds);
+            const bool ammoKnown = hasFlag(state.flags, WeaponStateFlag::AmmoKnown);
+            const bool hold = input.enabled && hasPose && ammoKnown && state.loadedRounds == 0 && !reloading &&
+                !(index == 0 && input.physicalReloadActive);
+            // A gun put away empty is drawn with its action open: it does not open in
+            // the hand.
+            float from = slot.weight;
+            if (!slot.arrivalDecided && hasPose && ammoKnown) {
+                slot.arrivalDecided = true;
+                from = hold ? 1.0f : 0.0f;
+            }
+            const float weight = policy::advanceHoldWeight(from, hold, input.deltaSeconds, input.closeSeconds);
             if (hold != slot.holding) {
                 slot.holding = hold;
                 PAPER_LOG_INFO(
