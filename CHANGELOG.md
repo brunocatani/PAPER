@@ -1,10 +1,10 @@
 # Changelog
 
-## Unreleased
+## 2.0.0
 
 ### Requirements
 
-- PAPER now runs on ROCK 1.0 and binds ROCK's provider API 2.0 (Core, Hands, Grab, Weapon, WeaponParts and Animation). ROCK 0.92 and earlier are no longer supported; with them PAPER logs why and animates nothing.
+- PAPER now runs on ROCK 1.0.0 and binds ROCK's provider API 2.0 (Core, Hands, Grab, Weapon, WeaponParts and Animation). ROCK 0.92 and earlier are no longer supported; with them PAPER logs why and animates nothing.
 - Diagnostic drawing goes through RPS UI Framework, which is optional and needed only for that drawing.
 
 ### Changed
