@@ -31,6 +31,7 @@
 
 ### Fixed
 
+- A gun put away empty is drawn with its bolt or slide already open. It used to show closed for about a third of a second after every equip and then open again.
 - Missing native node remaps of weapon attachments are repaired.
 - PAPER's hooks chain behind another plugin's patch of the same game code instead of refusing to install.
 - The game closes normally on exit; PAPER no longer raises R6025 during shutdown.
