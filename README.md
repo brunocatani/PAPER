@@ -28,10 +28,10 @@ What it provides:
 - **Animated reloads** - the player's hands follow the weapon's reload sequence.
 - **Weapon cycling** - bolt actions, lever actions and revolver hammer cocking.
 - **Controller-directed handling** - the weapon stays in your hand while the hands animate around it.
-- **Optional manual reloads** - turn off automatic reloads when the magazine runs empty.
-- **Bolt hold-open** - an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
-- **Round in the chamber** - optional: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
-- **Hand-worked bolts** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want.
+- **Manual reloads** - on by default: an empty gun waits for you to reload it, and each trigger pull on it plays a dry-fire click.
+- **Bolt hold-open** - on by default: an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
+- **Round in the chamber** - on by default: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
+- **Bolt Appreciation** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want. The bolt throws out spent cases, and a live round you cycle out is a real round you can pick up.
 - **Live settings** - TOML settings that reload while the game runs, with an in-game page in RPS UI Framework's settings menu.
 - **Provider API** - 2 interfaces: runtime, animation and hand-pose data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
@@ -43,8 +43,8 @@ PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocata
 
 - Fallout 4 VR `1.2.72.0` and [F4SEVR](https://f4se.silverlock.org/).
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
-- [ROCK](https://www.nexusmods.com/fallout4/mods/108881) 1.0 with its requirements, including [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer with FRIK API 2.3. PAPER binds ROCK's provider API 2.0; if ROCK is missing or older, PAPER logs why and animates nothing.
-- Optional: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951), only for PAPER's diagnostic drawing.
+- [ROCK](https://www.nexusmods.com/fallout4/mods/108881) 1.0 with its requirements, including [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer with FRIK API 2.3. PAPER binds ROCK's provider API 2.0; without ROCK, PAPER logs why and animates nothing, and an older ROCK stops the game at the main menu (see [Compatibility](#compatibility)).
+- Optional: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951), for PAPER's page in its settings menu (also opened from RobCo PALM's Config) and PAPER's diagnostic drawing.
 
 The PAPER 1.2 download on Nexus Mods is built for ROCK 0.92. This README describes current source.
 
@@ -59,8 +59,9 @@ Install the archive from [Nexus Mods](https://www.nexusmods.com/fallout4/mods/10
 - **Tactical Reload** - PAPER coordinates with it when `TacticalReload.esm` is loaded.
 - **Merged Root Behavior** - when the merged behavior graph has no reserve reload animation for the equipped weapon, PAPER plays that graph's normal reload instead, with the game's own timing and ammo count.
 - **Weapons with a FRIK weapon offset** - when ROCK seats a weapon from your FRIK weapon offset, PAPER leaves its reloads and cycles to the game.
+- **Dual wielding and a weapon in the left firing hand** - PAPER leaves the hands to the game's own reload and cycle; the bolt hold-open and the round in the chamber still work in either hand.
 - **Mods built against PAPER's pre-2.0 API** (`PAPERApi.h`) stop the game: at the main menu an error box names each one, and the game closes when the box is closed. Update or remove them; they work again once rebuilt against the headers in [include/PAPER/](include/PAPER/).
-- **An older ROCK** stops the game the same way: PAPER needs the ROCK it was built for, and the error box says so.
+- **An older ROCK** stops the game the same way: PAPER needs the ROCK it was built for, and the error box says so. So does an RPS UI Framework older than PAPER supports.
 
 ## Configuration
 

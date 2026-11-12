@@ -4,8 +4,8 @@
 
 ### Requirements
 
-- PAPER now runs on ROCK 1.0.0 and binds ROCK's provider API 2.0 (Core, Hands, Grab, Weapon, WeaponParts and Animation). ROCK 0.92 and earlier are no longer supported; with them PAPER logs why and animates nothing.
-- Diagnostic drawing goes through RPS UI Framework, which is optional and needed only for that drawing.
+- PAPER now runs on ROCK 1.0.0 and binds ROCK's provider API 2.0 (Core, Hands, Grab, Weapon, WeaponParts and Animation). ROCK 0.92 and earlier are no longer supported: with one of them the game stops at the main menu with an error box naming the mismatch. Without ROCK, PAPER logs why and animates nothing.
+- PAPER's in-game settings page and diagnostic drawing go through RPS UI Framework, which is optional. An RPS UI Framework older than PAPER supports stops the game at the main menu the same way.
 
 ### Changed
 
@@ -15,6 +15,7 @@
 - PAPER takes the hands only for a native reload or cycle action; firing alone no longer does.
 - Two copies of the same weapon equipped in both hands are now recognized as dual wielding.
 - During a cycle the left hand follows the animation only when the clip works the weapon with it; otherwise it stays where ROCK puts it. A reload always plays both hands.
+- The Tactical Reload bridge and the Merged Root Behavior reserve-reload recovery keep working for weapons whose hands PAPER leaves to the game.
 - `[Reload] ManualReloadOnly` and `ChamberRound` are on by default. An upgraded `PAPER.ini` that left them off, their old default, takes the new default.
 
 ### Added
@@ -33,6 +34,7 @@
 ### Fixed
 
 - A gun put away empty is drawn with its bolt or slide already open. It used to show closed for about a third of a second after every equip and then open again.
+- A long reload keeps its hand animation until the reload ends; the hands used to let go after 600 frames.
 - Missing native node remaps of weapon attachments are repaired.
 - PAPER's hooks chain behind another plugin's patch of the same game code instead of refusing to install.
 - The game closes normally on exit; PAPER no longer raises R6025 during shutdown.
@@ -45,4 +47,4 @@
 ### For mod authors
 
 - PAPER's provider API is now 2.0, published in this repository's `include/PAPER/` with one page per interface in `docs/api/`: `Provider` (16 calls) and `PhysicalReload` (3 calls), discovered through `PAPERAPI_QueryInterfaceV1`. `paper::api::Client` registers an owner and acquires each interface.
-- Mods built against the pre-2.0 API (`PAPERApi.h`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) are refused with a logged reason and must be rebuilt against the new headers.
+- Mods built against the pre-2.0 API (`PAPERApi.h`, `PAPERAPI_QueryPhysicalReloadV1/V2/V3`) are refused with a logged reason, and the game stops at the main menu with an error box naming each one; they must be rebuilt against the new headers.
