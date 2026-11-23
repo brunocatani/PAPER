@@ -23,7 +23,7 @@ namespace paper::bolt_hold
         bool manualBoltEnabled{ false };
         // The player's graph is in a reload, which is slot 0's reload.
         bool playerReloadActive{ false };
-        // A PhysicalReload consumer owns slot 0's bolt.
+        // A PhysicalReload consumer owns slot 0's action.
         bool physicalReloadActive{ false };
     };
 

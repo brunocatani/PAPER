@@ -20,7 +20,7 @@ namespace paper::manual_bolt
         // The rifles PAPER animates the cycle of are the rifles this feature serves.
         bool cycleAllowed{ false };
         bool playerReloadActive{ false };
-        // A PhysicalReload consumer owns the bolt.
+        // A PhysicalReload consumer owns slot 0's gun.
         bool physicalReloadActive{ false };
         float handBlendSeconds{ 0.15f };
         float deltaSeconds{ 0.0f };
@@ -72,6 +72,11 @@ namespace paper::manual_bolt
      * is set after equip and never above what the inventory holds: loaded rounds
      * are counted in the inventory, so nothing is created. A live round the bolt
      * throws out becomes a real round in the world and leaves the inventory.
+     *
+     * A PhysicalReload lease hands the gun in slot 0 to its consumer outright:
+     * rounds, chamber and action. PAPER forgets the gun and the rounds it saved for
+     * that item, so nothing of PAPER's resumes over the consumer's state. A gun the
+     * consumer gives back while equipped starts again from the game's count.
      *
      * Runs once a frame in ROCK's BeforeRock phase on its frame thread, which owns
      * everything here except the saved table, which also has F4SE's save and load

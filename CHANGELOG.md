@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- A gun a physical-reload mod has taken over is wholly that mod's. PAPER no longer puts back the rounds it saved for that gun when the takeover pauses, as it did in menus, and no longer opens its empty action or keeps its chamber meanwhile.
+
 ## 2.0.1
 
 ### Changed

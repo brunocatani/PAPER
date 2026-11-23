@@ -29,6 +29,16 @@ gone. Every call runs on the game thread and takes a Provider owner token.
 - `read(owner, state)` needs `RuntimeState`. `active` 0 means no live lease
   and every other field is zero.
 
+## While the lease is live
+
+The leased weapon is yours. PAPER starts no automatic or native reload for it
+and animates none, holds no empty action open, and keeps no round count or
+chamber for it. It also drops the rounds and chamber it saved for that item,
+so nothing of its own resumes over your state when the lease ends. Give the
+weapon back while it is still equipped and PAPER starts again from the game's
+loaded count. Renew the lease for as long as you own the weapon, through menus
+too: a gap of even one frame hands the weapon back.
+
 ## Flags
 
 `Flag::ManualCycle`: you own bolt cycling, chambering, casing ejection and

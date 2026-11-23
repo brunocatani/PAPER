@@ -60,7 +60,7 @@ Tests live in `build-fast` but outside the default build. Every test target name
 
 - **Weapon placement, hands and grips** belong to ROCK. PAPER reads ROCK's presented hands and grip baselines and requests native-animation and hand-visual authority through ROCK's Animation interface; ROCK keeps the weapon following the controller.
 - **Ammunition, firing and the reload clock** belong to the game. PAPER coordinates the animation around them; only `[Reload] ChamberRound` and `[BoltAppreciation] BoltAppreciation` set a gun's loaded count, and always within what the inventory holds.
-- **Physical reloads** belong to the consumer holding a PhysicalReload lease: while the lease is live PAPER leaves that weapon's reload, and with `ManualCycle` its bolt cycle, to the consumer.
+- **Physical reloads** belong to the consumer holding a PhysicalReload lease: while the lease is live PAPER leaves that weapon's reload, and with `ManualCycle` its bolt cycle, to the consumer. The leased gun in slot 0 is the consumer's outright: the chamber, the rounds and the empty-gun hold let go of it, and PAPER drops the rounds it saved for that item, so a gun given back while equipped starts again from the game's count.
 - **World drawing** belongs to RPS UI Framework. PAPER's diagnostic drawing goes through its world drawing; PAPER has no renderer.
 
 ## Invariants

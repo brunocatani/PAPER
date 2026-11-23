@@ -100,6 +100,8 @@ namespace paper::manual_bolt
             std::uint32_t form{ 0 };
             std::uint32_t savedGeneration{ 0 };
             bool tracked{ false };
+            // A PhysicalReload consumer owns the gun in slot 0: PAPER holds nothing of it.
+            bool yielded{ false };
             // A bolt-action rifle a hand can work, only ever on slot 0. Every other gun
             // here fires cartridges and cycles itself.
             bool boltRifle{ false };
@@ -487,6 +489,12 @@ namespace paper::manual_bolt
                 s_saved.erase(s_saved.begin());
             }
             s_saved.push_back(gun.item);
+        }
+
+        [[nodiscard]] bool eraseSaved(const SavedItem& key)
+        {
+            std::scoped_lock lock(s_savedMutex);
+            return std::erase_if(s_saved, [&](const SavedItem& entry) { return sameItem(entry, key); }) != 0;
         }
 
         void identify(Gun& gun, const rock::api::weapon::WeaponState& state)
@@ -977,6 +985,31 @@ namespace paper::manual_bolt
             gun.gripHeld = false;
         }
 
+        // A PhysicalReload consumer owns the gun in slot 0 outright: its rounds, its
+        // chamber and its action. PAPER lets go of everything it holds for it and drops
+        // what it saved for the item, which the consumer's own state replaces. A gun the
+        // consumer gives back while still equipped starts again from the game's count,
+        // which is continuous across the handover.
+        void yieldGun(RockApiClient& rock, Gun& gun, const std::uint32_t form)
+        {
+            if (gun.yielded && gun.form == form) {
+                return;
+            }
+            forget(rock, gun);
+            gun.form = form;
+            gun.yielded = true;
+            checkNatives();
+            const auto item = equippedItemIdentity(gun);
+            const bool dropped = item.unique && eraseSaved(item);
+            PAPER_LOG_INFO(
+                Reload,
+                "CHAMBER yields slot={} weapon={:08X} to a physical reload: unique={} savedDropped={}",
+                gun.slot,
+                form,
+                item.unique,
+                dropped);
+        }
+
         void updateGun(RockApiClient& rock, const FrameInput& input, Gun& gun)
         {
             rock::api::weapon::WeaponState state{};
@@ -985,9 +1018,13 @@ namespace paper::manual_bolt
             const bool present = (input.chamberEnabled || boltAllowed) && rock.queryWeaponState(gun.slot, state) &&
                 (state.flags & static_cast<std::uint32_t>(WeaponStateFlag::WeaponEquipped)) != 0 && key != 0;
             if (!present) {
-                if (gun.generation) {
+                if (gun.generation || gun.yielded) {
                     forget(rock, gun);
                 }
+                return;
+            }
+            if (gun.slot == 0 && input.physicalReloadActive) {
+                yieldGun(rock, gun, state.weaponFormId);
                 return;
             }
             checkNatives();
@@ -1047,7 +1084,6 @@ namespace paper::manual_bolt
             // The rounds and the hand on the bolt both wait for these.
             const char* roundsWaitFor = !ammoKnown ? "ammo unknown" :
                 !drawn ? "weapon not drawn" :
-                gun.slot == 0 && input.physicalReloadActive ? "a physical reload owns the weapon" :
                 firingHand != Hand::Left && firingHand != Hand::Right ? "no firing hand" :
                 nullptr;
             // The hand also waits for this one, while the game cycles the gun.

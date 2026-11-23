@@ -796,6 +796,13 @@ namespace paper::bolt_hold
                 slot.generation = key;
                 slot.form = state.weaponFormId;
             }
+            // A PhysicalReload consumer owns slot 0's action and shows it as it left it.
+            // The hold lets go at once, and whoever has the gun next decides its arrival.
+            if (index == 0 && input.physicalReloadActive) {
+                endHold(rock, index, slot);
+                slot.arrivalDecided = false;
+                return;
+            }
             if (!slot.resolved) {
                 slot.resolved = resolve(rock, index, slot, input.manualBoltEnabled);
                 if (!slot.resolved && !slot.provisional) {
@@ -818,8 +825,7 @@ namespace paper::bolt_hold
             const auto* learned = findLearned(slot.form);
             const bool hasPose = learned && learned->pose.source != PoseSource::None;
             const bool ammoKnown = hasFlag(state.flags, WeaponStateFlag::AmmoKnown);
-            const bool hold = input.enabled && hasPose && ammoKnown && state.loadedRounds == 0 && !reloading &&
-                !(index == 0 && input.physicalReloadActive);
+            const bool hold = input.enabled && hasPose && ammoKnown && state.loadedRounds == 0 && !reloading;
             // A gun put away empty is drawn with its action open: it does not open in
             // the hand.
             float from = slot.weight;
