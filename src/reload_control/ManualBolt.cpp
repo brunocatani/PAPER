@@ -16,6 +16,7 @@
 #include <F4SE/Interfaces.h>
 
 #include <Windows.h>
+#include <RPS/Runtime/HookChain.h>
 
 #include <algorithm>
 #include <array>
@@ -205,19 +206,19 @@ namespace paper::manual_bolt
         }
 
         // The eject function's entry belongs to ROCK's casing hook, so its one
-        // native caller is what identifies it.
+        // native caller is what identifies it. DIAMOND routes that call for its
+        // manual bolts; PAPER only reads it, so a chained call is as good.
         [[nodiscard]] bool casingCallReady()
         {
             const auto base = REL::Module::get().base();
             const auto site = base + offsets::kCallsite_EjectShellCasingHandler;
             const auto* bytes = reinterpret_cast<const std::uint8_t*>(site);
             constexpr std::array<std::uint8_t, 11> kSetup{ 0x48, 0x8D, 0x54, 0x24, 0x28, 0x44, 0x8B, 0xC3, 0x48, 0x8B, 0xCD };
-            std::int32_t relative = 0;
-            std::memcpy(&relative, bytes + 1, sizeof(relative));
-            const bool match = bytes[0] == 0xE8 && site + 5 + relative == base + offsets::kFunc_EjectShellCasing &&
+            const bool match =
+                static_cast<bool>(RPS::Runtime::HookChain::resolveCall(site, base + offsets::kFunc_EjectShellCasing)) &&
                 std::memcmp(bytes - kSetup.size(), kSetup.data(), kSetup.size()) == 0;
             if (!match) {
-                PAPER_LOG_WARN(Reload, "MANUAL_BOLT no casing from the bolt: the native eject call differs or another plugin routed it");
+                PAPER_LOG_WARN(Reload, "MANUAL_BOLT no casing from the bolt: the native eject call differs");
             }
             return match;
         }
