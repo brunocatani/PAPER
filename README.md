@@ -43,7 +43,7 @@ PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocata
 
 - Fallout 4 VR `1.2.72.0` and [F4SEVR](https://f4se.silverlock.org/).
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
-- [ROCK](https://www.nexusmods.com/fallout4/mods/108881) 1.0 with its requirements, including [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer with FRIK API 2.3. PAPER binds ROCK's provider API 2.0; without ROCK, PAPER logs why and animates nothing, and with an older ROCK it names the mismatch in `PAPER.log` and animates nothing (see [Compatibility](#compatibility)).
+- [ROCK](https://www.nexusmods.com/fallout4/mods/108881) 1.0.4 or newer with its requirements, including [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer with FRIK API 2.3. PAPER binds ROCK's provider API 2.0; without ROCK, PAPER logs why and animates nothing, and with an older ROCK it names the mismatch in `PAPER.log` and animates nothing (see [Compatibility](#compatibility)).
 - Recommended: [Mods Config FO4 VR](https://www.nexusmods.com/games/fallout4/mods/110945), the in-game menu with PAPER's settings page; without it, edit `PAPER.toml` by hand.
 - Optional: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951), for PAPER's diagnostic drawing.
 

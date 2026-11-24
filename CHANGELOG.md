@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## 2.0.2
+
+### Requirements
+
+- PAPER needs ROCK 1.0.4 or newer. With an older ROCK it stays idle and names the mismatch in `PAPER.log`.
 
 ### Changed
 
 - **PAPER's settings move to Mods Config FO4 VR.** PAPER's page there edits `PAPER.toml`, and each change shows in the game as you make it, before you save; Discard, or closing the menu without saving, puts the saved values back. RPS UI Framework's settings menu (RobCo PALM's Config) no longer has a PAPER page. Without Mods Config FO4 VR, edit `PAPER.toml` by hand as before; it still reloads while the game runs.
-
-## 2.0.2
 
 ### Fixed
 
