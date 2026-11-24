@@ -155,10 +155,16 @@ namespace paper::bolt_hold_policy
         const auto has = [familyFlags](const weapon_classification_policy::WeaponFamilyFlag flag) {
             return (familyFlags & static_cast<std::uint64_t>(flag)) != 0;
         };
+        // The following line is to classify pump action shotguns that do not recieve the PumpAction WeaponFamilyFlag. 
+        // This can occur with modded weapons like DegenerateDak's "Hunting Shotgun - A New Vegas Classic - Remington 870"
+        const bool manualShotgun = has(weapon_classification_policy::WeaponFamilyFlag::Shotgun) &&
+                                   has(weapon_classification_policy::WeaponFamilyFlag::BoltAction);
         return !has(weapon_classification_policy::WeaponFamilyFlag::Revolver) && !has(weapon_classification_policy::WeaponFamilyFlag::BreakAction) &&
-               !has(weapon_classification_policy::WeaponFamilyFlag::Minigun);
+               !has(weapon_classification_policy::WeaponFamilyFlag::Minigun) &&
+               !has(weapon_classification_policy::WeaponFamilyFlag::LeverAction) && // For Far Harbor's Lever Action Rifle
+               !has(weapon_classification_policy::WeaponFamilyFlag::PumpAction) &&
+               !manualShotgun;
     }
-
     // Opens at the bolt's own speed; closes over the configured blend, or at
     // once when that is 0.
     [[nodiscard]] constexpr float advanceHoldWeight(
