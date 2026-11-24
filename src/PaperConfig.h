@@ -12,10 +12,10 @@ namespace paper
     // Threads: the game's main thread runs reload() (F4SE messages) and every
     // preview call, the read after a Save included (Mods Config calls only
     // there); the watcher thread reads the file after it changes on disk. Both
-    // build a new PaperConfig under one mutex
-    // and publish it as the pending config; the frame thread (ROCK's BeforeRock
-    // phase, also the main thread) takes it in processPendingReload, the only
-    // place g_config changes after a load. Previews never write a file.
+    // build a new PaperConfig under one mutex and publish it as the pending
+    // config; the frame thread (ROCK's BeforeRock phase, also the main thread)
+    // takes it in processPendingReload, the only place g_config changes after
+    // a load. Previews never write a file.
     struct PaperConfig
     {
         bool manualReloadOnly{ true };
