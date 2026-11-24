@@ -1,0 +1,193 @@
+{
+  "minSchemaVersion": 1,
+  "modName": "PAPER",
+  "displayName": "PAPER",
+  "help": "Reload and weapon-cycling animations on your hands: manual reloads, the slide held open on empty, a round in the chamber and working a bolt by hand.",
+  "category": "VR",
+  "specVersion": 1,
+  "f4sePluginRequirements": ["PAPER"],
+  "files": {
+    "config": { "format": "toml", "root": "myGames", "path": "Mods_Config/PAPER/PAPER.toml" }
+  },
+  "defaultFile": "config",
+  "applies": "live",
+  "content": [
+    {
+      "type": "text",
+      "text": "<font color='#AAAAAA' size=13>Version: {clientState:modVersion}</font>",
+      "html": true
+    },
+    {
+      "type": "section",
+      "text": "About",
+      "content": [
+        {
+          "type": "text",
+          "text": "PAPER - Propper Active Precision Engineered Reloads - brings back reload and weapon-cycling animations in Fallout 4 VR. Your arms, hands and fingers follow the weapon's own animation while ROCK keeps the weapon in your hand."
+        },
+        {
+          "type": "button",
+          "text": "PAPER on GitHub",
+          "help": "Opens PAPER's page in your browser, with its settings and compatibility notes. Take off the headset to read it on your monitor.",
+          "buttonText": "Open",
+          "action": { "type": "OpenURL", "url": "https://github.com/brunocatani/PAPER#readme" }
+        }
+      ]
+    },
+    { "type": "spacer" },
+    {
+      "type": "section",
+      "text": "Logging",
+      "isCollapsible": true,
+      "collapsed": true,
+      "content": [
+        {
+          "type": "dropdown",
+          "valueType": "int",
+          "text": "Log Level",
+          "help": "How much PAPER writes to PAPER.log in Documents\\My Games\\Fallout4VR\\F4SE. This does not turn on debug drawing.",
+          "default": 2,
+          "valueOptions": {
+            "options": [
+              { "value": 0, "text": "Trace", "help": "Writes much more than Info." },
+              { "value": 1, "text": "Debug", "help": "Writes more than Info." },
+              { "value": 2, "text": "Info", "help": "For normal play: startup, hook checks and reload diagnostics." },
+              { "value": 3, "text": "Warning" },
+              { "value": 4, "text": "Error" },
+              { "value": 5, "text": "Critical" },
+              { "value": 6, "text": "Off", "help": "No log." }
+            ]
+          },
+          "storage": { "path": ["Main", "LogLevel"] }
+        }
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "pageDisplayName": "Reload",
+      "help": "Manual reloads, the slide held open on an empty gun, the round in the chamber and how fast the hand and the slide move.",
+      "content": [
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "text": "Manual Reload Only",
+          "help": "An empty gun does not reload by itself, whether the reload would start at once, after a delay or after a shot; you reload it. Manual input, ROCK's reload, Tactical Reload and resuming a reload work either way. Each trigger pull on an empty gun with rounds to load plays one dry-fire click, except on a charging-reload gun such as the laser musket. Off: the game reloads by itself as usual.",
+          "default": true,
+          "storage": { "path": ["Reload", "ManualReloadOnly"] }
+        },
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "text": "Slide Open on Empty",
+          "help": "When a gun runs empty, its slide or bolt locks back and stays open, in either hand, until a reload starts or rounds arrive, with the parts that move with it such as a tilting barrel. Works with Manual Reload Only: without it the game reloads an empty gun by itself, which closes it again. The open position comes from the gun's own animations, read the first time it is equipped each session, so a gun whose animations never open its slide or bolt stays closed. Bolt, lever, pump and double-barrel guns and revolvers are not affected. Off: the slide and bolt follow the animation.",
+          "default": true,
+          "storage": { "path": ["Reload", "SlideOpenOnEmpty"] }
+        },
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "text": "Round in the Chamber",
+          "help": "Every gun that fires cartridges keeps a round in the chamber, in either hand: pistols, rifles, shotguns and machine guns. A round in the chamber when you reload stays there on top of the full magazine, as far as your reserve goes, except on revolvers, double-barrels and miniguns. Each gun keeps its rounds and chamber when you unequip it and in your saves, unless it sits in a stack of identical guns. The ammo counter shows a cartridge for the chamber: solid with a round in it, dim without. Energy weapons, the Gauss rifle, launchers and other guns with no case to throw out are left alone, and so is a gun a weapon mod has changed to such ammo. Off: the game's own magazine count.",
+          "default": true,
+          "storage": { "path": ["Reload", "ChamberRound"] }
+        },
+        {
+          "type": "section",
+          "text": "Timing",
+          "content": [
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Hand Blend Time",
+              "help": "How long the left hand takes to move from your controller or grip onto the animation when a reload, pump stroke or cycle takes it, and back when that ends. 0 moves it instantly.",
+              "default": 0.15,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "display": { "unit": "s" },
+              "storage": { "path": ["Reload", "HandBlendSeconds"] }
+            },
+            {
+              "type": "slider",
+              "valueType": "float",
+              "text": "Slide Close Time",
+              "help": "How long an open slide or bolt takes to close when a reload starts. 0 closes it instantly.",
+              "default": 0.15,
+              "valueOptions": { "min": 0.0, "max": 1.0, "step": 0.01 },
+              "display": { "unit": "s" },
+              "storage": { "path": ["Reload", "SlideCloseSeconds"] }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Bolt Appreciation",
+      "help": "Working the bolt of a bolt-action rifle by hand after each shot.",
+      "content": [
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "id": "boltAppreciation",
+          "text": "Bolt Appreciation",
+          "help": "Work the bolt of a bolt-action rifle by hand after each shot. Use the hand the rifle's own cycle animation uses, usually the firing hand: hold the gun with your other hand, let go of the firing grip and grip the bolt where the small white marker shows. That hand takes the bolt the way the animation does from the moment the rifle is drawn; your other hand can take it too, once the weapon's collision is built. Pull it all the way back to throw out the case and push it home to chamber the next round. The trigger does nothing until you have, and clicks if you pull it. The reload stays as it was. These rifles keep a chamber whatever Round in the Chamber says. A rifle whose cycle animation shows no hand on the bolt keeps its usual cycle. Lever guns, pumps and revolvers are not affected. Off: the rifle cycles by itself.",
+          "default": false,
+          "storage": { "path": ["BoltAppreciation", "BoltAppreciation"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Bolt Pull Distance",
+          "help": "The length of a full bolt pull in game units, the same on every rifle; 7 is about 9 cm. Moving your hand past half of it takes the bolt all the way, at the speed of the rifle's own animation. Let go and the bolt stays where it is, open or closed.",
+          "default": 7.0,
+          "valueOptions": { "min": 2.0, "max": 30.0, "step": 0.5 },
+          "enabledWhen": { "setting": "boltAppreciation", "equals": true },
+          "storage": { "path": ["BoltAppreciation", "BoltPullDistance"] }
+        }
+      ]
+    },
+    {
+      "pageDisplayName": "Debug Drawing",
+      "help": "Diagnostic drawing of PAPER's animation targets through RPS UI Framework. Off for normal play.",
+      "content": [
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "id": "debugDrawNativeAnimation",
+          "text": "Draw Native Animation",
+          "help": "Draws PAPER's native weapon frame, native hand targets, ROCK's live grip targets, the applied FRIK hands and their target-error lines through RPS UI Framework's world drawing. Diagnostic only; off for normal play.",
+          "default": false,
+          "storage": { "path": ["Debug", "DebugDrawNativeAnimation"] }
+        },
+        {
+          "type": "switcher",
+          "valueType": "bool",
+          "text": "Native Animation Labels",
+          "help": "Adds short mode, capture and per-hand motion and error labels.",
+          "default": true,
+          "enabledWhen": { "setting": "debugDrawNativeAnimation", "equals": true },
+          "storage": { "path": ["Debug", "DebugDrawNativeAnimationText"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Axis Length",
+          "help": "Length of drawn transform axes in game units.",
+          "default": 5.0,
+          "valueOptions": { "min": 1.0, "max": 20.0, "step": 0.5 },
+          "enabledWhen": { "setting": "debugDrawNativeAnimation", "equals": true },
+          "storage": { "path": ["Debug", "DebugNativeAnimationAxisLength"] }
+        },
+        {
+          "type": "slider",
+          "valueType": "float",
+          "text": "Marker Size",
+          "help": "Size of drawn cross markers in game units.",
+          "default": 1.5,
+          "valueOptions": { "min": 0.25, "max": 5.0, "step": 0.05 },
+          "enabledWhen": { "setting": "debugDrawNativeAnimation", "equals": true },
+          "storage": { "path": ["Debug", "DebugNativeAnimationMarkerSize"] }
+        }
+      ]
+    }
+  ]
+}

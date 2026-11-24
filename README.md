@@ -32,7 +32,7 @@ What it provides:
 - **Bolt hold-open** - on by default: an empty gun's bolt or slide stays open until you reload, in either hand, at the position the gun's own animations show.
 - **Round in the chamber** - on by default: a gun that fires cartridges keeps a round in the chamber through a reload, shows it on the ammo counter, and keeps its rounds when you unequip it and in your saves.
 - **Bolt Appreciation** - optional: work the bolt of a bolt-action rifle with your hand after each shot, and leave it open if you want. The bolt throws out spent cases, and a live round you cycle out is a real round you can pick up.
-- **Live settings** - TOML settings that reload while the game runs, with an in-game page in RPS UI Framework's settings menu.
+- **Live settings** - TOML settings that reload while the game runs, edited in game on PAPER's page in Mods Config FO4 VR, which shows each change as you make it.
 - **Provider API** - 2 interfaces: runtime, animation and hand-pose data for other mods, and a lease that hands a reload to a mod that drives it with the player's hands.
 
 PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocatani/ROCK). Mods that make reloads physical take over from PAPER through its PhysicalReload interface.
@@ -44,7 +44,8 @@ PAPER is part of the RPS suite and builds on [ROCK](https://github.com/brunocata
 - Fallout 4 VR `1.2.72.0` and [F4SEVR](https://f4se.silverlock.org/).
 - [VR Address Library for F4SEVR](https://www.nexusmods.com/fallout4/mods/64879).
 - [ROCK](https://www.nexusmods.com/fallout4/mods/108881) 1.0 with its requirements, including [FRIK](https://www.nexusmods.com/fallout4/mods/53464) 0.79.1 or newer with FRIK API 2.3. PAPER binds ROCK's provider API 2.0; without ROCK, PAPER logs why and animates nothing, and with an older ROCK it names the mismatch in `PAPER.log` and animates nothing (see [Compatibility](#compatibility)).
-- Optional: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951), for PAPER's page in its settings menu (also opened from RobCo PALM's Config) and PAPER's diagnostic drawing.
+- Recommended: [Mods Config FO4 VR](https://www.nexusmods.com/games/fallout4/mods/110945), the in-game menu with PAPER's settings page; without it, edit `PAPER.toml` by hand.
+- Optional: [RPS UI Framework](https://www.nexusmods.com/fallout4/mods/108951), for PAPER's diagnostic drawing.
 
 PAPER 2.0 is released together with ROCK 1.0, RPS UI Framework 2.0 and RobCo PALM 2.0; update them together. PAPER 1.2 and earlier were built for ROCK 0.92.
 
@@ -71,7 +72,9 @@ PAPER reads one file under your Windows Documents folder:
 My Games/Fallout4VR/Mods_Config/PAPER/PAPER.toml
 ```
 
-PAPER creates the file from its compiled defaults when it is missing, and at every start adds options a new version brings, with their defaults. Each option has its help above it as `##` lines, which PAPER rewrites; your own notes on single-`#` lines above an option stay with it. An option PAPER no longer reads moves to a commented block at the end of the file. A value of the wrong type is logged with its line and that option keeps its last value. The file reloads while the game runs. Its page in RPS UI Framework's settings menu edits it in game.
+PAPER creates the file from its compiled defaults when it is missing, and at every start adds options a new version brings, with their defaults. Each option has its help above it as `##` lines, which PAPER rewrites; your own notes on single-`#` lines above an option stay with it. An option PAPER no longer reads moves to a commented block at the end of the file. A value of the wrong type is logged with its line and that option keeps its last value. The file reloads while the game runs.
+
+In game, open Mods Config FO4 VR and pick **PAPER**: its pages (Reload, Bolt Appreciation, Debug Drawing, and Log Level on the front page) edit `PAPER.toml`. Each change shows in the game as you make it; Save writes the file, and Discard or closing the menu without saving puts the saved values back.
 
 Upgrading from a PAPER that used `PAPER.ini`: the first start carries every option you changed into `PAPER.toml` and deletes `PAPER.ini` once `PAPER.toml` is written and read back. Nothing to do by hand.
 
@@ -192,7 +195,7 @@ cmake --build build-fast --config Release --target build_tests
 ctest --test-dir build-fast -C Release --output-on-failure
 ```
 
-They cover the public headers (each compiled on its own, plus the consumer example), discovery, the API layout, configuration files, reload policy, attachment bindings and the physical-reload lease.
+They cover the public headers (each compiled on its own, plus the consumer example), discovery, the API layout, configuration files, the Mods Config page against the settings, reload policy, attachment bindings and the physical-reload lease.
 
 ### Release package
 
@@ -203,7 +206,7 @@ cmake --preset custom-release
 cmake --build build-release --config Release --target PAPER
 ```
 
-This writes a release's two files to `build-release/package`: a `.zip` that installs as it is, holding only `F4SE/Plugins/PAPER.dll`, and this readme beside it. It publishes nothing.
+This writes a release's two files to `build-release/package`: a `.zip` that installs as it is, holding only `F4SE/Plugins/PAPER.dll` and PAPER's Mods Config page (`ModsConfigFO4/Config/PAPER/spec.json`), and this readme beside it. It publishes nothing.
 
 ### Source layout
 
@@ -217,6 +220,8 @@ This writes a release's two files to `build-release/package`: a `.zip` that inst
 | [src/animation_evidence](src/animation_evidence/) | The off-screen clip reader behind the bolt hold and the hand-action trace |
 | [src/weapon_classification](src/weapon_classification/) | Weapon family classification |
 | [src/api](src/api/) | Provider interface implementations and the ROCK client |
+| [src/mods_config](src/mods_config/) | PAPER's client of Mods Config FO4 VR: live preview of its page |
+| [data/mod](data/mod/) | Game data for the mod package: PAPER's Mods Config FO4 VR page |
 | [tests](tests/) | Tests and the consumer example |
 | [cmake](cmake/) | Version resource and release packaging |
 

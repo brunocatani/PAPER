@@ -125,15 +125,17 @@ target_link_options(${PROJECT_NAME} PRIVATE
 )
 string(REPLACE "/Ob2" "/Ob3" CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE}")
 
-option(POST_BUILD_COPY_PLUGIN "Copy only PAPER.dll and PAPER.pdb to a mod root." OFF)
+option(POST_BUILD_COPY_PLUGIN "Copy PAPER.dll, PAPER.pdb and the game data in data/mod to a mod root." OFF)
 set(COPY_PLUGIN_BASE_PATH "" CACHE STRING "Semicolon-separated mod roots containing F4SE/Plugins.")
 if(POST_BUILD_COPY_PLUGIN)
   if(COPY_PLUGIN_BASE_PATH STREQUAL "")
     message(FATAL_ERROR "COPY_PLUGIN_BASE_PATH is required when POST_BUILD_COPY_PLUGIN is enabled")
   endif()
   foreach(copy_path IN LISTS COPY_PLUGIN_BASE_PATH)
+    # data/mod holds game data only: PAPER's Mods Config FO4 VR page.
     add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E make_directory "${copy_path}/F4SE/Plugins"
+      COMMAND ${CMAKE_COMMAND} -E copy_directory "${ROOT_DIR}/data/mod" "${copy_path}"
       COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:${PROJECT_NAME}>" "${copy_path}/F4SE/Plugins/"
       COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_PDB_FILE:${PROJECT_NAME}>" "${copy_path}/F4SE/Plugins/"
       COMMENT "Deploying ${PROJECT_NAME} to '${copy_path}'"
@@ -251,6 +253,36 @@ if(BUILD_PAPER_TESTS)
   target_link_libraries(PAPERSettingsTests PRIVATE RPS::Settings)
   add_test(NAME PAPERSettingsTests COMMAND "$<TARGET_FILE:PAPERSettingsTests>"
     "${ROOT_DIR}/data/config")
+
+  # PAPER's Mods Config FO4 VR page against the settings catalog and loader.
+  find_package(nlohmann_json CONFIG REQUIRED)
+  add_executable(PAPERModsConfigSpecTests
+    "${ROOT_DIR}/tests/ModsConfigSpecTests.cpp"
+    "${SOURCE_DIR}/PaperSettings.cpp"
+  )
+  target_compile_features(PAPERModsConfigSpecTests PRIVATE cxx_std_23)
+  target_compile_definitions(PAPERModsConfigSpecTests PRIVATE
+    UNICODE
+    _UNICODE
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    PAPER_MODS_CONFIG_TEST_DIR="${BUILD_DIR}/mods-config-test"
+    PAPER_MODS_CONFIG_SPEC="${ROOT_DIR}/data/mod/ModsConfigFO4/Config/PAPER/spec.json"
+  )
+  target_compile_options(PAPERModsConfigSpecTests PRIVATE
+    /sdl
+    /utf-8
+    /permissive-
+    /Zc:__cplusplus
+    /Zc:preprocessor
+    /W4
+  )
+  target_include_directories(PAPERModsConfigSpecTests PRIVATE
+    "${BUILD_DIR}/include"
+    "${SOURCE_DIR}"
+  )
+  target_link_libraries(PAPERModsConfigSpecTests PRIVATE RPS::Settings nlohmann_json::nlohmann_json)
+  add_test(NAME PAPERModsConfigSpecTests COMMAND "$<TARGET_FILE:PAPERModsConfigSpecTests>")
 endif()
 
 # Tests share build-fast but stay out of the default build, so building and deploying the

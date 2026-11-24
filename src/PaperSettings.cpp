@@ -36,27 +36,37 @@ namespace paper::settings
         }
         std::string text(std::integral auto value) { return std::to_string(value); }
 
-        const std::string& valueOf(const RPS::Settings::Store& store, std::string_view table, std::string_view key)
+        // The store's values with the overrides laid over them.
+        struct Values
         {
-            const auto* setting = store.find(table, key);
+            const RPS::Settings::Store& store;
+            const RPS::Settings::LoadedValues& overrides;
+        };
+
+        const std::string& valueOf(const Values& values, std::string_view table, std::string_view key)
+        {
+            const auto* setting = values.store.find(table, key);
             if (!setting)
                 throw std::logic_error(std::format("PAPER setting {}.{} is not declared", table, key));
+            if (const auto found = values.overrides.find(RPS::Settings::settingPath(table, key));
+                found != values.overrides.end())
+                return found->second;
             return setting->value;
         }
-        bool boolean(const RPS::Settings::Store& store, std::string_view table, std::string_view key)
+        bool boolean(const Values& values, std::string_view table, std::string_view key)
         {
-            return valueOf(store, table, key) == "true";
+            return valueOf(values, table, key) == "true";
         }
-        float number(const RPS::Settings::Store& store, std::string_view table, std::string_view key, float fallback)
+        float number(const Values& values, std::string_view table, std::string_view key, float fallback)
         {
-            const auto& value = valueOf(store, table, key);
+            const auto& value = valueOf(values, table, key);
             float result = fallback;
             const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
             return parsed.ec == std::errc{} && std::isfinite(result) ? result : fallback;
         }
-        long integer(const RPS::Settings::Store& store, std::string_view table, std::string_view key, long fallback)
+        long integer(const Values& values, std::string_view table, std::string_view key, long fallback)
         {
-            const auto& value = valueOf(store, table, key);
+            const auto& value = valueOf(values, table, key);
             long result = fallback;
             const auto parsed = std::from_chars(value.data(), value.data() + value.size(), result);
             return parsed.ec == std::errc{} ? result : fallback;
@@ -95,8 +105,8 @@ namespace paper::settings
         constexpr auto bolt = "03. Bolt Appreciation";
         constexpr auto debug = "04. Debug Drawing";
         const auto player = Group::Player;
-        // The settings menu shows the first help line as the title and builds choices from
-        // "N = label" pairs; a "label: line" explains each choice.
+        // The first help line is the option's title, which its row on PAPER's Mods Config page
+        // (data/mod/ModsConfigFO4/Config/PAPER/spec.json) shares; choices are "N = label" pairs.
         // PAPER has no switch of its own: installed, it runs.
         return {
             { "Main", "LogLevel", general,
@@ -210,8 +220,8 @@ namespace paper::settings
         return std::make_unique<RPS::Settings::Store>(
             RPS::Settings::Files{ directory, "PAPER", std::string(kFileName), {},
                 "## PAPER.toml - PAPER options\n"
-                "## Change these in game in the RPS UI settings menu (its holotape, or RobCo PALM's Config), or edit\n"
-                "## this file. Changes apply while the game runs.\n"
+                "## Change these in game on PAPER's page in Mods Config FO4 VR, or edit this file. Changes apply\n"
+                "## while the game runs.\n"
                 "## Each option has its help above it. When PAPER starts it adds new options with their defaults and\n"
                 "## rewrites its help lines (##). Your own notes are kept when they start with a single # on the lines\n"
                 "## above an option.\n",
@@ -219,28 +229,29 @@ namespace paper::settings
             definitions(), RPS::Settings::LegacyIni{ { directory / "PAPER.ini" }, legacyKeys() });
     }
 
-    PaperConfig fromStore(const RPS::Settings::Store& store)
+    PaperConfig fromStore(const RPS::Settings::Store& store, const RPS::Settings::LoadedValues& overrides)
     {
         const PaperConfig d{};
         PaperConfig config{};
+        const Values values{ store, overrides };
         config.activePath = store.path(Group::Player).string();
-        config.logLevel = static_cast<int>(integer(store, "Main", "LogLevel", d.logLevel));
-        config.manualReloadOnly = boolean(store, "Reload", "ManualReloadOnly");
+        config.logLevel = static_cast<int>(integer(values, "Main", "LogLevel", d.logLevel));
+        config.manualReloadOnly = boolean(values, "Reload", "ManualReloadOnly");
         config.handBlendSeconds =
-            std::clamp(number(store, "Reload", "HandBlendSeconds", d.handBlendSeconds), 0.0f, kHandBlendMax);
-        config.slideOpenOnEmpty = boolean(store, "Reload", "SlideOpenOnEmpty");
+            std::clamp(number(values, "Reload", "HandBlendSeconds", d.handBlendSeconds), 0.0f, kHandBlendMax);
+        config.slideOpenOnEmpty = boolean(values, "Reload", "SlideOpenOnEmpty");
         config.slideCloseSeconds =
-            std::clamp(number(store, "Reload", "SlideCloseSeconds", d.slideCloseSeconds), 0.0f, kBoltHoldCloseMax);
-        config.chamberRound = boolean(store, "Reload", "ChamberRound");
-        config.boltAppreciation = boolean(store, "BoltAppreciation", "BoltAppreciation");
+            std::clamp(number(values, "Reload", "SlideCloseSeconds", d.slideCloseSeconds), 0.0f, kBoltHoldCloseMax);
+        config.chamberRound = boolean(values, "Reload", "ChamberRound");
+        config.boltAppreciation = boolean(values, "BoltAppreciation", "BoltAppreciation");
         config.boltPullDistance =
-            std::clamp(number(store, "BoltAppreciation", "BoltPullDistance", d.boltPullDistance), kBoltPullMin, kBoltPullMax);
-        config.debugDrawNativeAnimation = boolean(store, "Debug", "DebugDrawNativeAnimation");
-        config.debugDrawNativeAnimationText = boolean(store, "Debug", "DebugDrawNativeAnimationText");
+            std::clamp(number(values, "BoltAppreciation", "BoltPullDistance", d.boltPullDistance), kBoltPullMin, kBoltPullMax);
+        config.debugDrawNativeAnimation = boolean(values, "Debug", "DebugDrawNativeAnimation");
+        config.debugDrawNativeAnimationText = boolean(values, "Debug", "DebugDrawNativeAnimationText");
         config.debugNativeAnimationAxisLength = std::clamp(
-            number(store, "Debug", "DebugNativeAnimationAxisLength", d.debugNativeAnimationAxisLength), kAxisMin, kAxisMax);
+            number(values, "Debug", "DebugNativeAnimationAxisLength", d.debugNativeAnimationAxisLength), kAxisMin, kAxisMax);
         config.debugNativeAnimationMarkerSize = std::clamp(
-            number(store, "Debug", "DebugNativeAnimationMarkerSize", d.debugNativeAnimationMarkerSize), kMarkerMin, kMarkerMax);
+            number(values, "Debug", "DebugNativeAnimationMarkerSize", d.debugNativeAnimationMarkerSize), kMarkerMin, kMarkerMax);
         return config;
     }
 }

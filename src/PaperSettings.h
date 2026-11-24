@@ -27,6 +27,9 @@ namespace paper::settings
         const std::filesystem::path& directory);
 
     // Loaded values as PAPER uses them: enumerations parsed, numbers clamped
-    // to their documented ranges. activePath is the store's file.
-    [[nodiscard]] PaperConfig fromStore(const RPS::Settings::Store& store);
+    // to their documented ranges. activePath is the store's file. overrides
+    // holds canonical values by settingPath laid over the file's (Mods
+    // Config's live previews).
+    [[nodiscard]] PaperConfig fromStore(const RPS::Settings::Store& store,
+        const RPS::Settings::LoadedValues& overrides = {});
 }

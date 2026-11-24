@@ -2,6 +2,7 @@
   "name": "paper",
   "version": "0.1.0",
   "dependencies": [
+    "nlohmann-json",
     "rapidcsv",
     "rsm-mmio",
     "spdlog",

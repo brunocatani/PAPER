@@ -26,10 +26,12 @@ PAPER is a Fallout 4 VR F4SE plugin (`PAPER.dll`) that restores reload and weapo
 | `src/api/` | Provider API: discovery (`InterfaceNegotiation.h`), the interface tables (`PAPERProvider.cpp`) and the ROCK client |
 | `src/debug/` | Diagnostic drawing through RPS UI Framework |
 | `src/native/`, `src/support/` | Native offsets, guarded native memory reads, logging and runtime helpers |
-| `src/PaperSettings.cpp`, `src/PaperConfig.cpp` | Settings catalog (tables, keys, help, compiled defaults, old INI keys) on RPS Framework's settings store, and loading with hot reload |
+| `src/PaperSettings.cpp`, `src/PaperConfig.cpp` | Settings catalog (tables, keys, help, compiled defaults, old INI keys) on RPS Framework's settings store, and loading with hot reload and Mods Config's preview values |
+| `src/mods_config/` | PAPER's client of Mods Config FO4 VR's native API; `ModsConfigFO4Api.h` is Mods Config's header, copied as is |
 | `include/PAPER/` | Public provider API headers, the only copy |
 | `docs/api/` | One page per provider interface, and `Migration.md` for mods built against PAPER 1.2 |
 | `data/config/PAPER_example.toml` | Example settings file, a reference only |
+| `data/mod/` | Game data for the mod package, deployed with the plugin: PAPER's Mods Config FO4 VR page (`ModsConfigFO4/Config/PAPER/spec.json`) |
 | `tests/` | Tests and the consumer example |
 | `cmake/` | Version resource and release packaging |
 
@@ -44,7 +46,7 @@ cmake --preset custom-fast
 cmake --build build-fast --config Release --target PAPER
 ```
 
-Tests live in `build-fast` but outside the default build. Every test target name contains `Tests`. Build and run them with `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`. `PAPERPublicHeaderTests` compiles every public header on its own plus the consumer example; `PAPERDiscoveryTests` checks discovery and refused majors; `PAPERObservationApiTests` checks the ABI layout of the published records and tables.
+Tests live in `build-fast` but outside the default build. Every test target name contains `Tests`. Build and run them with `cmake --build build-fast --config Release --target build_tests`, then `ctest --test-dir build-fast -C Release --output-on-failure`. `PAPERPublicHeaderTests` compiles every public header on its own plus the consumer example; `PAPERDiscoveryTests` checks discovery and refused majors; `PAPERObservationApiTests` checks the ABI layout of the published records and tables; `PAPERModsConfigSpecTests` checks the Mods Config page against the catalog: every option is on it (or in its `kLeftOut`) with PAPER's type and default, and every slider spans exactly what the loader accepts.
 
 ## Conventions
 
@@ -54,6 +56,7 @@ Tests live in `build-fast` but outside the default build. Every test target name
 
 - Plugin: `Data/F4SE/Plugins/PAPER.dll`, registered with F4SE and with ROCK as `PAPER`. Log: `PAPER.log` in `Documents/My Games/Fallout4VR/F4SE/`.
 - Settings: `PAPER.toml` in `Documents/My Games/Fallout4VR/Mods_Config/PAPER/`. Runtime code resolves the Documents known folder.
+- Settings page: `Data/ModsConfigFO4/Config/PAPER/spec.json`, read by Mods Config FO4 VR; nothing reads it without that mod.
 - Co-save: unique ID `PAPR`, record `BOLT` version 1, written by `src/reload_control/ManualBolt.cpp`: the loaded rounds and chamber of each gun it tracks, by weapon, owner and ExtraUniqueID. A layout change needs a new record version.
 
 ## What PAPER does not own
@@ -62,6 +65,7 @@ Tests live in `build-fast` but outside the default build. Every test target name
 - **Ammunition, firing and the reload clock** belong to the game. PAPER coordinates the animation around them; only `[Reload] ChamberRound` and `[BoltAppreciation] BoltAppreciation` set a gun's loaded count, and always within what the inventory holds.
 - **Physical reloads** belong to the consumer holding a PhysicalReload lease: while the lease is live PAPER leaves that weapon's reload, and with `ManualCycle` its bolt cycle, to the consumer. The leased gun in slot 0 is the consumer's outright: the chamber, the rounds and the empty-gun hold let go of it, and PAPER drops the rounds it saved for that item, so a gun given back while equipped starts again from the game's count.
 - **World drawing** belongs to RPS UI Framework. PAPER's diagnostic drawing goes through its world drawing; PAPER has no renderer.
+- **Settings screens** belong to Mods Config FO4 VR, from PAPER's `spec.json`. It writes `PAPER.toml` in place on Save. PAPER's client (`src/mods_config/`) connects at F4SE `kPostLoad` under the spec's `modName`, `PAPER`; without Mods Config nothing is called. Refresh `ModsConfigFO4Api.h` from Mods Config's `src/api/` and never edit it.
 
 ## Invariants
 
@@ -91,4 +95,6 @@ Tests live in `build-fast` but outside the default build. Every test target name
 - `src/PaperSettings.cpp` declares every option once (table, key, help, compiled default from `PaperConfig`) for RPS Framework's settings store (`RPS::Settings`). A missing `PAPER.toml` is created from those defaults; each start organizes the file (every option once under its table with its help as `##` lines, player notes on single-`#` lines kept, unread entries moved to a commented block) and writes it only when that text differs. The file reloads while the game runs.
 - At startup only, when `PAPER.toml` is missing, `PAPER.ini` of earlier versions is migrated once through the old-key table in `src/PaperSettings.cpp` (values equal to their old default are left out) and deleted after `PAPER.toml` reads back; a leftover `PAPER.ini` beside an existing `PAPER.toml` is deleted unread. Never rename a key or move it to another table without an old-key row.
 - `data/config/PAPER_example.toml` is what PAPER writes for an all-default file. Regenerate it with `PAPERSettingsTests --write-examples data/config` after any catalog change; the test fails when it differs. PAPER never reads it.
+- A new option also goes on the Mods Config page (`spec.json`) with the catalog's title, type, default and the loader's range, or into `kLeftOut` in `tests/ModsConfigSpecTests.cpp`; `PAPERModsConfigSpecTests` fails until it does. Every row is `applies: live` unless the value cannot change mid-use.
+- Live preview: each change of a `live` row reaches the client as a preview value in `PaperConfig`, laid over the file's values without writing the file and applied at the next `BeforeRock` phase. Its Discard or the menu closing ends it; a Save ends every preview and reads `PAPER.toml` at once. Mods Config calls on the main thread, the watcher reads the file on its own thread, and both publish a pending config under the store's mutex; only the frame thread changes `g_config` (the thread model is in `src/PaperConfig.h`).
 - PAPER has no on/off setting; loaded, it runs. The bolt hold's clip read runs only while `SlideOpenOnEmpty` or `BoltAppreciation` is on. It keeps the poses it needs and stores no tracks, clips or files.

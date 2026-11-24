@@ -12,6 +12,7 @@
 #include "compat/MergedReloadCompatibility.h"
 #include "compat/ReloadSelectionTrace.h"
 #include "debug/NativeAnimationDebugVisualization.h"
+#include "mods_config/ModsConfigClient.h"
 #include "PaperConfig.h"
 #include "PaperLog.h"
 #include "reload_control/BoltHold.h"
@@ -1105,6 +1106,11 @@ namespace
     void onF4SEMessage(F4SE::MessagingInterface::Message* message)
     {
         if (!message) {
+            return;
+        }
+
+        if (message->type == F4SE::MessagingInterface::kPostLoad) {
+            mods_config_client::connect();
             return;
         }
 

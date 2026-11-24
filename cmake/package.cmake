@@ -1,8 +1,9 @@
 # Post-build script: writes the two files of a release into PACKAGE_DIR, a .zip
 # of the mod that installs as it is and the readme beside it.
-# The zip holds only what the game uses: F4SE/Plugins/PAPER.dll. No PDB, license,
-# readme or other development file goes in it: mod authors take include/PAPER
-# from the repository at the release tag, and PAPER creates its runtime INI from
+# The zip holds only what the game uses: F4SE/Plugins/PAPER.dll and the game
+# data in data/mod (PAPER's Mods Config FO4 VR page). No PDB, license, readme or
+# other development file goes in it: mod authors take include/PAPER from the
+# repository at the release tag, and PAPER creates its settings file from
 # compiled defaults.
 
 string(TOLOWER "${CONFIG}" CONFIG_LOWER)
@@ -24,10 +25,12 @@ set(TARGET_ARCHIVE "${PACKAGE_DIR}/${PROJECT_FRIENDLY_NAME} - v${PROJECT_VERSION
 message("Packaging release build into '${TARGET_ARCHIVE}'")
 file(REMOVE_RECURSE "${STAGE_DIR}")
 file(MAKE_DIRECTORY "${STAGE_DIR}/F4SE/Plugins")
+file(COPY "${ROOT_DIR}/data/mod/" DESTINATION "${STAGE_DIR}")
 file(COPY "${TARGET_FILE}" DESTINATION "${STAGE_DIR}/F4SE/Plugins")
 
 file(GLOB_RECURSE STAGED_FILES LIST_DIRECTORIES false RELATIVE "${STAGE_DIR}" "${STAGE_DIR}/*")
-set(EXPECTED_FILES F4SE/Plugins/PAPER.dll)
+list(SORT STAGED_FILES)
+set(EXPECTED_FILES F4SE/Plugins/PAPER.dll ModsConfigFO4/Config/PAPER/spec.json)
 if(NOT STAGED_FILES STREQUAL EXPECTED_FILES)
   message(FATAL_ERROR "package.cmake: the zip must hold only ${EXPECTED_FILES}; staged: ${STAGED_FILES}")
 endif()
