@@ -1,10 +1,11 @@
 # Changelog
 
-## Unreleased
+## 2.0.2
 
 ### Fixed
 
 - A gun a physical-reload mod has taken over is wholly that mod's. PAPER no longer puts back the rounds it saved for that gun when the takeover pauses, as it did in menus, and no longer opens its empty action or keeps its chamber meanwhile.
+- A hand-worked bolt keeps throwing its spent cases when another mod has routed the game's casing call. PAPER used to turn the bolt's casings off as soon as it found that call changed.
 
 ## 2.0.1
 
